@@ -89,14 +89,8 @@
     /* 2027 SYSTEM DEFAULTS */
     color-scheme: dark;
   }
-  .tpe-mobile-only {
-    display: none;
-  }
-
-  .tpe-desktop-only {
-    display: flex;
-  }
 }
+
 
 @layer reset {
 
@@ -957,11 +951,25 @@
       overflow-y: visible;
     }
 
-    .right-pane {
-      padding-block: var(--space-lg);
-      padding-inline: var(--space-md);
-      overflow: visible;
-      min-block-size: 550px;
     }
+  }
+}
+
+/* 🏛️ 2027 GLOBAL UTILITY REGISTRY (MAX PRIORITY) */
+.tpe-mobile-only {
+  display: none !important;
+}
+
+.tpe-desktop-only {
+  display: flex !important;
+}
+
+@media (max-width: 768px) {
+  .tpe-mobile-only {
+    display: flex !important;
+  }
+
+  .tpe-desktop-only {
+    display: none !important;
   }
 }

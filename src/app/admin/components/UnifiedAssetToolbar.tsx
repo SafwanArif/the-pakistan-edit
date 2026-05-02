@@ -42,8 +42,22 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
         setUrl("");
     };
 
+    const [isExpanded, setIsExpanded] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Auto-close when clicking outside
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (isExpanded && containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setIsExpanded(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClick);
+        return () => document.removeEventListener("mousedown", handleClick);
+    }, [isExpanded]);
+
     return (
-        <div className="tpe-flex-row" style={{ gap: '8px' }}>
+        <div className="tpe-flex-row" style={{ gap: '8px', position: 'relative' }} ref={containerRef}>
             {showLinkInput ? (
                 <div className="tpe-asset-input-wrapper">
                     <input 
@@ -66,39 +80,53 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                     </button>
                 </div>
             ) : (
-                <div className="tpe-flex-row" style={{ gap: '6px' }}>
-                    <label className="tpe-asset-btn" data-active={hasOverride}>
-                        <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-                            if (e.target.files?.[0]) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                    const img = new Image();
-                                    img.onload = () => {
-                                        const base = { image: reader.result as string, imageWidth: img.width, imageHeight: img.height, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-                                        onUpload(base);
-                                    };
-                                    img.src = reader.result as string;
-                                };
-                                reader.readAsDataURL(e.target.files[0]);
-                            }
-                        }} />
-                    </label>
+                <>
+                    {/* MOBILE TRIGGER */}
                     <button 
-                        onClick={() => setShowLinkInput(true)}
-                        className="tpe-asset-btn"
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="tpe-asset-btn tpe-mobile-only"
+                        data-active={hasOverride}
+                        style={{ border: hasOverride ? '1px solid var(--ui-accent)' : '1px solid var(--ui-border)' }}
                     >
-                        <LinkIcon />
+                        {hasOverride ? <UploadIcon fill="var(--ui-accent)" /> : <UploadIcon />}
                     </button>
-                    {hasOverride && (
+
+                    {/* DESKTOP ROW / MOBILE TRAY */}
+                    <div className={`tpe-flex-row ${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-desktop-only'}`} style={{ gap: '6px' }}>
+                        <label className="tpe-asset-btn" data-active={hasOverride}>
+                            <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
+                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                        const img = new Image();
+                                        img.onload = () => {
+                                            const base = { image: reader.result as string, imageWidth: img.width, imageHeight: img.height, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
+                                            onUpload(base);
+                                            setIsExpanded(false);
+                                        };
+                                        img.src = reader.result as string;
+                                    };
+                                    reader.readAsDataURL(e.target.files[0]);
+                                }
+                            }} />
+                        </label>
                         <button 
-                            onClick={clear}
-                            className="tpe-asset-btn tpe-asset-btn-danger"
+                            onClick={() => { setShowLinkInput(true); setIsExpanded(false); }}
+                            className="tpe-asset-btn"
                         >
-                            <CloseIcon />
+                            <LinkIcon />
                         </button>
-                    )}
-                </div>
+                        {hasOverride && (
+                            <button 
+                                onClick={() => { clear(); setIsExpanded(false); }}
+                                className="tpe-asset-btn tpe-asset-btn-danger"
+                            >
+                                <CloseIcon />
+                            </button>
+                        )}
+                    </div>
+                </>
             )}
         </div>
     );

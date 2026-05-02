@@ -89,6 +89,13 @@
     /* 2027 SYSTEM DEFAULTS */
     color-scheme: dark;
   }
+  .tpe-mobile-only {
+    display: none;
+  }
+
+  .tpe-desktop-only {
+    display: flex;
+  }
 }
 
 @layer reset {
@@ -816,11 +823,7 @@
 
     /* Manually define the gaps for 100% symmetry */
     .tpe-step-number {
-      font-size: 18px !important; 
-      inline-size: auto !important;
-      margin-inline-start: 4px !important;
-      margin-inline-end: 0.5px !important;
-      letter-spacing: -1px;
+      display: none !important; /* Hide '01' on mobile to prioritize colon + logo */
     }
 
     .terminal-cursor {
@@ -868,6 +871,35 @@
 
     .tpe-source-input, .tpe-credit-input {
       inline-size: 80px;
+    }
+
+    .tpe-asset-tray-expanded {
+      display: flex !important;
+      position: absolute;
+      inset-block-start: 100%;
+      inset-inline-end: 0;
+      margin-block-start: 8px;
+      background: var(--ui-bg-popover);
+      backdrop-filter: blur(var(--blur-md));
+      border: 1px solid var(--ui-accent);
+      padding: 8px;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      z-index: var(--z-popover);
+      animation: tpe-tray-reveal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes tpe-tray-reveal {
+      from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .tpe-mobile-only {
+      display: flex !important;
+    }
+
+    .tpe-desktop-only {
+      display: none !important;
     }
 
     .tpe-btn-gold, .tpe-btn-primary {

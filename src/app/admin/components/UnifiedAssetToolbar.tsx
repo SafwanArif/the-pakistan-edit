@@ -8,6 +8,8 @@ import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIc
 interface UnifiedAssetToolbarProps {
     hasOverride: boolean;
     currentUrl: string;
+    onLink: (url: string) => void;
+    onUpload: (data: any) => void;
     onClear: () => void;
     // 2027 Asset Metadata Props
     creditValue?: string;
@@ -136,7 +138,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                         <div className="tpe-asset-tray-metadata">
                             <button 
                                 className="tpe-prefix-toggle" 
-                                style={{ fontSize: '9px', blockSizing: 'border-box' }}
+                                style={{ fontSize: '9px', blockSize: 'border-box' }}
                                 onClick={() => setShowCreditMenu(!showCreditMenu)}
                             >
                                 {creditPrefix || "PHOTO:"}

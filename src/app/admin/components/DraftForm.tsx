@@ -63,8 +63,8 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     <UnifiedAssetToolbar 
                         hasOverride={step === 1 ? !!draft.image : !!draft.slideAssets?.[step]?.image}
                         currentUrl={step === 1 ? (draft.image || "") : (draft.slideAssets?.[step]?.image || "")}
-                        onLink={(url) => onChange(step === 1 ? { ...draft, image: url } : updateDraftValue(`slide-image-${step}`, url, draft))}
-                        onUpload={(base) => {
+                        onLink={(url: string) => onChange(step === 1 ? { ...draft, image: url } : updateDraftValue(`slide-image-${step}`, url, draft))}
+                        onUpload={(base: any) => {
                             if (step === 1) onChange({ ...draft, ...base });
                             else {
                                 let d = draft;
@@ -83,7 +83,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                                 onChange({ ...draft, slideAssets: assets });
                             }
                         }}
-                        creditValue={step === 1 ? draft.imageCredit : draft.slideAssets?.[step]?.credit}
+                        creditValue={step === 1 ? draft.imageCredit : draft.slideAssets?.[step]?.imageCredit}
                         creditPrefix={step === 1 ? draft.creditPrefix : draft.slideAssets?.[step]?.creditPrefix}
                         onCreditUpdate={(v) => onChange(updateDraftValue(step === 1 ? 'imageCredit' : `slide-credit-${step}`, v, draft))}
                         onCreditPrefixChange={(p) => onChange(updateDraftPrefix(step === 1 ? 'imageCredit' : `slide-credit-${step}`, p, draft))}

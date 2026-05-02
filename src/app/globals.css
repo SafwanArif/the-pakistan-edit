@@ -894,6 +894,30 @@
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
+    .tpe-asset-tray-metadata {
+      display: flex !important;
+      flex-direction: column;
+      gap: 8px;
+      margin-block-start: 12px;
+      padding-block-start: 12px;
+      border-block-start: 1px solid var(--ui-border);
+      inline-size: 100%;
+    }
+
+    .tpe-asset-prefix-dropdown {
+      position: absolute;
+      inset-block-start: 100%;
+      inset-inline-start: 0;
+      background: var(--ui-bg-popover);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      padding: 4px;
+      z-index: 1001;
+      box-shadow: var(--shadow-md);
+    }
+
     .tpe-mobile-only {
       display: flex !important;
     }

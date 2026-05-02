@@ -83,8 +83,12 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                                 onChange({ ...draft, slideAssets: assets });
                             }
                         }}
+                        creditValue={step === 1 ? draft.imageCredit : draft.slideAssets?.[step]?.credit}
+                        creditPrefix={step === 1 ? draft.creditPrefix : draft.slideAssets?.[step]?.creditPrefix}
+                        onCreditUpdate={(v) => onChange(updateDraftValue(step === 1 ? 'imageCredit' : `slide-credit-${step}`, v, draft))}
+                        onCreditPrefixChange={(p) => onChange(updateDraftPrefix(step === 1 ? 'imageCredit' : `slide-credit-${step}`, p, draft))}
                     />
-                    <div className="tpe-flex-row" style={{ gap: '12px' }}>
+                    <div className="tpe-flex-row tpe-desktop-only" style={{ gap: '12px' }}>
                         {step !== 1 && (
                             <SourceRow field={step === 2 ? 'sourceName' : `extra-source-${extraIndex}`} prefixField="sourcePrefix" draft={draft} onChange={onChange} />
                         )}

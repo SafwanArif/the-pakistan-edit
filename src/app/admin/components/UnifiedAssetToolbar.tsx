@@ -8,9 +8,12 @@ import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIc
 interface UnifiedAssetToolbarProps {
     hasOverride: boolean;
     currentUrl: string;
-    onLink: (url: string) => void;
-    onUpload: (data: any) => void;
     onClear: () => void;
+    // 2027 Asset Metadata Props
+    creditValue?: string;
+    creditPrefix?: string;
+    onCreditUpdate?: (v: string) => void;
+    onCreditPrefixChange?: (p: string) => void;
 }
 
 /**
@@ -18,8 +21,9 @@ interface UnifiedAssetToolbarProps {
  * High-fidelity, compact control ribbon for asset ingestion.
  * Preserves the exact visual DNA (Gold/Green/Red/Black palette).
  */
-export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOverride, currentUrl, onLink, onUpload, onClear }) => {
+export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOverride, currentUrl, onLink, onUpload, onClear, creditValue, creditPrefix, onCreditUpdate, onCreditPrefixChange }) => {
     const [showLinkInput, setShowLinkInput] = useState(false);
+    const [showCreditMenu, setShowCreditMenu] = useState(false);
     const [url, setUrl] = useState(currentUrl || "");
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -126,6 +130,41 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                             </button>
                         )}
                     </div>
+
+                    {/* 2027 MOBILE METADATA ROW */}
+                    {isExpanded && hasOverride && onCreditUpdate && (
+                        <div className="tpe-asset-tray-metadata tpe-mobile-only">
+                            <button 
+                                className="tpe-prefix-toggle" 
+                                style={{ fontSize: '9px', blockSizing: 'border-box' }}
+                                onClick={() => setShowCreditMenu(!showCreditMenu)}
+                            >
+                                {creditPrefix || "PHOTO:"}
+                            </button>
+                            <input 
+                                className="tpe-popover-input" 
+                                style={{ fontSize: '10px' }}
+                                placeholder="IMAGE CREDIT..." 
+                                value={creditValue || ""} 
+                                onChange={(e) => onCreditUpdate(e.target.value)} 
+                            />
+                            
+                            {showCreditMenu && (
+                                <div className="tpe-asset-prefix-dropdown">
+                                    {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
+                                        <button 
+                                            key={opt} 
+                                            className="tpe-prefix-btn" 
+                                            style={{ fontSize: '9px' }}
+                                            onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
+                                        >
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </>
             )}
         </div>

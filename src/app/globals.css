@@ -802,42 +802,54 @@
   /* 🏛️ 2027 INDUSTRIAL MOBILE REGISTRY */
   @media (max-width: 768px) {
     .command-ribbon {
-      padding-inline: 8px;
-      gap: 4px;
+      padding-inline: 4px;
+      gap: 0 !important;
     }
 
     .command-ribbon > div:nth-child(2) {
-      margin-inline: 4px !important;
+      margin-inline: 0 !important;
+      gap: 0 !important;
+    }
+
+    .command-ribbon .tpe-flex-row {
+      gap: 0 !important;
     }
 
     .tpe-step-number {
-      font-size: 14px !important;
-      inline-size: 20px !important;
+      font-size: 18px !important;
+      inline-size: auto !important;
+      margin-inline-end: 4px !important;
+      padding: 0 !important;
     }
 
     .tpe-step-label {
       inline-size: auto !important;
-      gap: 4px !important;
-      font-size: 11px !important;
+      gap: 0 !important;
+      margin-inline: 0 !important;
     }
 
     .tpe-step-label span:first-child {
-      display: none; /* Hide 'THE BULLETIN' text on mobile for compaction */
+      display: inline-block !important;
+      font-size: 9px !important;
+      letter-spacing: -0.02em !important;
+      margin-inline-end: 2px !important;
     }
 
     .tpe-input-main {
-      font-size: 13px !important;
-      padding-inline: 4px !important;
+      font-size: 15px !important;
+      padding-inline: 2px !important;
+      margin: 0 !important;
     }
 
     .tpe-input-main[placeholder="CATEGORY"] {
-      inline-size: 85px !important; /* Drastically shrink category to save room for headline */
+      inline-size: 70px !important;
+      margin-inline-start: -4px !important;
     }
 
     .previews-container {
-      padding-block-end: 280px !important; /* Enhanced clearance for Toolkit + Mobile OS bars */
-      padding-inline: 16px !important;
-      gap: 32px !important;
+      padding-block-end: 300px !important;
+      padding-inline: 12px !important;
+      gap: 24px !important;
     }
 
     .sandbox-grid {
@@ -846,16 +858,17 @@
     }
 
     .tpe-source-row-wrapper {
-      gap: 4px;
+      gap: 2px;
+      margin-inline-start: -4px;
     }
 
     .tpe-source-input, .tpe-credit-input {
-      inline-size: 80px;
+      inline-size: 70px;
     }
 
     .tpe-btn-gold, .tpe-btn-primary {
-      inline-size: 110px !important;
-      padding-inline: 8px !important;
+      inline-size: 100px !important;
+      padding-inline: 4px !important;
       font-size: 9px !important;
     }
 

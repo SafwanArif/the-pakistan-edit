@@ -131,42 +131,41 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                                 <CloseIcon />
                             </button>
                         )}
+                        {/* 2027 ASSET METADATA ROW */}
+                        {hasOverride && onCreditUpdate && (
+                            <div className="tpe-asset-tray-metadata">
+                                <button 
+                                    className="tpe-prefix-toggle" 
+                                    style={{ fontSize: '9px', blockSize: 'border-box' }}
+                                    onClick={(e) => { e.stopPropagation(); setShowCreditMenu(!showCreditMenu); }}
+                                >
+                                    {creditPrefix || "PHOTO:"}
+                                </button>
+                                <input 
+                                    className="tpe-popover-input" 
+                                    style={{ fontSize: '10px' }}
+                                    placeholder="IMAGE CREDIT..." 
+                                    value={creditValue || ""} 
+                                    onChange={(e) => onCreditUpdate(e.target.value)} 
+                                />
+                                
+                                {showCreditMenu && (
+                                    <div className="tpe-asset-prefix-dropdown">
+                                        {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
+                                            <button 
+                                                key={opt} 
+                                                className="tpe-prefix-btn" 
+                                                style={{ fontSize: '9px' }}
+                                                onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
+                                            >
+                                                {opt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
-
-                    {/* 2027 ASSET METADATA ROW */}
-                    {isExpanded && hasOverride && onCreditUpdate && (
-                        <div className="tpe-asset-tray-metadata">
-                            <button 
-                                className="tpe-prefix-toggle" 
-                                style={{ fontSize: '9px', blockSize: 'border-box' }}
-                                onClick={() => setShowCreditMenu(!showCreditMenu)}
-                            >
-                                {creditPrefix || "PHOTO:"}
-                            </button>
-                            <input 
-                                className="tpe-popover-input" 
-                                style={{ fontSize: '10px' }}
-                                placeholder="IMAGE CREDIT..." 
-                                value={creditValue || ""} 
-                                onChange={(e) => onCreditUpdate(e.target.value)} 
-                            />
-                            
-                            {showCreditMenu && (
-                                <div className="tpe-asset-prefix-dropdown">
-                                    {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
-                                        <button 
-                                            key={opt} 
-                                            className="tpe-prefix-btn" 
-                                            style={{ fontSize: '9px' }}
-                                            onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
-                                        >
-                                            {opt}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </>
             )}
         </div>

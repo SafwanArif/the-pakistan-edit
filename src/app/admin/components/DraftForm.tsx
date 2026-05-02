@@ -98,8 +98,33 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
 
             <div className="tpe-flex-row" style={{ gap: '10px', marginInlineStart: '16px' }}>
                 {step > 1 && <button onClick={() => setStep(step - 1)} className="tpe-btn-gold" style={{ inlineSize: '42px', blockSize: '42px', padding: '0' }}><BackIcon /></button>}
-                <button onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} disabled={!canProceed || resolving} className={step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} style={{ inlineSize: '180px', blockSize: '42px' }}>
-                    {resolving ? 'RESOLVING...' : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? 'NEXT STEP ➔' : 'EXPORT BATCH ⬇') : 'INPUT REQUIRED')}
+                <button 
+                    onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
+                    disabled={!canProceed || resolving} 
+                    className={step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} 
+                    style={{ 
+                        inlineSize: '80px', 
+                        blockSize: '42px', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        gap: '0', 
+                        lineHeight: '1',
+                        padding: '0'
+                    }}
+                >
+                    {resolving ? 'RES\nOLVING' : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px' }}>NEXT</span>
+                            <span style={{ fontSize: '10px' }}>STEP ➔</span>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px' }}>EXPORT</span>
+                            <span style={{ fontSize: '10px' }}>BATCH ⬇</span>
+                        </div>
+                    )) : 'INPUT\nREQ.')}
                 </button>
             </div>
         </div>

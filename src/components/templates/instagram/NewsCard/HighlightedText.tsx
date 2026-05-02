@@ -1,0 +1,37 @@
+import React, { useMemo } from "react";
+import { TOKENS } from "./index";
+
+/**
+ * Institutional Data Registry: High-Res Flag Icons
+ */
+const FLAGS: Record<string, string> = { 
+    "🇵🇰": "/assets/flags/pk.png", "🇵🇸": "/assets/flags/ps.png", 
+    "🇬🇧": "/assets/flags/gb.png", "🇺🇸": "/assets/flags/us.png", 
+    "🇮🇳": "/assets/flags/in.png", "🇮🇶": "/assets/flags/iq.png",
+    "🇬🇷": "/assets/flags/gr.png", "🇺🇳": "/assets/flags/un.png"
+};
+
+const FLAG_REGEX = new RegExp(`(${Object.keys(FLAGS).join('|')})`, 'g');
+
+/** 
+ * 2027 Performance Standard: HighlightedText
+ * Single-pass renderer optimized for high-density editorial content.
+ */
+export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ text, color }) => {
+    return useMemo(() => {
+        if (!text) return null;
+        
+        const splitRegex = new RegExp(`(\\*.+?\\*)|${FLAG_REGEX.source}`, 'g');
+        return text.split(splitRegex).filter(Boolean).map((part, i) => {
+            if (part.startsWith("*") && part.endsWith("*")) {
+                return <span key={i} style={{ color: color || TOKENS.colors.crescentGold }}>{part.slice(1, -1)}</span>;
+            }
+            if (FLAGS[part]) {
+                return <img key={i} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;
+            }
+            return part;
+        });
+    }, [text, color]);
+});
+
+HighlightedText.displayName = "HighlightedText";

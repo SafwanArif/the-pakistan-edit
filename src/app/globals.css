@@ -808,10 +808,13 @@
 
     /* Target the inner layout wrappers in DraftForm */
     .command-ribbon > div:first-child,
-    .command-ribbon > div:first-child > div:first-child,
-    .command-ribbon > div:first-child > div:first-child > div:first-child {
-      gap: 2px !important;
+    .command-ribbon > div:first-child > div:first-child {
+      gap: 4px !important;
       margin: 0 !important;
+    }
+
+    .command-ribbon > div:first-child > div:first-child > div:nth-child(2) {
+      gap: 4px !important;
     }
 
     .tpe-step-number {
@@ -841,7 +844,9 @@
     }
 
     .tpe-input-main[placeholder="CATEGORY"] {
-      inline-size: 70px !important; /* Even tighter for headline room */
+      inline-size: 70px !important; 
+      padding-inline: 0 !important; /* Stripping padding to eliminate the 'double gap' */
+      margin-inline-start: -2px !important; /* Micro-adjustment to pull it even closer */
     }
 
     .previews-container {

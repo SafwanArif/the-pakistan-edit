@@ -96,20 +96,21 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </div>
             </div>
 
-            <div className="tpe-flex-row" style={{ gap: '6px', marginInlineStart: '12px' }}>
+            <div className="tpe-flex-row" style={{ gap: '2px', marginInlineStart: '4px' }}>
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 
                         className="tpe-btn-gold" 
                         style={{ 
-                            inlineSize: '50px', 
+                            inlineSize: '32px', 
                             blockSize: '42px', 
                             padding: '0',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: '600'
+                            fontSize: '9px',
+                            fontWeight: '600',
+                            letterSpacing: '-0.02em'
                         }}
                     >
                         BACK
@@ -120,7 +121,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     disabled={!canProceed || resolving} 
                     className={step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} 
                     style={{ 
-                        inlineSize: '50px', 
+                        inlineSize: '32px', 
                         blockSize: '42px', 
                         display: 'flex', 
                         flexDirection: 'column', 
@@ -133,23 +134,23 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 >
                     {resolving ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '9px' }}>RES-</span>
-                            <span style={{ fontSize: '9px' }}>OLVE</span>
+                            <span style={{ fontSize: '8px' }}>RES</span>
+                            <span style={{ fontSize: '8px' }}>OLV</span>
                         </div>
                     ) : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10px' }}>NEXT</span>
-                            <span style={{ fontSize: '10px' }}>STEP</span>
+                            <span style={{ fontSize: '9px' }}>NEXT</span>
+                            <span style={{ fontSize: '9px' }}>STEP</span>
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10px' }}>EXP.</span>
-                            <span style={{ fontSize: '10px' }}>BATCH</span>
+                            <span style={{ fontSize: '9px' }}>EXP</span>
+                            <span style={{ fontSize: '9px' }}>BTCH</span>
                         </div>
                     )) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '9px' }}>INPUT</span>
-                            <span style={{ fontSize: '9px' }}>REQ.</span>
+                            <span style={{ fontSize: '8px' }}>INPT</span>
+                            <span style={{ fontSize: '8px' }}>REQ</span>
                         </div>
                     ))}
                 </button>

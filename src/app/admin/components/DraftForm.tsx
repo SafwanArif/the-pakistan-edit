@@ -36,7 +36,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     const stepLabel = useMemo(() => EDITORIAL_STEPS.find(s => s.step === step)?.label || `Angle ${step - 2}`, [step]);
 
     return (
-        <div className="tpe-flex-row" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
+        <div className="tpe-flex-row tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-flex-row" style={{ flex: 1, gap: '16px', minInlineSize: 0 }}>
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '10px' }}>
                     <span className="tpe-step-number" style={{ color: 'oklch(from var(--ui-text) l c h / 0.4)', fontSize: '20px', fontWeight: 300, inlineSize: '32px' }}>{step.toString().padStart(2, '0')}</span>

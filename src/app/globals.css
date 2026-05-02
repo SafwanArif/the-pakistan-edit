@@ -806,10 +806,10 @@
       gap: 0;
     }
 
-    /* Target the inner layout wrappers in DraftForm */
-    .command-ribbon > div:first-child,
-    .command-ribbon > div:first-child > div:first-child,
-    .command-ribbon > div:first-child > div:first-child > div:nth-child(2) {
+    /* Surgical targeting of the DraftForm internal flex layout */
+    .tpe-draft-form-container,
+    .tpe-draft-form-container > div:first-child,
+    .tpe-draft-form-container > div:first-child > div:first-child {
       gap: 0 !important;
       margin: 0 !important;
     }

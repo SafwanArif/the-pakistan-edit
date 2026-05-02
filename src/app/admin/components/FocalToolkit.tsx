@@ -72,12 +72,12 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
 
                 <div style={{ inlineSize: '1px', blockSize: '28px', background: 'oklch(from var(--ui-text) l c h / 0.05)' }} />
 
-                <div className="tpe-flex-row" style={{ gap: '15px', blockSize: '32px' }}>
+                <div className="tpe-focal-grid">
                     <FocalSlider id="zoom" label="Zoom" min={10} max={800} value={asset.imageZoom} field="imageZoom" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'zoom'} />
                     <FocalSlider id="posX" label="Pan X" min={0} max={100} value={asset.imagePosX} field="imagePosX" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posX'} />
                     <FocalSlider id="posY" label="Pan Y" min={0} max={100} value={asset.imagePosY} field="imagePosY" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY'} />
                     <FocalSlider id="posY_sq" label="Pan Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY} field="imagePosY_Square" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY_sq'} />
-                    <div style={{ inlineSize: '1px', blockSize: '28px', background: 'oklch(from var(--ui-text) l c h / 0.05)' }} />
+                    <div className="tpe-desktop-only" style={{ inlineSize: '1px', blockSize: '28px', background: 'oklch(from var(--ui-text) l c h / 0.05)' }} />
                     <FocalSlider id="scrim" label="Opacity" min={0} max={100} value={asset.scrim ?? 0} field="scrim" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'scrim'} />
                 </div>
             </div>

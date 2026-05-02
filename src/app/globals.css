@@ -818,13 +818,13 @@
     .tpe-step-number {
       font-size: 18px !important; 
       inline-size: auto !important;
-      margin-inline-start: 6px !important;
-      margin-inline-end: 2px !important;
+      margin-inline-start: 4px !important;
+      margin-inline-end: 0.5px !important;
       letter-spacing: -1px;
     }
 
     .terminal-cursor {
-      margin-inline-end: 2px !important; /* This matches the gap before the colon */
+      margin-inline-end: 0.5px !important; /* Hyper-compressed 0.5px gap */
     }
 
     .tpe-step-label {

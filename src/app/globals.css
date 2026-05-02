@@ -808,21 +808,23 @@
 
     /* Target the inner layout wrappers in DraftForm */
     .command-ribbon > div:first-child,
-    .command-ribbon > div:first-child > div:first-child {
-      gap: 4px !important;
+    .command-ribbon > div:first-child > div:first-child,
+    .command-ribbon > div:first-child > div:first-child > div:nth-child(2) {
+      gap: 0 !important;
       margin: 0 !important;
     }
 
-    .command-ribbon > div:first-child > div:first-child > div:nth-child(2) {
-      gap: 4px !important;
-    }
-
+    /* Manually define the gaps for 100% symmetry */
     .tpe-step-number {
       font-size: 18px !important; 
       inline-size: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      margin-inline-start: 6px !important;
+      margin-inline-end: 2px !important;
       letter-spacing: -1px;
+    }
+
+    .terminal-cursor {
+      margin-inline-end: 2px !important; /* This matches the gap before the colon */
     }
 
     .tpe-step-label {

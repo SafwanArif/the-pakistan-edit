@@ -803,53 +803,46 @@
   @media (max-width: 768px) {
     .command-ribbon {
       padding-inline: 4px;
-      gap: 0 !important;
+      gap: 0;
     }
 
-    .command-ribbon > div:nth-child(2) {
-      margin-inline: 0 !important;
-      gap: 0 !important;
-    }
-
-    .command-ribbon .tpe-flex-row {
-      gap: 0 !important;
+    /* Target the inner layout wrappers in DraftForm */
+    .command-ribbon > div:first-child,
+    .command-ribbon > div:first-child > div:first-child,
+    .command-ribbon > div:first-child > div:first-child > div:first-child {
+      gap: 2px !important;
+      margin: 0 !important;
     }
 
     .tpe-step-number {
-      font-size: 18px !important;
-      inline-size: auto !important;
-      margin-inline-end: 4px !important;
-      padding: 0 !important;
+      font-size: 18px !important; /* Restored size */
+      inline-size: 20px !important;
+      margin-inline-end: 2px !important;
     }
 
     .tpe-step-label {
       inline-size: auto !important;
-      gap: 0 !important;
-      margin-inline: 0 !important;
+      gap: 2px !important;
+      font-size: 13px !important; /* Restored size */
     }
 
     .tpe-step-label span:first-child {
-      display: inline-block !important;
-      font-size: 9px !important;
-      letter-spacing: -0.02em !important;
-      margin-inline-end: 2px !important;
+      display: none; 
     }
 
     .tpe-input-main {
-      font-size: 15px !important;
+      font-size: 15px !important; /* Restored size */
       padding-inline: 2px !important;
-      margin: 0 !important;
     }
 
     .tpe-input-main[placeholder="CATEGORY"] {
-      inline-size: 70px !important;
-      margin-inline-start: -4px !important;
+      inline-size: 70px !important; /* Even tighter for headline room */
     }
 
     .previews-container {
-      padding-block-end: 300px !important;
-      padding-inline: 12px !important;
-      gap: 24px !important;
+      padding-block-end: 280px !important; /* Enhanced clearance for Toolkit + Mobile OS bars */
+      padding-inline: 16px !important;
+      gap: 32px !important;
     }
 
     .sandbox-grid {
@@ -858,18 +851,24 @@
     }
 
     .tpe-source-row-wrapper {
-      gap: 2px;
-      margin-inline-start: -4px;
+      gap: 4px;
     }
 
     .tpe-source-input, .tpe-credit-input {
-      inline-size: 70px;
+      inline-size: 80px;
     }
 
     .tpe-btn-gold, .tpe-btn-primary {
-      inline-size: 100px !important;
+      inline-size: 85px !important; /* Hyper-compact */
       padding-inline: 4px !important;
-      font-size: 9px !important;
+      font-size: 8px !important;
+      margin-inline-start: 4px !important;
+    }
+
+    /* Target the button container in DraftForm */
+    .command-ribbon > div:first-child > div:nth-child(2) {
+      margin-inline-start: 4px !important;
+      gap: 4px !important;
     }
 
     .tpe-btn-gold[style*="inlineSize: '42px'"] {

@@ -867,49 +867,8 @@
       inline-size: 80px;
     }
 
-    .tpe-asset-tray-expanded {
+    .tpe-mobile-only {
       display: flex !important;
-      position: absolute;
-      inset-block-start: 100%;
-      inset-inline-end: 0;
-      margin-block-start: 8px;
-      background: var(--ui-bg-popover);
-      backdrop-filter: blur(var(--blur-md));
-      border: 1px solid var(--ui-accent);
-      padding: 8px;
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-lg);
-      z-index: var(--z-popover);
-      animation: tpe-tray-reveal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    @keyframes tpe-tray-reveal {
-      from { opacity: 0; transform: translateY(-10px) scale(0.95); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-
-    .tpe-asset-tray-metadata {
-      display: flex !important;
-      flex-direction: column;
-      gap: 8px;
-      margin-block-start: 12px;
-      padding-block-start: 12px;
-      border-block-start: 1px solid var(--ui-border);
-      inline-size: 100%;
-    }
-
-    .tpe-asset-prefix-dropdown {
-      position: absolute;
-      inset-block-start: 100%;
-      inset-inline-start: 0;
-      background: var(--ui-bg-popover);
-      border: 1px solid var(--ui-border);
-      border-radius: var(--radius-sm);
-      display: flex;
-      flex-direction: column;
-      padding: 4px;
-      z-index: 1001;
-      box-shadow: var(--shadow-md);
     }
 
     .tpe-mobile-only {
@@ -955,6 +914,53 @@
   }
 }
 
+/* 🏛️ 2027 UNIVERSAL ASSET HUB REGISTRY */
+.tpe-asset-tray-expanded {
+  display: flex !important;
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  margin-block-start: 8px;
+  background: var(--ui-bg-popover);
+  backdrop-filter: blur(var(--blur-md));
+  border: 1px solid var(--ui-accent);
+  padding: 8px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-popover);
+  animation: tpe-tray-reveal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  min-inline-size: 220px;
+}
+
+.tpe-asset-tray-metadata {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-start: 12px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--ui-border);
+  inline-size: 100%;
+}
+
+.tpe-asset-prefix-dropdown {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-start: 0;
+  background: var(--ui-bg-popover);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  z-index: 1001;
+  box-shadow: var(--shadow-md);
+}
+
+@keyframes tpe-tray-reveal {
+  from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* 🏛️ 2027 GLOBAL UTILITY REGISTRY (MAX PRIORITY) */
 .tpe-mobile-only {
   display: none !important;
@@ -962,6 +968,10 @@
 
 .tpe-desktop-only {
   display: flex !important;
+}
+
+.tpe-hidden {
+  display: none !important;
 }
 
 @media (max-width: 768px) {

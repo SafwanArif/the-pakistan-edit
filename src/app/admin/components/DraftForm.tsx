@@ -92,9 +92,6 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                         {step !== 1 && (
                             <SourceRow field={step === 2 ? 'sourceName' : `extra-source-${extraIndex}`} prefixField="sourcePrefix" draft={draft} onChange={onChange} />
                         )}
-                        {(step === 1 || !!draft.slideAssets?.[step]?.image) && (
-                            <SourceRow field={step === 1 ? 'imageCredit' : `slide-credit-${step}`} prefixField="creditPrefix" draft={draft} onChange={onChange} isCredit />
-                        )}
                     </div>
                 </div>
             </div>

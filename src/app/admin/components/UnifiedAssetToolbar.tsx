@@ -84,19 +84,18 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                     </button>
                 </div>
             ) : (
-                <>
-                    {/* MOBILE TRIGGER */}
+                    {/* UNIVERSAL ASSET TRIGGER */}
                     <button 
                         onClick={() => setIsExpanded(!isExpanded)}
-                        className="tpe-asset-btn tpe-mobile-only"
+                        className="tpe-asset-btn"
                         data-active={hasOverride}
                         style={{ border: hasOverride ? '1px solid var(--ui-accent)' : '1px solid var(--ui-border)' }}
                     >
                         {hasOverride ? <UploadIcon fill="var(--ui-accent)" /> : <UploadIcon />}
                     </button>
 
-                    {/* DESKTOP ROW / MOBILE TRAY */}
-                    <div className={`tpe-flex-row ${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-desktop-only'}`} style={{ gap: '6px' }}>
+                    {/* UNIVERSAL ASSET TRAY */}
+                    <div className={`tpe-flex-row ${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'}`} style={{ gap: '6px' }}>
                         <label className="tpe-asset-btn" data-active={hasOverride}>
                             <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
                             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
@@ -131,9 +130,9 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                         )}
                     </div>
 
-                    {/* 2027 MOBILE METADATA ROW */}
+                    {/* 2027 ASSET METADATA ROW */}
                     {isExpanded && hasOverride && onCreditUpdate && (
-                        <div className="tpe-asset-tray-metadata tpe-mobile-only">
+                        <div className="tpe-asset-tray-metadata">
                             <button 
                                 className="tpe-prefix-toggle" 
                                 style={{ fontSize: '9px', blockSizing: 'border-box' }}

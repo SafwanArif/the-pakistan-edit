@@ -84,6 +84,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                     </button>
                 </div>
             ) : (
+                <>
                     {/* UNIVERSAL ASSET TRIGGER */}
                     <button 
                         onClick={() => setIsExpanded(!isExpanded)}

@@ -96,35 +96,58 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </div>
             </div>
 
-            <div className="tpe-flex-row" style={{ gap: '10px', marginInlineStart: '16px' }}>
-                {step > 1 && <button onClick={() => setStep(step - 1)} className="tpe-btn-gold" style={{ inlineSize: '42px', blockSize: '42px', padding: '0' }}><BackIcon /></button>}
+            <div className="tpe-flex-row" style={{ gap: '8px', marginInlineStart: '12px' }}>
+                {step > 1 && (
+                    <button 
+                        onClick={() => setStep(step - 1)} 
+                        className="tpe-btn-gold" 
+                        style={{ 
+                            inlineSize: '60px', 
+                            blockSize: '42px', 
+                            padding: '0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            letterSpacing: '0.1em'
+                        }}
+                    >
+                        BACK
+                    </button>
+                )}
+                
                 <button 
                     onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
                     disabled={!canProceed || resolving} 
                     className={step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} 
                     style={{ 
-                        inlineSize: '80px', 
+                        inlineSize: '60px', 
                         blockSize: '42px', 
                         display: 'flex', 
                         flexDirection: 'column', 
                         alignItems: 'center', 
                         justifyContent: 'center', 
                         gap: '0', 
-                        lineHeight: '1',
+                        lineHeight: '1.1',
                         padding: '0'
                     }}
                 >
-                    {resolving ? 'RES\nOLVING' : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? (
+                    {resolving ? 'RES\nOLVE' : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10px' }}>NEXT</span>
-                            <span style={{ fontSize: '10px' }}>STEP ➔</span>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>NEXT</span>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>STEP</span>
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10px' }}>EXPORT</span>
-                            <span style={{ fontSize: '10px' }}>BATCH ⬇</span>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>EXPORT</span>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>BATCH</span>
                         </div>
-                    )) : 'INPUT\nREQ.')}
+                    )) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>INPUT</span>
+                            <span style={{ fontSize: '9px', fontWeight: '700' }}>REQ.</span>
+                        </div>
+                    ))}
                 </button>
             </div>
         </div>

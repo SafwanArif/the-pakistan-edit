@@ -799,6 +799,72 @@
     z-index: var(--z-negative);
   }
 
+  /* 🏛️ 2027 INDUSTRIAL MOBILE REGISTRY */
+  @media (max-width: 768px) {
+    .command-ribbon {
+      padding-inline: 8px;
+      gap: 4px;
+    }
+
+    .command-ribbon > div:nth-child(2) {
+      margin-inline: 4px !important;
+    }
+
+    .tpe-step-number {
+      font-size: 14px !important;
+      inline-size: 20px !important;
+    }
+
+    .tpe-step-label {
+      inline-size: auto !important;
+      gap: 4px !important;
+      font-size: 11px !important;
+    }
+
+    .tpe-step-label span:first-child {
+      display: none; /* Hide 'THE BULLETIN' text on mobile for compaction */
+    }
+
+    .tpe-input-main {
+      font-size: 13px !important;
+      padding-inline: 4px !important;
+    }
+
+    .tpe-input-main[placeholder="CATEGORY"] {
+      inline-size: 85px !important; /* Drastically shrink category to save room for headline */
+    }
+
+    .previews-container {
+      padding-block-end: 280px !important; /* Enhanced clearance for Toolkit + Mobile OS bars */
+      padding-inline: 16px !important;
+      gap: 32px !important;
+    }
+
+    .sandbox-grid {
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .tpe-source-row-wrapper {
+      gap: 4px;
+    }
+
+    .tpe-source-input, .tpe-credit-input {
+      inline-size: 80px;
+    }
+
+    .tpe-btn-gold, .tpe-btn-primary {
+      inline-size: 110px !important;
+      padding-inline: 8px !important;
+      font-size: 9px !important;
+    }
+
+    .tpe-btn-gold[style*="inlineSize: '42px'"] {
+      inline-size: 32px !important;
+      block-size: 32px !important;
+    }
+  }
+
   @media (max-width: 1024px) {
     .dashboard-container {
       block-size: auto;

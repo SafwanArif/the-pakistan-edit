@@ -39,8 +39,8 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
         <div className="tpe-flex-row" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-flex-row" style={{ flex: 1, gap: '16px', minInlineSize: 0 }}>
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '10px' }}>
-                    <span style={{ color: 'oklch(from var(--ui-text) l c h / 0.4)', fontSize: '20px', fontWeight: 300, inlineSize: '32px' }}>{step.toString().padStart(2, '0')}</span>
-                    <div className="tpe-flex-row" style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', inlineSize: '145px', justifyContent: 'space-between' }}>
+                    <span className="tpe-step-number" style={{ color: 'oklch(from var(--ui-text) l c h / 0.4)', fontSize: '20px', fontWeight: 300, inlineSize: '32px' }}>{step.toString().padStart(2, '0')}</span>
+                    <div className="tpe-flex-row tpe-step-label" style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', inlineSize: '145px', justifyContent: 'space-between' }}>
                         <span>{stepLabel}</span><span className="terminal-cursor" style={{ transform: 'translateY(-1.75px)' }}>:</span>
                     </div>
                 </div>

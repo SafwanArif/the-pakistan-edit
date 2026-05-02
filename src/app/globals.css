@@ -880,10 +880,10 @@
     }
 
     .tpe-btn-gold, .tpe-btn-primary {
-      inline-size: 85px !important; /* Hyper-compact */
-      padding-inline: 4px !important;
+      padding-inline: 0 !important;
       font-size: 8px !important;
       margin-inline-start: 4px !important;
+      min-inline-size: 0 !important;
     }
 
     /* Target the button container in DraftForm */

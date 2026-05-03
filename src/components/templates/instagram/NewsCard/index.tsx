@@ -66,12 +66,14 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
             {/* 2027 Scenario A & B: Native Scrim and Image Layers */}
             <div className="tpe-news-bg">{backgroundLayer}</div>
             {/* Native Scrim Layer */}
-            <div style={{ 
-                position: "absolute", inset: 0, 
-                background: `oklch(from black l c h / ${(asset.scrim ?? 0) / 100})`, 
-                zIndex: 10,
-                transition: 'background 0.3s ease'
-            }} />
+            {(asset.scrim > 0) && (
+                <div style={{ 
+                    position: "absolute", inset: 0, 
+                    background: `oklch(from black l c h / ${asset.scrim / 100})`, 
+                    zIndex: 10,
+                    transition: 'background 0.3s ease'
+                }} />
+            )}
             
             <TPEMasthead category={props.category || "ECONOMY"} platform={platform} />
             <div className="tpe-news-source">
@@ -108,7 +110,7 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
                     </>
                 )}
             </div>
-            {slide === 1 && <EditorialScrim />}
+            {/* Pure Image Registry: Removed Editorial Scrim per USER request */}
         </div>
     );
 });

@@ -18,30 +18,31 @@ const FLAG_REGEX = new RegExp(`(${Object.keys(FLAGS).join('|')})`, 'g');
  * Single-pass renderer optimized for high-density editorial content.
  */
 export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ text, color }) => {
-    const parseText = (content: string, parentColor?: string): React.ReactNode[] => {
+    const parseText = (content: string, isNested: boolean = false): React.ReactNode[] => {
         if (!content) return [];
         
-        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|(##.+?##)|(%%.+?%%)|${FLAG_REGEX.source}`, 'g');
+        // Simplified Single-Character Regex Registry (2027 Minimalist Standard)
+        const splitRegex = new RegExp(`(\\*[^\\*]+?\\*)|(_[^_]+?_)|(#[^#]+?#)|(%[^%]+?%)|${FLAG_REGEX.source}`, 'g');
         return content.split(splitRegex).filter(Boolean).map((part, i) => {
             const key = `${part}-${i}`;
             
-            // 1. GOLD TEXT ACCENT
+            // 1. GOLD TEXT ACCENT (*)
             if (part.startsWith("*") && part.endsWith("*")) {
-                const inner = part.replace(/\*/g, '');
-                const hColor = parentColor || TOKENS.colors.crescentGold;
-                return <span key={key} style={{ color: hColor, textShadow: parentColor ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, hColor)}</span>;
+                const inner = part.slice(1, -1);
+                const hColor = TOKENS.colors.crescentGold;
+                return <span key={key} style={{ color: hColor, textShadow: isNested ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, true)}</span>;
             }
             
-            // 2. GREEN TEXT ACCENT
+            // 2. GREEN TEXT ACCENT (_)
             if (part.startsWith("_") && part.endsWith("_")) {
-                const inner = part.replace(/_/g, '');
+                const inner = part.slice(1, -1);
                 const hColor = TOKENS.colors.pakistanGreen;
-                return <span key={key} style={{ color: hColor, textShadow: parentColor ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, hColor)}</span>;
+                return <span key={key} style={{ color: hColor, textShadow: isNested ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, true)}</span>;
             }
             
-            // 3. GREEN BLOCK HIGHLIGHT
-            if (part.startsWith("##") && part.endsWith("##")) {
-                const inner = part.replace(/##/g, '');
+            // 3. GREEN BLOCK HIGHLIGHT (#)
+            if (part.startsWith("#") && part.endsWith("#")) {
+                const inner = part.slice(1, -1);
                 return (
                     <span key={key} style={{ 
                         background: TOKENS.colors.pakistanGreen, 
@@ -50,14 +51,14 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                         display: 'inline-block', marginInline: '2px',
                         boxShadow: `0 4px 15px oklch(from ${TOKENS.colors.pakistanGreen} l c h / 0.4)`
                     }}>
-                        {parseText(inner, TOKENS.colors.paperWhite)}
+                        {parseText(inner, true)}
                     </span>
                 );
             }
 
-            // 4. WHITE BLOCK HIGHLIGHT
-            if (part.startsWith("%%") && part.endsWith("%%")) {
-                const inner = part.replace(/%%/g, '');
+            // 4. WHITE BLOCK HIGHLIGHT (%)
+            if (part.startsWith("%") && part.endsWith("%")) {
+                const inner = part.slice(1, -1);
                 return (
                     <span key={key} style={{ 
                         background: TOKENS.colors.paperWhite, 
@@ -66,7 +67,7 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                         display: 'inline-block', marginInline: '2px',
                         boxShadow: `0 4px 15px oklch(from black l c h / 0.2)`
                     }}>
-                        {parseText(inner, TOKENS.colors.deepPine)}
+                        {parseText(inner, true)}
                     </span>
                 );
             }
@@ -82,7 +83,7 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
 
     return useMemo(() => {
         if (!text) return null;
-        return parseText(text, color);
+        return parseText(text, !!color);
     }, [text, color]);
 });
 

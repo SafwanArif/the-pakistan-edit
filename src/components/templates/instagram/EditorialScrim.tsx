@@ -8,7 +8,10 @@ export const EditorialScrim: React.FC = () => {
             left: 0,
             width: '100%',
             height: '70%',
-            background: 'linear-gradient(to bottom, transparent 0%, rgba(9, 26, 18, 0.2) 50%, rgba(9, 26, 18, 0.5) 85%, rgba(9, 26, 18, 0.7) 100%)',
+            background: 'linear-gradient(to bottom, transparent 0%, oklch(from var(--ui-bg) l c h / 0.1) 60%, oklch(from var(--ui-bg) l c h / 0.3) 100%)',
+            backdropFilter: 'blur(12px)',
+            maskImage: 'linear-gradient(to bottom, transparent 0%, black 80%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 80%)',
             zIndex: 10,
             pointerEvents: 'none'
         }} />

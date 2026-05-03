@@ -959,27 +959,6 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.tpe-focal-grid {
-  display: flex;
-  flex-direction: row;
-  gap: 15px;
-  align-items: center;
-}
-
-@media (max-width: 768px) {
-  .tpe-focal-grid {
-    display: grid !important;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px 10px !important;
-    padding-block: 8px;
-  }
-
-  .tpe-glass-panel:has(.tpe-focal-grid) {
-    border-radius: 20px !important;
-    padding-inline: 15px !important;
-  }
-}
-
 /* 🏛️ 2027 GLOBAL UTILITY REGISTRY (MAX PRIORITY) */
 .tpe-mobile-only {
   display: none !important;

@@ -28,10 +28,5 @@ export const useAssetResolver = (draft: Draft, onChange: (d: Draft) => void) => 
         img.src = proxied;
     }, [draft, onChange]);
 
-    useEffect(() => {
-        resolve(draft.image || "");
-        Object.entries(draft.slideAssets || {}).forEach(([s, a]) => a.image && resolve(a.image, parseInt(s, 10)));
-    }, [draft.image, draft.slideAssets, resolve]);
-
-    return { resolving };
+    return { resolving, resolve };
 };

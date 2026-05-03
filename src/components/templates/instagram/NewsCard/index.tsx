@@ -65,7 +65,7 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
         } as React.CSSProperties}>
             {/* 2027 Scenario A & B: Native Scrim and Image Layers */}
             <div className="tpe-news-bg">{backgroundLayer}</div>
-            {slide === 1 && backgroundLayer}
+            {/* Native Scrim Layer */}
             {slide > 1 && (
                 <div style={{ 
                     position: "absolute", inset: 0, 

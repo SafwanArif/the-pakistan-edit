@@ -30,7 +30,17 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
  * 2027 Institutional Standard: DraftForm
  */
 export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void }> = ({ draft, onChange, onSubmit, step, setStep }) => {
-    const { resolving } = useAssetResolver(draft, onChange);
+    const { resolving, resolve } = useAssetResolver(draft, onChange);
+
+    useEffect(() => {
+        const needsMain = draft.image && !draft.imageWidth;
+        if (needsMain) resolve(draft.image || "");
+        
+        Object.entries(draft.slideAssets || {}).forEach(([s, a]) => {
+            if (a.image && !a.imageWidth) resolve(a.image, parseInt(s, 10));
+        });
+    }, [draft.image, draft.imageWidth, draft.slideAssets, resolve]);
+
     const extraIndex = step - 3;
     const canProceed = step === 1 ? (!!draft.category?.trim() && !!draft.headline?.trim() && !!draft.image) : (step === 2 ? !!draft.summary?.trim() : !!draft.extraSlides?.[0]?.content?.trim());
     const stepLabel = useMemo(() => EDITORIAL_STEPS.find(s => s.step === step)?.label || `Angle ${step - 2}`, [step]);

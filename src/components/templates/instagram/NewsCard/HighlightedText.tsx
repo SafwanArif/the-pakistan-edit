@@ -21,7 +21,7 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
     return useMemo(() => {
         if (!text) return null;
         
-        const splitRegex = new RegExp(`(\\[\\[.+?\\]\\])|(\\*\\*?.+?\\*\\*?)|(_?.+?_)|${FLAG_REGEX.source}`, 'g');
+        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|(##.+?##)|${FLAG_REGEX.source}`, 'g');
         return text.split(splitRegex).filter(Boolean).map((part, i) => {
             if (part.startsWith("*") && part.endsWith("*")) {
                 const inner = part.replace(/\*/g, '');
@@ -33,18 +33,19 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                 const hColor = TOKENS.colors.pakistanGreen;
                 return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
             }
-            if (part.startsWith("[[") && part.endsWith("]]")) {
-                const inner = part.slice(2, -2);
+            if (part.startsWith("##") && part.endsWith("##")) {
+                const inner = part.replace(/##/g, '');
                 return (
                     <span key={i} style={{ 
-                        background: TOKENS.colors.paperWhite, 
-                        color: TOKENS.colors.deepPine, 
-                        paddingInline: '6px',
+                        background: TOKENS.colors.pakistanGreen, 
+                        color: TOKENS.colors.paperWhite,
+                        paddingInline: '8px',
                         paddingBlock: '2px',
+                        borderRadius: '4px',
+                        display: 'inline-block',
                         marginInline: '2px',
-                        boxDecorationBreak: 'clone',
-                        WebkitBoxDecorationBreak: 'clone',
-                        textShadow: 'none'
+                        textShadow: 'none',
+                        boxShadow: `0 4px 15px oklch(from ${TOKENS.colors.pakistanGreen} l c h / 0.4)`
                     }}>
                         {inner}
                     </span>

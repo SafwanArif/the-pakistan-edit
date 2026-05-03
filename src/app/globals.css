@@ -746,8 +746,6 @@
   }
 
   .focal-slider-label {
-    position: absolute;
-    inset-block-start: -11px;
     font-size: 7px;
     font-weight: 900;
     color: var(--ui-primary);
@@ -755,8 +753,6 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     white-space: nowrap;
-    inset-inline-start: 50%;
-    transform: translateX(-50%);
   }
 
   .focal-slider-value {

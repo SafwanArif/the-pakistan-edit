@@ -42,7 +42,7 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
                 transformOrigin: 'var(--pos-x) var(--pos-y)',
                 zIndex: 5,
                 viewTransitionName: 'main-asset', // Enable native morphing
-                transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)'
+                transition: 'none'
             } as any} 
         />
     );

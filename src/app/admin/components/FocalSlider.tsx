@@ -36,9 +36,13 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
             <div style={{ position: 'relative', inlineSize: '100%', blockSize: '18px', display: 'flex', alignItems: 'center' }}>
                 <input 
                     className="focal-slider" type="range" min={min} max={max} value={localValue} 
-                    onChange={(e) => setLocalValue(parseInt(e.target.value, 10))} 
+                    onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setLocalValue(val);
+                        onChange(field, clamp(val, min, max), min, max);
+                    }} 
                     onPointerDown={() => onDrag(id)} 
-                    onPointerUp={commitToGlobal}
+                    onPointerUp={() => onDrag(null)}
                 />
             </div>
             <input 

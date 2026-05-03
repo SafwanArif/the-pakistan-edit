@@ -80,6 +80,7 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
                 <span>{sourceText || photoText}</span>
             </div>
 
+            {slide === 1 && <EditorialScrim />}
             <div className="tpe-news-inner tpe-full-absolute tpe-flex-col">
                 <div className="tpe-flex-row tpe-news-progress">
                     {Array.from({ length: totalSlides }).map((_, i) => {
@@ -109,7 +110,6 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
                     </>
                 )}
             </div>
-            {slide === 1 && <EditorialScrim />}
         </div>
     );
 });

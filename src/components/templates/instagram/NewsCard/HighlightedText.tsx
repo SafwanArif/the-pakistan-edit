@@ -18,44 +18,71 @@ const FLAG_REGEX = new RegExp(`(${Object.keys(FLAGS).join('|')})`, 'g');
  * Single-pass renderer optimized for high-density editorial content.
  */
 export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ text, color }) => {
-    return useMemo(() => {
-        if (!text) return null;
+    const parseText = (content: string, parentColor?: string): React.ReactNode[] => {
+        if (!content) return [];
         
-        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|(##.+?##)|${FLAG_REGEX.source}`, 'g');
-        return text.split(splitRegex).filter(Boolean).map((part, i) => {
+        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|(##.+?##)|(%%.+?%%)|${FLAG_REGEX.source}`, 'g');
+        return content.split(splitRegex).filter(Boolean).map((part, i) => {
+            const key = `${part}-${i}`;
+            
+            // 1. GOLD TEXT ACCENT
             if (part.startsWith("*") && part.endsWith("*")) {
                 const inner = part.replace(/\*/g, '');
-                const hColor = color || TOKENS.colors.crescentGold;
-                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+                const hColor = parentColor || TOKENS.colors.crescentGold;
+                return <span key={key} style={{ color: hColor, textShadow: parentColor ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, hColor)}</span>;
             }
+            
+            // 2. GREEN TEXT ACCENT
             if (part.startsWith("_") && part.endsWith("_")) {
                 const inner = part.replace(/_/g, '');
                 const hColor = TOKENS.colors.pakistanGreen;
-                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+                return <span key={key} style={{ color: hColor, textShadow: parentColor ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, hColor)}</span>;
             }
+            
+            // 3. GREEN BLOCK HIGHLIGHT
             if (part.startsWith("##") && part.endsWith("##")) {
                 const inner = part.replace(/##/g, '');
                 return (
-                    <span key={i} style={{ 
+                    <span key={key} style={{ 
                         background: TOKENS.colors.pakistanGreen, 
                         color: TOKENS.colors.paperWhite,
-                        paddingInline: '8px',
-                        paddingBlock: '2px',
-                        borderRadius: '4px',
-                        display: 'inline-block',
-                        marginInline: '2px',
-                        textShadow: 'none',
+                        paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
+                        display: 'inline-block', marginInline: '2px',
                         boxShadow: `0 4px 15px oklch(from ${TOKENS.colors.pakistanGreen} l c h / 0.4)`
                     }}>
-                        {inner}
+                        {parseText(inner, TOKENS.colors.paperWhite)}
                     </span>
                 );
             }
-            if (FLAGS[part]) {
-                return <img key={i} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;
+
+            // 4. WHITE BLOCK HIGHLIGHT
+            if (part.startsWith("%%") && part.endsWith("%%")) {
+                const inner = part.replace(/%%/g, '');
+                return (
+                    <span key={key} style={{ 
+                        background: TOKENS.colors.paperWhite, 
+                        color: TOKENS.colors.deepPine,
+                        paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
+                        display: 'inline-block', marginInline: '2px',
+                        boxShadow: `0 4px 15px oklch(from black l c h / 0.2)`
+                    }}>
+                        {parseText(inner, TOKENS.colors.deepPine)}
+                    </span>
+                );
             }
+
+            // 5. FLAG ICON REGISTRY
+            if (FLAGS[part]) {
+                return <img key={key} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;
+            }
+            
             return part;
         });
+    };
+
+    return useMemo(() => {
+        if (!text) return null;
+        return parseText(text, color);
     }, [text, color]);
 });
 

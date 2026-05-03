@@ -476,7 +476,9 @@
     inset: 0;
   }
 
-  /* 2027 Pure Image Registry: Filters removed per USER request */
+  .tpe-news-card[data-slide-type="bulletin"] .tpe-news-bg {
+    filter: brightness(0.3) saturate(1.2);
+  }
 
   .tpe-news-source {
     position: absolute;

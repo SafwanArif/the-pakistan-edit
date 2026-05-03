@@ -27,10 +27,11 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [showCreditMenu, setShowCreditMenu] = useState(false);
     const [url, setUrl] = useState(currentUrl || "");
-    const inputRef = useRef<HTMLInputElement>(null);
+    const linkInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (showLinkInput) inputRef.current?.focus();
+        if (showLinkInput) linkInputRef.current?.focus();
     }, [showLinkInput]);
 
     useEffect(() => {
@@ -67,7 +68,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
             {showLinkInput ? (
                 <div className="tpe-asset-input-wrapper">
                     <input 
-                        ref={inputRef}
+                        ref={linkInputRef}
                         className="tpe-input-minimal" 
                         placeholder="Paste Image URL..." 
                         value={url}
@@ -99,9 +100,12 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
 
                     {/* UNIVERSAL ASSET TRAY */}
                     <div className={`tpe-flex-row ${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'}`} style={{ gap: '6px' }}>
-                        <label className="tpe-asset-btn" data-active={hasOverride}>
-                            <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
-                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                        <input 
+                            type="file" 
+                            ref={fileInputRef}
+                            accept="image/*" 
+                            style={{ display: 'none' }} 
+                            onChange={(e) => {
                                 if (e.target.files?.[0]) {
                                     const reader = new FileReader();
                                     reader.onloadend = () => {
@@ -115,8 +119,15 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                                     };
                                     reader.readAsDataURL(e.target.files[0]);
                                 }
-                            }} />
-                        </label>
+                            }} 
+                        />
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                            className="tpe-asset-btn" 
+                            data-active={hasOverride}
+                        >
+                            <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
+                        </button>
                         <button 
                             onClick={() => { setShowLinkInput(true); setIsExpanded(false); }}
                             className="tpe-asset-btn"

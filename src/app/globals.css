@@ -882,15 +882,52 @@
       min-inline-size: 0 !important;
     }
 
-    /* Target the button container in DraftForm */
-    .command-ribbon > div:first-child > div:nth-child(2) {
-      margin-inline-start: 4px !important;
-      gap: 4px !important;
+    /* 🏛️ 2027 RESPONSIVE NAVIGATION REGISTRY */
+    .tpe-nav-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding-inline: 16px;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+      transition: var(--transition-fast);
+      block-size: 42px;
+      border-radius: var(--radius-md);
     }
 
-    .tpe-btn-gold[style*="inlineSize: '42px'"] {
-      inline-size: 32px !important;
-      block-size: 32px !important;
+    .tpe-nav-btn-icon {
+      display: inline-flex;
+    }
+
+    @media (max-width: 768px) {
+      .tpe-nav-btn {
+        inline-size: 35px !important;
+        padding: 0 !important;
+        flex-direction: column;
+        gap: 0;
+        line-height: 1.1;
+        font-size: 8px !important;
+      }
+
+      .tpe-nav-btn-text {
+        display: block;
+        max-inline-size: 30px;
+        text-align: center;
+        /* Trigger word-wrap for multi-word strings like 'NEXT STEP' */
+        word-spacing: 100vw; 
+      }
+
+      .tpe-nav-btn-icon {
+        display: none !important;
+      }
+
+      /* Tighten gap between Asset Hub and Nav Buttons */
+      .command-ribbon > div:first-child > div:nth-child(2) {
+        margin-inline-start: 4px !important;
+        gap: 4px !important;
+      }
     }
   }
 

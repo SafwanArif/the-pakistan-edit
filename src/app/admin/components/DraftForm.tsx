@@ -110,58 +110,21 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 
-                        className="tpe-btn-gold" 
-                        style={{ 
-                            inlineSize: '35px', 
-                            blockSize: '42px', 
-                            padding: '0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: '600'
-                        }}
+                        className="tpe-nav-btn tpe-btn-gold" 
                     >
-                        BACK
+                        <span className="tpe-nav-btn-text">BACK</span>
                     </button>
                 )}
                 <button 
                     onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
                     disabled={!canProceed || resolving} 
-                    className={step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} 
-                    style={{ 
-                        inlineSize: '35px', 
-                        blockSize: '42px', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        gap: '0', 
-                        lineHeight: '1.1',
-                        padding: '0'
-                    }}
+                    className={`tpe-nav-btn ${step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"}`} 
                 >
-                    {resolving ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '8px' }}>RES-</span>
-                            <span style={{ fontSize: '8px' }}>OLVE</span>
-                        </div>
-                    ) : (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '9px' }}>NEXT</span>
-                            <span style={{ fontSize: '9px' }}>STEP</span>
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '8px' }}>EXP.</span>
-                            <span style={{ fontSize: '8px' }}>BATCH</span>
-                        </div>
-                    )) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <span style={{ fontSize: '8px' }}>INPUT</span>
-                            <span style={{ fontSize: '8px' }}>REQ.</span>
-                        </div>
-                    ))}
+                    <span className="tpe-nav-btn-text">
+                        {resolving ? "RESOLVE" : 
+                         (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? "NEXT STEP" : "EXPORT BATCH") : "INPUT REQ.")}
+                    </span>
+                    <span className="tpe-nav-btn-icon">→</span>
                 </button>
             </div>
         </div>

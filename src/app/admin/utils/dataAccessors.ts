@@ -90,8 +90,8 @@ export const getEffectiveSlideAsset = (slide: number, draft: Draft): any => {
         
         let defaultScrim = result.scrim;
         if (!specific || specific.scrim === undefined) {
-            if (i === 2) defaultScrim = 72; 
-            else if (i >= 3) defaultScrim = 82; 
+            if (i === 2) defaultScrim = 35; 
+            else if (i >= 3) defaultScrim = 45; 
         }
 
         result = {

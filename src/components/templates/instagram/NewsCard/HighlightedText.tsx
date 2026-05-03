@@ -26,12 +26,40 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
             if (part.startsWith("*") && part.endsWith("*")) {
                 const inner = part.replace(/\*/g, '');
                 const hColor = color || TOKENS.colors.crescentGold;
-                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+                return (
+                    <span key={i} style={{ 
+                        backgroundColor: hColor, 
+                        color: 'white',
+                        padding: '0 0.25em',
+                        marginInline: '0.05em',
+                        borderRadius: '2px',
+                        boxDecorationBreak: 'clone',
+                        WebkitBoxDecorationBreak: 'clone',
+                        textShadow: 'none',
+                        display: 'inline'
+                    }}>
+                        {inner}
+                    </span>
+                );
             }
             if (part.startsWith("_") && part.endsWith("_")) {
                 const inner = part.replace(/_/g, '');
                 const hColor = TOKENS.colors.pakistanGreen;
-                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+                return (
+                    <span key={i} style={{ 
+                        backgroundColor: hColor, 
+                        color: 'white',
+                        padding: '0 0.25em',
+                        marginInline: '0.05em',
+                        borderRadius: '2px',
+                        boxDecorationBreak: 'clone',
+                        WebkitBoxDecorationBreak: 'clone',
+                        textShadow: 'none',
+                        display: 'inline'
+                    }}>
+                        {inner}
+                    </span>
+                );
             }
             if (FLAGS[part]) {
                 return <img key={i} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;

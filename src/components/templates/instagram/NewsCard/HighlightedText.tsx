@@ -21,10 +21,17 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
     return useMemo(() => {
         if (!text) return null;
         
-        const splitRegex = new RegExp(`(\\*.+?\\*)|${FLAG_REGEX.source}`, 'g');
+        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|${FLAG_REGEX.source}`, 'g');
         return text.split(splitRegex).filter(Boolean).map((part, i) => {
             if (part.startsWith("*") && part.endsWith("*")) {
-                return <span key={i} style={{ color: color || TOKENS.colors.crescentGold }}>{part.slice(1, -1)}</span>;
+                const inner = part.replace(/\*/g, '');
+                const hColor = color || TOKENS.colors.crescentGold;
+                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+            }
+            if (part.startsWith("_") && part.endsWith("_")) {
+                const inner = part.replace(/_/g, '');
+                const hColor = TOKENS.colors.pakistanGreen;
+                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
             }
             if (FLAGS[part]) {
                 return <img key={i} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;

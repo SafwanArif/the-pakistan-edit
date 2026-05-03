@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
 import { Draft } from "../../../types/news";
 import { EmojiToolbar, SourcePrefixToolbar, ImageCreditToolbar } from "./EditorialTools";
 import { getDraftValue, updateDraftValue, updateDraftPrefix, updateSlideAsset } from "../utils/dataAccessors";

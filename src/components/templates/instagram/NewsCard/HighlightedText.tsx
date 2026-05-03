@@ -21,41 +21,30 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
     return useMemo(() => {
         if (!text) return null;
         
-        const splitRegex = new RegExp(`(\\*\\*?.+?\\*\\*?)|(_?.+?_)|${FLAG_REGEX.source}`, 'g');
+        const splitRegex = new RegExp(`(\\[\\[.+?\\]\\])|(\\*\\*?.+?\\*\\*?)|(_?.+?_)|${FLAG_REGEX.source}`, 'g');
         return text.split(splitRegex).filter(Boolean).map((part, i) => {
             if (part.startsWith("*") && part.endsWith("*")) {
                 const inner = part.replace(/\*/g, '');
                 const hColor = color || TOKENS.colors.crescentGold;
-                return (
-                    <span key={i} style={{ 
-                        backgroundColor: hColor, 
-                        color: 'white',
-                        padding: '0 0.25em',
-                        marginInline: '0.05em',
-                        borderRadius: '2px',
-                        boxDecorationBreak: 'clone',
-                        WebkitBoxDecorationBreak: 'clone',
-                        textShadow: 'none',
-                        display: 'inline'
-                    }}>
-                        {inner}
-                    </span>
-                );
+                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
             }
             if (part.startsWith("_") && part.endsWith("_")) {
                 const inner = part.replace(/_/g, '');
                 const hColor = TOKENS.colors.pakistanGreen;
+                return <span key={i} style={{ color: hColor, textShadow: `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{inner}</span>;
+            }
+            if (part.startsWith("[[") && part.endsWith("]]")) {
+                const inner = part.slice(2, -2);
                 return (
                     <span key={i} style={{ 
-                        backgroundColor: hColor, 
-                        color: 'white',
-                        padding: '0 0.25em',
-                        marginInline: '0.05em',
-                        borderRadius: '2px',
+                        background: TOKENS.colors.paperWhite, 
+                        color: TOKENS.colors.deepPine, 
+                        paddingInline: '6px',
+                        paddingBlock: '2px',
+                        marginInline: '2px',
                         boxDecorationBreak: 'clone',
                         WebkitBoxDecorationBreak: 'clone',
-                        textShadow: 'none',
-                        display: 'inline'
+                        textShadow: 'none'
                     }}>
                         {inner}
                     </span>

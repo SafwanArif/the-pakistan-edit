@@ -31,8 +31,8 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', inlineSize: '90px', alignItems: 'center', position: 'relative' }}>
-            <span className="focal-slider-label">{label}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', inlineSize: '100%', alignItems: 'center', gap: '4px' }}>
+            <span className="focal-slider-label" style={{ fontSize: '7px', fontWeight: 800, opacity: 0.5, letterSpacing: '0.05em' }}>{label}</span>
             <div style={{ position: 'relative', inlineSize: '100%', blockSize: '18px', display: 'flex', alignItems: 'center' }}>
                 <input 
                     className="focal-slider" type="range" min={min} max={max} value={localValue} 
@@ -41,21 +41,20 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                     onPointerUp={commitToGlobal}
                 />
             </div>
-            <div style={{ position: 'absolute', insetBlockEnd: '-12px', inlineSize: '100%', display: 'flex', justifyContent: 'center' }}>
-                <input 
-                    className="focal-slider-value"
-                    type="text"
-                    value={localValue.toString() + (id === 'zoom' || id === 'scrim' ? '%' : '')}
-                    onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9]/g, '');
-                        if (val === '') { setLocalValue(0); return; }
-                        const parsed = parseInt(val, 10);
-                        if (!isNaN(parsed)) setLocalValue(parsed);
-                    }}
-                    onBlur={commitToGlobal}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { commitToGlobal(); e.currentTarget.blur(); } }}
-                />
-            </div>
+            <input 
+                className="focal-slider-value"
+                type="text"
+                value={localValue.toString() + (id === 'zoom' || id === 'scrim' ? '%' : '')}
+                style={{ background: 'transparent', border: 'none', color: 'var(--ui-accent)', fontSize: '10px', fontWeight: 700, textAlign: 'center', inlineSize: '100%', padding: '0', margin: '0' }}
+                onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    if (val === '') { setLocalValue(0); return; }
+                    const parsed = parseInt(val, 10);
+                    if (!isNaN(parsed)) setLocalValue(parsed);
+                }}
+                onBlur={commitToGlobal}
+                onKeyDown={(e) => { if (e.key === 'Enter') { commitToGlobal(); e.currentTarget.blur(); } }}
+            />
         </div>
     );
 });

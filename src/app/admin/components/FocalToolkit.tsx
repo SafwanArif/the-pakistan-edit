@@ -49,12 +49,14 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
     return (
         <div className="tpe-flex-col" style={{ position: 'absolute', insetBlockEnd: '0', insetInlineStart: 0, insetInlineEnd: 0, pointerEvents: 'none', zIndex: 'var(--z-toolbar)', paddingBlockEnd: '15px', gap: '12px', alignItems: 'center' }}>
             
-            <div className="tpe-flex-col tpe-glass-panel" style={{ gap: '15px', padding: '15px 22px', borderRadius: '24px', pointerEvents: 'auto', inlineSize: 'auto', minInlineSize: '320px' }}>
-                {/* 2x3 GRID SYSTEM */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', inlineSize: '100%' }}>
+            <div className="tpe-flex-col tpe-glass-panel" style={{ gap: '15px', padding: '15px 22px', borderRadius: '24px', pointerEvents: 'auto', inlineSize: 'auto', minInlineSize: '240px' }}>
+                {/* 2x3 GRID SYSTEM (VERTICAL) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px 30px', inlineSize: '100%' }}>
                     <FocalSlider id="zoom" label="ZOOM" min={10} max={800} value={asset.imageZoom} field="imageZoom" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'zoom'} />
                     <FocalSlider id="posX" label="PAN X" min={0} max={100} value={asset.imagePosX} field="imagePosX" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posX'} />
+                    
                     <FocalSlider id="posY" label="PAN Y" min={0} max={100} value={asset.imagePosY} field="imagePosY" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY'} />
+                    <FocalSlider id="posY_sq" label="PAN Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY} field="imagePosY_Square" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY_sq'} />
                     
                     <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
                         <button
@@ -79,7 +81,6 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                         <span style={{ fontSize: '7px', fontWeight: 800, opacity: 0.5 }}>SNAP</span>
                     </div>
 
-                    <FocalSlider id="posY_sq" label="PAN Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY} field="imagePosY_Square" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY_sq'} />
                     <FocalSlider id="scrim" label="OPACITY" min={0} max={100} value={asset.scrim ?? 0} field="scrim" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'scrim'} />
                 </div>
             </div>

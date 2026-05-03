@@ -521,12 +521,18 @@
   .tpe-news-h1 {
     font-family: var(--tpe-font-playfair);
     font-size: var(--font-h1);
-    line-height: 1.05;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    text-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     text-transform: uppercase;
     white-space: pre-line;
+    /* 2027 Industrial Contrast Stack: Outline + Deep Depth */
+    -webkit-text-stroke: 0.5px oklch(from var(--ui-bg) l c h / 0.3);
+    text-shadow: 
+      0 1px 2px oklch(from black l c h / 0.8),
+      0 4px 12px oklch(from black l c h / 0.4),
+      0 12px 32px oklch(from black l c h / 0.3);
+    paint-order: stroke fill;
   }
 
   .tpe-news-h3-container {

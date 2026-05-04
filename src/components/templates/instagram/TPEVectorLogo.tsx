@@ -46,6 +46,7 @@ export const TPEVectorLogo: React.FC<{
                             fontSize: '8px',
                             fontWeight: 800,
                             letterSpacing: '0.35em',
+                            paddingInlineStart: '0.35em',
                             color: colors.paperWhite,
                             marginTop: '2px',
                             textTransform: 'uppercase'

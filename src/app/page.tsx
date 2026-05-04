@@ -28,16 +28,17 @@ export default function Home() {
         alignItems: 'center',
         gap: 'var(--space-lg)',
         textAlign: 'center',
-        maxWidth: '600px'
+        width: '100%',
+        maxWidth: '400px', // More compact for mobile-first institutional look
+        margin: '0 auto',
+        boxSizing: 'border-box'
       }}>
         <div style={{ 
           transform: 'scale(1.5)', 
           marginBottom: 'var(--space-md)', 
           display: 'flex', 
           justifyContent: 'center', 
-          width: '100%',
-          position: 'relative',
-          left: '-5px' // Tiny optical shift to account for logo's asymmetrical 'P' stem
+          width: '100%'
         }}>
           <TPEVectorLogo scale={1.2} />
         </div>
@@ -50,7 +51,8 @@ export default function Home() {
             color: 'var(--ui-primary)', 
             textTransform: 'uppercase',
             margin: 0,
-            marginInlineEnd: '-0.4em' // Optical correction for trailing letter-spacing
+            width: '100%',
+            textAlign: 'center'
           }}>
             Institutional<br />Content Engine
           </h1>
@@ -59,7 +61,9 @@ export default function Home() {
             opacity: 0.5, 
             fontWeight: 400,
             letterSpacing: '0.02em',
-            lineHeight: '1.4'
+            lineHeight: '1.4',
+            width: '100%',
+            textAlign: 'center'
           }}>
             The Pakistan Edit<br />Internal Dashboard v2027.4
           </p>
@@ -103,10 +107,14 @@ export default function Home() {
       <footer style={{ 
         position: 'fixed', 
         bottom: 'var(--space-md)', 
+        left: 0,
+        right: 0,
+        textAlign: 'center',
         fontSize: '9px', 
         opacity: 0.2, 
         letterSpacing: '0.2em', 
-        textTransform: 'uppercase' 
+        textTransform: 'uppercase',
+        pointerEvents: 'none'
       }}>
         Authorized Access Only
       </footer>

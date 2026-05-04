@@ -20,7 +20,7 @@ export const TPEVectorLogo: React.FC<{
 
     // Unified SVG Dimensions
     const width = 120;
-    const height = showWordmark ? 75 : 48; // Tightened from 85 to 75
+    const height = showWordmark ? 85 : 48;
     const centerX = 60;
 
     return (
@@ -36,8 +36,8 @@ export const TPEVectorLogo: React.FC<{
                 overflow: 'visible'
             }}
         >
-            {/* Monogram Group - Centered on Stem */}
-            <g transform={`translate(${centerX - 24}, 0)`}>
+            {/* Monogram Group - Optically shifted left to align stem with 'I' */}
+            <g transform={`translate(${centerX - 24 - 4}, 0)`}>
                 {/* Rect (White Dash) */}
                 <rect x="9" y="22" width="12" height="6" fill={colors.paperWhite} />
                 {/* Green P Path - Stem is at x=21-27 (Center 24) */}
@@ -46,9 +46,9 @@ export const TPEVectorLogo: React.FC<{
                 <circle cx="35" cy="39" r="3" fill={colors.crescentGold} />
             </g>
 
-            {/* Wordmark Group - Tightened vertically */}
+            {/* Wordmark Group - Vertically Tightened */}
             {showWordmark && (
-                <g transform={`translate(${centerX}, 50)`}> {/* Lifted from 55 to 50 for tightness */}
+                <g transform={`translate(${centerX}, 50)`}>
                     <text
                         x="0"
                         y="0"
@@ -66,7 +66,7 @@ export const TPEVectorLogo: React.FC<{
                     </text>
                     <text
                         x="0"
-                        y="10" 
+                        y="14"
                         textAnchor="middle"
                         fill={colors.paperWhite}
                         style={{

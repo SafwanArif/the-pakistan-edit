@@ -40,7 +40,7 @@ export const TPEVectorLogo: React.FC<{
                 {/* Green P Path - Stem is at x=18-24 (Center 21) */}
                 <path fillRule="evenodd" clipRule="evenodd" d="M 18 6 H 24 A 11 11 0 0 1 24 28 V 42 H 18 V 6 Z M 24 12 V 22 A 5 5 0 0 0 24 12 Z" fill="var(--ui-indicator)" />
                 {/* Gold Circle */}
-                <circle cx="21" cy="24" r="2.5" fill="var(--ui-accent)" />
+                <circle cx="32" cy="39" r="3" fill="var(--ui-accent)" />
             </g>
 
             {/* Wordmark Group */}

@@ -36,8 +36,8 @@ export const TPEVectorLogo: React.FC<{
                 overflow: 'visible'
             }}
         >
-            {/* Monogram Group - Optically shifted left to align stem with 'I' */}
-            <g transform={`translate(${centerX - 24 - 4}, 0)`}>
+            {/* Monogram Group - Optically aligned with 'I' in PAKISTAN */}
+            <g transform={`translate(${centerX - 27}, 0)`}>
                 {/* Rect (White Dash) */}
                 <rect x="9" y="22" width="12" height="6" fill={colors.paperWhite} />
                 {/* Green P Path - Stem is at x=21-27 (Center 24) */}
@@ -46,9 +46,9 @@ export const TPEVectorLogo: React.FC<{
                 <circle cx="35" cy="39" r="3" fill={colors.crescentGold} />
             </g>
 
-            {/* Wordmark Group - Vertically Tightened */}
+            {/* Wordmark Group */}
             {showWordmark && (
-                <g transform={`translate(${centerX}, 50)`}>
+                <g transform={`translate(${centerX}, 55)`}>
                     <text
                         x="0"
                         y="0"
@@ -66,7 +66,7 @@ export const TPEVectorLogo: React.FC<{
                     </text>
                     <text
                         x="0"
-                        y="14"
+                        y="10"
                         textAnchor="middle"
                         fill={colors.paperWhite}
                         style={{

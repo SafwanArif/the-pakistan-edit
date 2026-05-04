@@ -18,10 +18,10 @@ export const TPEVectorLogo: React.FC<{
         crescentGold: "var(--ui-accent)",
     };
 
-    // Unified SVG Dimensions
-    const width = 120;
+    // Unified SVG Dimensions - Tightly bounded to prevent layout shifts
+    const width = showWordmark ? 80 : 48;
     const height = showWordmark ? 85 : 48;
-    const centerX = 60;
+    const centerX = width / 2;
 
     return (
         <svg 

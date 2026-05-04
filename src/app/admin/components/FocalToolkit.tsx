@@ -59,31 +59,33 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             alignItems: 'center' 
         }}>
             {/* HUD TOGGLE PILL */}
-            <button 
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="tpe-glass-panel"
-                style={{ 
-                    pointerEvents: 'auto', 
-                    padding: '6px 16px', 
-                    borderRadius: '20px', 
-                    fontSize: '9px', 
-                    fontWeight: 900, 
-                    color: isExpanded ? 'var(--ui-accent)' : 'var(--ui-text-dim)', 
-                    border: isExpanded ? '1px solid var(--ui-accent)' : '1px solid oklch(from var(--ui-text) l c h / 0.1)',
-                    letterSpacing: '0.1em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: isExpanded ? '0 0 20px oklch(from var(--ui-accent) l c h / 0.2)' : 'none'
-                }}
-            >
-                <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
-                FOCAL TOOLS
-                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
-                    <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-            </button>
+            {asset.image && (
+                <button 
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="tpe-glass-panel"
+                    style={{ 
+                        pointerEvents: 'auto', 
+                        padding: '6px 16px', 
+                        borderRadius: '20px', 
+                        fontSize: '9px', 
+                        fontWeight: 900, 
+                        color: isExpanded ? 'var(--ui-accent)' : 'var(--ui-text-dim)', 
+                        border: isExpanded ? '1px solid var(--ui-accent)' : '1px solid oklch(from var(--ui-text) l c h / 0.1)',
+                        letterSpacing: '0.1em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        boxShadow: isExpanded ? '0 0 20px oklch(from var(--ui-accent) l c h / 0.2)' : 'none'
+                    }}
+                >
+                    <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
+                    FOCAL TOOLS
+                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
+                        <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                </button>
+            )}
 
             {isExpanded && (
                 <div className="tpe-flex-col tpe-glass-panel" style={{ 

@@ -655,7 +655,8 @@
     border-block-end: 1px solid var(--ui-border);
     background: oklch(from var(--ui-bg) l c h / 0.8);
     backdrop-filter: blur(var(--blur-md));
-    z-index: var(--z-toolbar);
+    z-index: var(--z-system);
+    position: relative;
     container-type: size;
   }
 

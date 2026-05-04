@@ -29,12 +29,11 @@ export default function Home() {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 'var(--space-lg)',
+        gap: 'var(--space-md)',
         textAlign: 'center',
         maxWidth: '600px'
       }}>
         <div style={{ 
-          marginBottom: 'var(--space-md)', 
           display: 'flex', 
           justifyContent: 'center', 
           inlineSize: '100%',

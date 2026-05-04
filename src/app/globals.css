@@ -849,7 +849,7 @@
     }
 
     .previews-container {
-      padding-block-start: 100px !important; /* Move down so FOCAL TOOLS doesn't overlap */
+      padding-block-start: 50px !important; /* Tightened gap - halved from 100px */
       padding-block-end: 40px !important; /* Removed big gap at bottom */
       padding-inline: 16px !important;
       gap: 32px !important;

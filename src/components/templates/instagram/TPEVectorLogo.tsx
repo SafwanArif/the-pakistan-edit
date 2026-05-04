@@ -19,13 +19,13 @@ export const TPEVectorLogo: React.FC<{
     };
 
     return (
-        <div style={{ transform: `scale(${scale})`, transformOrigin: 'left top', display: 'inline-flex' }}>
+        <div style={{ transform: `scale(${scale})`, transformOrigin: 'center', display: 'inline-flex' }}>
             <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'center' }}>
-                {/* Authentic Institutional Monogram */}
+                {/* Authentic Institutional Monogram - Center aligned in 48px box */}
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="6" y="22" width="12" height="6" fill={colors.paperWhite} />
-                    <path fillRule="evenodd" clipRule="evenodd" d="M 18 6 H 24 A 11 11 0 0 1 24 28 V 42 H 18 V 6 Z M 24 12 V 22 A 5 5 0 0 0 24 12 Z" fill={colors.pakistanGreen} />
-                    <circle cx="32" cy="39" r="3" fill={colors.crescentGold} />
+                    <rect x="9.5" y="22" width="12" height="6" fill={colors.paperWhite} />
+                    <path fillRule="evenodd" clipRule="evenodd" d="M 21.5 6 H 27.5 A 11 11 0 0 1 27.5 28 V 42 H 21.5 V 6 Z M 27.5 12 V 22 A 5 5 0 0 0 27.5 12 Z" fill={colors.pakistanGreen} />
+                    <circle cx="35.5" cy="39" r="3" fill={colors.crescentGold} />
                 </svg>
 
                 {/* Premium Stacked Logotype */}
@@ -48,7 +48,6 @@ export const TPEVectorLogo: React.FC<{
                             letterSpacing: '0.35em',
                             color: colors.paperWhite,
                             marginTop: '2px',
-                            marginLeft: '3px',
                             textTransform: 'uppercase'
                         }}>
                             EDIT

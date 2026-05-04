@@ -820,6 +820,7 @@
 
     .terminal-cursor {
       margin-inline-end: 0.5px !important; /* Hyper-compressed 0.5px gap */
+      transform: translate(-4px, -1.75px) !important;
     }
 
     .tpe-step-label {

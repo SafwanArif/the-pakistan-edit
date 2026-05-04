@@ -62,7 +62,6 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                 return (
                     <span key={key} style={{ 
                         background: TOKENS.colors.paperWhite, 
-                        color: TOKENS.colors.deepPine,
                         paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
                         display: 'inline-block', marginInline: '2px',
                         boxShadow: `0 4px 15px oklch(from black l c h / 0.2)`

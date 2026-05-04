@@ -65,120 +65,126 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
 
     return (
         <div className="tpe-flex-row" style={{ gap: '8px', position: 'relative' }} ref={containerRef}>
-            {showLinkInput ? (
-                <div className="tpe-asset-input-wrapper">
+            {/* UNIVERSAL ASSET TRIGGER */}
+            <button 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="tpe-asset-btn"
+                data-active={hasOverride}
+                style={{ border: hasOverride ? '1px solid var(--ui-accent)' : '1px solid var(--ui-border)' }}
+            >
+                {hasOverride ? <UploadIcon fill="var(--ui-accent)" /> : <UploadIcon />}
+            </button>
+
+            {/* UNIVERSAL ASSET TRAY */}
+            <div className={`${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>
+                <div className="tpe-flex-row" style={{ gap: '6px' }}>
                     <input 
-                        ref={linkInputRef}
-                        className="tpe-input-minimal" 
-                        placeholder="Paste Image URL..." 
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        onKeyDown={(e) => { 
-                            if (e.key === 'Enter') handleUpdate(url); 
-                            if (e.key === 'Escape') setShowLinkInput(false); 
-                        }}
+                        type="file" 
+                        ref={fileInputRef}
+                        accept="image/*" 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        const base = { image: reader.result as string, imageWidth: img.width, imageHeight: img.height, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
+                                        onUpload(base);
+                                        setIsExpanded(false);
+                                    };
+                                    img.src = reader.result as string;
+                                };
+                                reader.readAsDataURL(e.target.files[0]);
+                            }
+                        }} 
                     />
                     <button 
-                        onClick={() => setShowLinkInput(false)} 
-                        className="tpe-flex-center"
-                        style={{ color: 'oklch(from var(--ui-text) l c h / 0.3)', fontSize: '10px', padding: '4px' }}
-                    >
-                        ✖
-                    </button>
-                </div>
-            ) : (
-                <>
-                    {/* UNIVERSAL ASSET TRIGGER */}
-                    <button 
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="tpe-asset-btn"
+                        onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                        className="tpe-asset-btn" 
                         data-active={hasOverride}
-                        style={{ border: hasOverride ? '1px solid var(--ui-accent)' : '1px solid var(--ui-border)' }}
                     >
-                        {hasOverride ? <UploadIcon fill="var(--ui-accent)" /> : <UploadIcon />}
+                        <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
                     </button>
+                    <button 
+                        onClick={() => setShowLinkInput(!showLinkInput)}
+                        className="tpe-asset-btn"
+                        data-active={showLinkInput}
+                    >
+                        <LinkIcon />
+                    </button>
+                    {hasOverride && (
+                        <button 
+                            onClick={() => { clear(); setIsExpanded(false); }}
+                            className="tpe-asset-btn tpe-asset-btn-danger"
+                        >
+                            <CloseIcon />
+                        </button>
+                    )}
+                </div>
 
-                    {/* UNIVERSAL ASSET TRAY */}
-                    <div className={`tpe-flex-row ${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'}`} style={{ gap: '6px' }}>
+                {showLinkInput && (
+                    <div className="tpe-asset-input-wrapper" style={{ inlineSize: '100%', margin: 0 }}>
                         <input 
-                            type="file" 
-                            ref={fileInputRef}
-                            accept="image/*" 
-                            style={{ display: 'none' }} 
-                            onChange={(e) => {
-                                if (e.target.files?.[0]) {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => {
-                                        const img = new Image();
-                                        img.onload = () => {
-                                            const base = { image: reader.result as string, imageWidth: img.width, imageHeight: img.height, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-                                            onUpload(base);
-                                            setIsExpanded(false);
-                                        };
-                                        img.src = reader.result as string;
-                                    };
-                                    reader.readAsDataURL(e.target.files[0]);
-                                }
-                            }} 
+                            ref={linkInputRef}
+                            className="tpe-input-minimal" 
+                            style={{ fontSize: '11px', flex: 1 }}
+                            placeholder="PASTE IMAGE URL..." 
+                            value={url}
+                            onChange={(e) => setUrl(e.target.value)}
+                            onKeyDown={(e) => { 
+                                if (e.key === 'Enter') handleUpdate(url); 
+                                if (e.key === 'Escape') setShowLinkInput(false); 
+                            }}
                         />
                         <button 
-                            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                            className="tpe-asset-btn" 
-                            data-active={hasOverride}
+                            onClick={() => setShowLinkInput(false)} 
+                            className="tpe-flex-center"
+                            style={{ color: 'oklch(from var(--ui-text) l c h / 0.3)', fontSize: '10px', padding: '4px' }}
                         >
-                            <UploadIcon fill="none" stroke={hasOverride ? "white" : "currentColor"} />
+                            ✖
                         </button>
-                        <button 
-                            onClick={() => { setShowLinkInput(true); setIsExpanded(false); }}
-                            className="tpe-asset-btn"
-                        >
-                            <LinkIcon />
-                        </button>
-                        {hasOverride && (
+                    </div>
+                )}
+
+                {/* 2027 ASSET METADATA ROW */}
+                {hasOverride && onCreditUpdate && (
+                    <div className="tpe-asset-tray-metadata" style={{ margin: 0, paddingBlockStart: '10px' }}>
+                        <div className="tpe-flex-row" style={{ gap: '8px' }}>
                             <button 
-                                onClick={() => { clear(); setIsExpanded(false); }}
-                                className="tpe-asset-btn tpe-asset-btn-danger"
+                                className="tpe-prefix-toggle" 
+                                style={{ fontSize: '9px', blockSize: 'border-box' }}
+                                onClick={(e) => { e.stopPropagation(); setShowCreditMenu(!showCreditMenu); }}
                             >
-                                <CloseIcon />
+                                {creditPrefix || "PHOTO:"}
                             </button>
-                        )}
-                        {/* 2027 ASSET METADATA ROW */}
-                        {hasOverride && onCreditUpdate && (
-                            <div className="tpe-asset-tray-metadata">
-                                <button 
-                                    className="tpe-prefix-toggle" 
-                                    style={{ fontSize: '9px', blockSize: 'border-box' }}
-                                    onClick={(e) => { e.stopPropagation(); setShowCreditMenu(!showCreditMenu); }}
-                                >
-                                    {creditPrefix || "PHOTO:"}
-                                </button>
-                                <input 
-                                    className="tpe-popover-input" 
-                                    style={{ fontSize: '10px' }}
-                                    placeholder="IMAGE CREDIT..." 
-                                    value={creditValue || ""} 
-                                    onChange={(e) => onCreditUpdate(e.target.value)} 
-                                />
-                                
-                                {showCreditMenu && (
-                                    <div className="tpe-asset-prefix-dropdown">
-                                        {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
-                                            <button 
-                                                key={opt} 
-                                                className="tpe-prefix-btn" 
-                                                style={{ fontSize: '9px' }}
-                                                onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
-                                            >
-                                                {opt}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                            <input 
+                                className="tpe-popover-input" 
+                                style={{ fontSize: '10px' }}
+                                placeholder="IMAGE CREDIT..." 
+                                value={creditValue || ""} 
+                                onChange={(e) => onCreditUpdate(e.target.value)} 
+                            />
+                        </div>
+                        
+                        {showCreditMenu && (
+                            <div className="tpe-asset-prefix-dropdown">
+                                {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
+                                    <button 
+                                        key={opt} 
+                                        className="tpe-prefix-btn" 
+                                        style={{ fontSize: '9px' }}
+                                        onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
-                </>
-            )}
+                )}
+            </div>
+        </div>)}
         </div>
     );
 });

@@ -801,7 +801,7 @@
   /* 🏛️ 2027 INDUSTRIAL MOBILE REGISTRY */
   @media (max-width: 768px) {
     .command-ribbon {
-      padding-inline: 4px;
+      padding-inline: 0 4px !important;
       gap: 0;
     }
 
@@ -819,7 +819,7 @@
     }
 
     .terminal-cursor {
-      margin-inline-end: 0.5px !important; /* Hyper-compressed 0.5px gap */
+      margin-inline-end: 4.5px !important; /* Hyper-compressed 0.5px gap + 4px shift */
       transform: translate(-4px, -1.75px) !important;
     }
 

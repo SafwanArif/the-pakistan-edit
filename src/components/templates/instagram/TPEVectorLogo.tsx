@@ -19,7 +19,7 @@ export const TPEVectorLogo: React.FC<{
     };
 
     return (
-        <div style={{ transform: `scale(${scale})`, transformOrigin: 'center center', display: 'inline-flex' }}>
+        <div style={{ transform: `scale(${scale})`, transformOrigin: 'left top', display: 'inline-flex' }}>
             <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'center' }}>
                 {/* Authentic Institutional Monogram */}
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -48,6 +48,7 @@ export const TPEVectorLogo: React.FC<{
                             letterSpacing: '0.35em',
                             color: colors.paperWhite,
                             marginTop: '2px',
+                            marginLeft: '3px',
                             textTransform: 'uppercase'
                         }}>
                             EDIT

@@ -184,7 +184,6 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                     </div>
                 )}
             </div>
-        </div>)}
         </div>
     );
 });

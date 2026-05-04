@@ -30,7 +30,15 @@ export default function Home() {
         textAlign: 'center',
         maxWidth: '600px'
       }}>
-        <div style={{ transform: 'scale(1.5)', transformOrigin: 'center', marginBottom: 'var(--space-md)' }}>
+        <div style={{ 
+          transform: 'scale(1.5)', 
+          marginBottom: 'var(--space-md)', 
+          display: 'flex', 
+          justifyContent: 'center', 
+          width: '100%',
+          position: 'relative',
+          left: '-5px' // Tiny optical shift to account for logo's asymmetrical 'P' stem
+        }}>
           <TPEVectorLogo scale={1.2} />
         </div>
         
@@ -44,15 +52,16 @@ export default function Home() {
             margin: 0,
             marginInlineEnd: '-0.4em' // Optical correction for trailing letter-spacing
           }}>
-            Institutional <br/> Content Engine
+            Institutional<br />Content Engine
           </h1>
           <p style={{ 
             fontSize: '14px', 
             opacity: 0.5, 
             fontWeight: 400,
-            letterSpacing: '0.02em'
+            letterSpacing: '0.02em',
+            lineHeight: '1.4'
           }}>
-            The Pakistan Edit <br/> Internal Dashboard v2027.4
+            The Pakistan Edit<br />Internal Dashboard v2027.4
           </p>
         </div>
 

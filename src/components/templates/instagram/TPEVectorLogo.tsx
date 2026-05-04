@@ -20,7 +20,7 @@ export const TPEVectorLogo: React.FC<{
 
     // Unified SVG Dimensions
     const width = 120;
-    const height = showWordmark ? 85 : 48;
+    const height = showWordmark ? 75 : 48; // Tightened from 85 to 75
     const centerX = 60;
 
     return (
@@ -46,9 +46,9 @@ export const TPEVectorLogo: React.FC<{
                 <circle cx="35" cy="39" r="3" fill={colors.crescentGold} />
             </g>
 
-            {/* Wordmark Group - Tight vertical alignment */}
+            {/* Wordmark Group - Tightened vertically */}
             {showWordmark && (
-                <g transform={`translate(${centerX}, 52)`}>
+                <g transform={`translate(${centerX}, 50)`}> {/* Lifted from 55 to 50 for tightness */}
                     <text
                         x="0"
                         y="0"
@@ -66,7 +66,7 @@ export const TPEVectorLogo: React.FC<{
                     </text>
                     <text
                         x="0"
-                        y="14"
+                        y="10" 
                         textAnchor="middle"
                         fill={colors.paperWhite}
                         style={{

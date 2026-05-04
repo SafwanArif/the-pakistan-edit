@@ -39,7 +39,8 @@ export default function Home() {
           display: 'flex', 
           justifyContent: 'center', 
           inlineSize: '100%',
-          position: 'relative'
+          position: 'relative',
+          left: '-6px' // Collective nudge to the left to align with page center
         }}>
           <TPEVectorLogo scale={1.2} />
         </div>
@@ -49,10 +50,10 @@ export default function Home() {
             fontSize: '11px', 
             fontWeight: 800, 
             letterSpacing: '0.4em', 
-            paddingInlineStart: '0.4em',
             color: 'var(--ui-primary)', 
             textTransform: 'uppercase',
-            margin: 0
+            margin: 0,
+            marginInlineEnd: '-0.4em' // Optical correction for trailing letter-spacing
           }}>
             Institutional<br />Content Engine
           </h1>
@@ -61,7 +62,6 @@ export default function Home() {
             opacity: 0.5, 
             fontWeight: 400,
             letterSpacing: '0.02em',
-            paddingInlineStart: '0.02em',
             lineHeight: '1.4'
           }}>
             The Pakistan Edit<br />Internal Dashboard v2027.4

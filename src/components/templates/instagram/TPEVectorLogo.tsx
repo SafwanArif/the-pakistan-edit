@@ -46,9 +46,9 @@ export const TPEVectorLogo: React.FC<{
                 <circle cx="35" cy="39" r="3" fill={colors.crescentGold} />
             </g>
 
-            {/* Wordmark Group */}
+            {/* Wordmark Group - Tight vertical alignment */}
             {showWordmark && (
-                <g transform={`translate(${centerX}, 55)`}>
+                <g transform={`translate(${centerX}, 52)`}>
                     <text
                         x="0"
                         y="0"

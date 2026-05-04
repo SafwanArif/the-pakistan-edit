@@ -40,7 +40,7 @@ export default function Home() {
           inlineSize: '100%',
           position: 'relative'
         }}>
-          <TPEVectorLogo scale={1.8} />
+          <TPEVectorLogo scale={2.0} />
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>

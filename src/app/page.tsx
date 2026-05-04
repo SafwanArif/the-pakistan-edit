@@ -34,15 +34,13 @@ export default function Home() {
         maxWidth: '600px'
       }}>
         <div style={{ 
-          transform: 'scale(1.5)', 
           marginBottom: 'var(--space-md)', 
           display: 'flex', 
           justifyContent: 'center', 
           inlineSize: '100%',
-          position: 'relative',
-          left: '-6px' // Collective nudge to the left to align with page center
+          position: 'relative'
         }}>
-          <TPEVectorLogo scale={1.2} />
+          <TPEVectorLogo scale={1.8} />
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>

@@ -19,7 +19,8 @@ export const TPEVectorLogo: React.FC<{
     };
 
     // Unified SVG Dimensions - Tightly bounded to prevent layout shifts
-    const width = showWordmark ? 80 : 48;
+    // Wordmark version is ~72px wide to match 'PAKISTAN' wordmark bounds
+    const width = showWordmark ? 72 : 48;
     const height = showWordmark ? 85 : 48;
     const centerX = width / 2;
 
@@ -31,19 +32,19 @@ export const TPEVectorLogo: React.FC<{
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
             style={{ 
-                display: 'block', 
-                margin: '0 auto',
+                display: 'inline-block', 
+                verticalAlign: 'middle',
                 overflow: 'visible'
             }}
         >
             {/* Monogram Group - Optically aligned with 'I' in PAKISTAN */}
-            <g transform={`translate(${centerX - 27}, 0)`}>
+            <g transform={`translate(${centerX - 24}, 0)`}>
                 {/* Rect (White Dash) */}
-                <rect x="9" y="22" width="12" height="6" fill={colors.paperWhite} />
-                {/* Green P Path - Stem is at x=21-27 (Center 24) */}
-                <path fillRule="evenodd" clipRule="evenodd" d="M 21 6 H 27 A 11 11 0 0 1 27 28 V 42 H 21 V 6 Z M 27 12 V 22 A 5 5 0 0 0 27 12 Z" fill={colors.pakistanGreen} />
+                <rect x="6" y="22" width="12" height="6" fill={colors.paperWhite} />
+                {/* Green P Path - Stem is at x=18-24 (Center 21) */}
+                <path fillRule="evenodd" clipRule="evenodd" d="M 18 6 H 24 A 11 11 0 0 1 24 28 V 42 H 18 V 6 Z M 24 12 V 22 A 5 5 0 0 0 24 12 Z" fill={colors.pakistanGreen} />
                 {/* Gold Circle */}
-                <circle cx="35" cy="39" r="3" fill={colors.crescentGold} />
+                <circle cx="32" cy="39" r="3" fill={colors.crescentGold} />
             </g>
 
             {/* Wordmark Group */}

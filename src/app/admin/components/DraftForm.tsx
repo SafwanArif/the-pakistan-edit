@@ -106,25 +106,27 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </div>
             </div>
 
-            <div className="tpe-flex-row" style={{ gap: '4px', marginInlineStart: '12px' }}>
+            <div className="tpe-flex-row" style={{ gap: '4px', marginInlineStart: '4px' }}>
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 
-                        className="tpe-nav-btn tpe-btn-gold" 
+                        className="tpe-nav-btn tpe-btn-gold"
+                        style={{ inlineSize: '70px', gap: '6px', paddingInline: '0' }}
                     >
-                        <span className="tpe-nav-btn-text">BACK</span>
+                        <span className="tpe-nav-btn-text" style={{ transform: 'translateY(1px)' }}>BACK</span>
                     </button>
                 )}
                 <button 
                     onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
                     disabled={!canProceed || resolving} 
                     className={`tpe-nav-btn ${step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"}`} 
+                    style={{ inlineSize: '130px', gap: '6px', paddingInline: '0' }}
                 >
-                    <span className="tpe-nav-btn-text">
+                    <span className="tpe-nav-btn-text" style={{ transform: 'translateY(1px)' }}>
                         {resolving ? "RESOLVE" : 
                          (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? "NEXT STEP" : "EXPORT BATCH") : "INPUT REQ.")}
                     </span>
-                    <span className="tpe-nav-btn-icon">→</span>
+                    <span className="tpe-nav-btn-icon" style={{ fontSize: '13px', display: 'flex', alignItems: 'center', transform: 'translateY(-0.5px)' }}>→</span>
                 </button>
             </div>
         </div>

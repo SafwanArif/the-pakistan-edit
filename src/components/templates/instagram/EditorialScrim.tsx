@@ -9,9 +9,6 @@ export const EditorialScrim: React.FC = () => {
             width: '100%',
             height: '70%',
             background: 'linear-gradient(to bottom, transparent 0%, oklch(from var(--ui-bg) l c h / 0.05) 60%, oklch(from var(--ui-bg) l c h / 0.2) 100%)',
-            backdropFilter: 'blur(16px)',
-            maskImage: 'linear-gradient(to bottom, transparent 0%, black 70%, black 100%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 70%, black 100%)',
             zIndex: 7,
             pointerEvents: 'none'
         }} />

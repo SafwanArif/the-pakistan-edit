@@ -301,8 +301,7 @@
   }
 
   .tpe-glass-panel {
-    background: var(--ui-bg-popover);
-    backdrop-filter: blur(var(--blur-lg));
+    background: var(--ui-bg);
     border: 1px solid var(--ui-border);
     box-shadow: var(--shadow-lg);
   }
@@ -848,7 +847,8 @@
     }
 
     .previews-container {
-      padding-block-end: 280px !important; /* Enhanced clearance for Toolkit + Mobile OS bars */
+      padding-block-start: 100px !important; /* Move down so FOCAL TOOLS doesn't overlap */
+      padding-block-end: 40px !important; /* Removed big gap at bottom */
       padding-inline: 16px !important;
       gap: 32px !important;
     }

@@ -8,7 +8,7 @@ export const EditorialScrim: React.FC = () => {
             left: 0,
             width: '100%',
             height: '70%',
-            background: 'linear-gradient(to bottom, transparent 0%, oklch(from var(--ui-bg) l c h / 0.05) 60%, oklch(from var(--ui-bg) l c h / 0.2) 100%)',
+            background: 'linear-gradient(to bottom, transparent 0%, oklch(from var(--ui-bg) l c h / 0.3) 20%, oklch(from var(--ui-bg) l c h / 0.8) 100%)',
             zIndex: 7,
             pointerEvents: 'none'
         }} />

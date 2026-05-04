@@ -64,6 +64,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     ) : (
                         <>
                             <input className="tpe-input-field tpe-input-main tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} style={{ inlineSize: '140px' }} />
+                            <span style={{ color: 'var(--ui-border)', fontSize: '20px', fontWeight: 200, display: 'flex', alignItems: 'center', marginInline: '-6px', pointerEvents: 'none' }}>|</span>
                             <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
                                 <textarea id="input-headline" className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" placeholder="PRIMARY HEADLINE BULLETIN" value={draft.headline} onChange={(e) => onChange({ ...draft, headline: e.target.value })} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
                                 <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />

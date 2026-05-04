@@ -14,13 +14,16 @@ export default function Home() {
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      minBlockSize: '100vh',
+      minBlockSize: '100dvh',
+      inlineSize: '100%',
       backgroundColor: 'var(--ui-bg)',
       color: 'var(--ui-text)',
       alignItems: 'center',
       justifyContent: 'center',
       padding: 'var(--space-lg)',
-      fontFamily: 'var(--tpe-font-inter)'
+      fontFamily: 'var(--tpe-font-inter)',
+      overflowX: 'hidden',
+      position: 'relative'
     }}>
       <main style={{
         display: 'flex',
@@ -28,17 +31,15 @@ export default function Home() {
         alignItems: 'center',
         gap: 'var(--space-lg)',
         textAlign: 'center',
-        width: '100%',
-        maxWidth: '400px', // More compact for mobile-first institutional look
-        margin: '0 auto',
-        boxSizing: 'border-box'
+        maxWidth: '600px'
       }}>
         <div style={{ 
           transform: 'scale(1.5)', 
           marginBottom: 'var(--space-md)', 
           display: 'flex', 
           justifyContent: 'center', 
-          width: '100%'
+          inlineSize: '100%',
+          position: 'relative'
         }}>
           <TPEVectorLogo scale={1.2} />
         </div>
@@ -51,8 +52,7 @@ export default function Home() {
             color: 'var(--ui-primary)', 
             textTransform: 'uppercase',
             margin: 0,
-            width: '100%',
-            textAlign: 'center'
+            marginInlineEnd: '-0.4em' // Optical correction for trailing letter-spacing
           }}>
             Institutional<br />Content Engine
           </h1>
@@ -61,9 +61,7 @@ export default function Home() {
             opacity: 0.5, 
             fontWeight: 400,
             letterSpacing: '0.02em',
-            lineHeight: '1.4',
-            width: '100%',
-            textAlign: 'center'
+            lineHeight: '1.4'
           }}>
             The Pakistan Edit<br />Internal Dashboard v2027.4
           </p>
@@ -88,7 +86,8 @@ export default function Home() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '12px'
+            gap: '12px',
+            position: 'relative'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
@@ -99,16 +98,15 @@ export default function Home() {
             e.currentTarget.style.boxShadow = '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)';
           }}
         >
-          <span style={{ marginInlineStart: '18px' }}>Enter Dashboard</span>
+          <span style={{ marginInlineStart: '24px' }}>Enter Dashboard</span>
           <span style={{ fontSize: '16px', display: 'flex', alignItems: 'center' }}>&rarr;</span>
         </Link>
       </main>
 
       <footer style={{ 
-        position: 'fixed', 
+        position: 'absolute', 
         bottom: 'var(--space-md)', 
-        left: 0,
-        right: 0,
+        inlineSize: '100%',
         textAlign: 'center',
         fontSize: '9px', 
         opacity: 0.2, 

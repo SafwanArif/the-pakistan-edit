@@ -101,11 +101,14 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                 }}>
                     {/* 2x3 GRID SYSTEM (VERTICAL) */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px 30px', inlineSize: '100%' }}>
-                        <FocalSlider id="zoom" label="ZOOM" min={10} max={800} value={asset.imageZoom} field="imageZoom" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'zoom'} />
-                        <FocalSlider id="posX" label="PAN X" min={0} max={100} value={asset.imagePosX} field="imagePosX" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posX'} />
-                        
-                        <FocalSlider id="posY" label="PAN Y" min={0} max={100} value={asset.imagePosY} field="imagePosY" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY'} />
-                        <FocalSlider id="posY_sq" label="PAN Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY} field="imagePosY_Square" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'posY_sq'} />
+                        {[
+                            { id: "zoom", label: "ZOOM", min: 10, max: 800, value: asset.imageZoom, field: "imageZoom" },
+                            { id: "posX", label: "PAN X", min: 0, max: 100, value: asset.imagePosX, field: "imagePosX" },
+                            { id: "posY", label: "PAN Y", min: 0, max: 100, value: asset.imagePosY, field: "imagePosY" },
+                            { id: "posY_sq", label: "PAN Y (FB)", min: 0, max: 100, value: asset.imagePosY_Square ?? asset.imagePosY, field: "imagePosY_Square" }
+                        ].map(s => (
+                            <FocalSlider key={s.id} {...s} onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === s.id} />
+                        ))}
                         
                         <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
                             <button

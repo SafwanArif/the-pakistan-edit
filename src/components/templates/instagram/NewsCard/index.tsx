@@ -7,15 +7,7 @@ import { HighlightedText } from "./HighlightedText";
 import { SlideAsset } from "../../../../types/news";
 import { getEffectiveSlideAsset } from "../../../../app/admin/utils/dataAccessors";
 
-export const TOKENS = {
-    colors: {
-        deepPine: "var(--ui-bg)",
-        pakistanGreen: "var(--ui-indicator)",
-        crescentGold: "var(--ui-accent)",
-        paperWhite: "var(--ui-text)",
-    },
-    fonts: { serif: "var(--tpe-font-playfair)" }
-};
+
 
 export interface NewsCardProps {
     headline?: string; category?: string; summary?: string; bgImage?: string;
@@ -85,7 +77,7 @@ export const NewsCard = React.memo<NewsCardProps>((props) => {
                 <div className="tpe-flex-row tpe-news-progress">
                     {Array.from({ length: totalSlides }).map((_, i) => {
                         const s = i + 1; const active = slide === s;
-                        const color = active ? (s === 1 ? TOKENS.colors.pakistanGreen : s === 2 ? TOKENS.colors.crescentGold : TOKENS.colors.paperWhite) : 'oklch(from var(--ui-text) l c h / 0.15)';
+                        const color = active ? (s === 1 ? 'var(--ui-indicator)' : s === 2 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'oklch(from var(--ui-text) l c h / 0.15)';
                         return <div key={i} style={{ inlineSize: totalSlides > 5 ? '60px' : '80px', blockSize: '4px', background: color, boxShadow: active ? `0 0 20px ${color}` : 'none', transition: 'all 0.3s' }} />;
                     })}
                 </div>

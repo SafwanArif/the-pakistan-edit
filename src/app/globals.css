@@ -1,4 +1,4 @@
-@layer reset, tokens, components, engine;
+@layer reset, tokens, components;
 
 @layer tokens {
 
@@ -67,9 +67,7 @@
     --radius-pill: 99px;
 
     /* 💎 GLASS & DEPTH REGISTRY */
-    --blur-sm: 8px;
     --blur-md: 20px;
-    --blur-lg: 40px;
 
     --shadow-md: 0 8px 32px oklch(from black l c h / 0.5);
     --shadow-lg: 0 20px 60px oklch(from black l c h / 0.8);

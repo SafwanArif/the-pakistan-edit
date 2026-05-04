@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Draft } from "../../../types/news";
 import { updateSlideAsset } from "../utils/dataAccessors";
 import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
+import { ImageCreditToolbar } from "./EditorialTools";
 
 interface UnifiedAssetToolbarProps {
     hasOverride: boolean;
@@ -25,7 +26,6 @@ interface UnifiedAssetToolbarProps {
  */
 export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOverride, currentUrl, onLink, onUpload, onClear, creditValue, creditPrefix, onCreditUpdate, onCreditPrefixChange }) => {
     const [showLinkInput, setShowLinkInput] = useState(false);
-    const [showCreditMenu, setShowCreditMenu] = useState(false);
     const [url, setUrl] = useState(currentUrl || "");
     const linkInputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,37 +150,21 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                 {/* 2027 ASSET METADATA ROW */}
                 {hasOverride && onCreditUpdate && (
                     <div className="tpe-asset-tray-metadata" style={{ margin: 0, paddingBlockStart: '10px' }}>
-                        <div className="tpe-flex-row" style={{ gap: '8px' }}>
-                            <button 
-                                className="tpe-prefix-toggle" 
-                                style={{ fontSize: '9px', blockSize: 'border-box' }}
-                                onClick={(e) => { e.stopPropagation(); setShowCreditMenu(!showCreditMenu); }}
-                            >
-                                {creditPrefix || "PHOTO:"}
-                            </button>
+                        <div className="tpe-source-row-wrapper" style={{ margin: 0 }}>
+                            <ImageCreditToolbar 
+                                value={creditValue || ""} 
+                                prefix={creditPrefix || "PHOTO:"} 
+                                onPrefixChange={(p: string) => onCreditPrefixChange?.(p)} 
+                                onUpdate={onCreditUpdate} 
+                            />
                             <input 
-                                className="tpe-popover-input" 
-                                style={{ fontSize: '10px' }}
-                                placeholder="IMAGE CREDIT..." 
+                                className="tpe-input-field tpe-uppercase tpe-credit-input" 
+                                style={{ flex: 1, minWidth: 0, margin: 0 }}
+                                placeholder="CREDIT" 
                                 value={creditValue || ""} 
                                 onChange={(e) => onCreditUpdate(e.target.value)} 
                             />
                         </div>
-                        
-                        {showCreditMenu && (
-                            <div className="tpe-asset-prefix-dropdown">
-                                {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
-                                    <button 
-                                        key={opt} 
-                                        className="tpe-prefix-btn" 
-                                        style={{ fontSize: '9px' }}
-                                        onClick={() => { onCreditPrefixChange?.(opt); setShowCreditMenu(false); }}
-                                    >
-                                        {opt}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 )}
             </div>

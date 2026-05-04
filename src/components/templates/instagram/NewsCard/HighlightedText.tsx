@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { TOKENS } from "./index";
+
 
 /**
  * Institutional Data Registry: High-Res Flag Icons
@@ -29,14 +29,14 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
             // 1. GOLD TEXT ACCENT (*)
             if (part.startsWith("*") && part.endsWith("*")) {
                 const inner = part.slice(1, -1);
-                const hColor = TOKENS.colors.crescentGold;
+                const hColor = "var(--ui-accent)";
                 return <span key={key} style={{ color: hColor, textShadow: isNested ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, true)}</span>;
             }
             
             // 2. GREEN TEXT ACCENT (_)
             if (part.startsWith("_") && part.endsWith("_")) {
                 const inner = part.slice(1, -1);
-                const hColor = TOKENS.colors.pakistanGreen;
+                const hColor = "var(--ui-indicator)";
                 return <span key={key} style={{ color: hColor, textShadow: isNested ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, true)}</span>;
             }
             
@@ -45,11 +45,11 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                 const inner = part.slice(1, -1);
                 return (
                     <span key={key} style={{ 
-                        background: TOKENS.colors.pakistanGreen, 
-                        color: TOKENS.colors.paperWhite,
+                        background: "var(--ui-indicator)", 
+                        color: "var(--ui-text)",
                         paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
                         display: 'inline-block', marginInline: '2px',
-                        boxShadow: `0 4px 15px oklch(from ${TOKENS.colors.pakistanGreen} l c h / 0.4)`
+                        boxShadow: `0 4px 15px oklch(from var(--ui-indicator) l c h / 0.4)`
                     }}>
                         {parseText(inner, true)}
                     </span>

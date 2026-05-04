@@ -47,12 +47,11 @@ export const updateDraftValue = (fieldId: string, newVal: string, draft: Draft):
 };
 
 export const updateDraftPrefix = (fieldId: string, prefix: string, draft: Draft): Draft => {
-    const extra = fieldId.match(/extra-source-(\d+)/);
-    if (extra && extra[1]) {
+    const extra = resolveExtra(fieldId);
+    if (extra) {
         const slides = [...(draft.extraSlides || [])];
-        const idx = parseInt(extra[1], 10);
-        const currentSlide = slides[idx] || { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
-        slides[idx] = { ...currentSlide, sourcePrefix: prefix };
+        const currentSlide = slides[extra.idx] || { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
+        slides[extra.idx] = { ...currentSlide, sourcePrefix: prefix };
         return { ...draft, extraSlides: slides };
     }
     

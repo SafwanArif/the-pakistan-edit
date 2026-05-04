@@ -70,7 +70,15 @@ export const EmojiToolbar: React.FC<{ fieldId: string, value: string, onUpdate: 
     );
 };
 
-export const SourcePrefixToolbar: React.FC<{ value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string }> = ({ value, prefix, onPrefixChange, onUpdate, fieldId }) => {
+export const PrefixToolbar: React.FC<{ 
+    value: string, 
+    prefix: string, 
+    onPrefixChange: (p: string) => void, 
+    onUpdate: (val: string) => void, 
+    fieldId?: string,
+    options: string[],
+    showSocial?: boolean
+}> = ({ value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial }) => {
     const [open, setOpen] = useState(false);
     const text = useMemo(() => value.startsWith(prefix) ? value.slice(prefix.length).trim() : value, [value, prefix]);
     
@@ -95,11 +103,11 @@ export const SourcePrefixToolbar: React.FC<{ value: string, prefix: string, onPr
         <div style={{ position: 'relative' }}>
             <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
             <EditorialPopover open={open} onClose={() => setOpen(false)} direction="down" width="200px" right="auto">
-                {["SOURCE:", "VIA:", "REPORT:", "DATA:"].map(opt => (
+                {options.map(opt => (
                     <button key={opt} onClick={(e) => { e.preventDefault(); onPrefixChange(opt); onUpdate(`${opt} ${text}`.trim()); setOpen(false); }} className="tpe-prefix-btn">{opt}</button>
                 ))}
                 <input placeholder="Custom Prefix..." onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ( (e.target as HTMLInputElement).value.endsWith(':') ? '' : ':' ); onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
-                {fieldId && (
+                {showSocial && fieldId && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid var(--ui-border)' }}>
                         {SOCIAL_ICONS.map(soc => (
                             <button key={soc.label} onClick={(e) => { e.preventDefault(); handleIconClick(soc.icon); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
@@ -111,19 +119,10 @@ export const SourcePrefixToolbar: React.FC<{ value: string, prefix: string, onPr
     );
 };
 
-export const ImageCreditToolbar: React.FC<{ value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string }> = ({ value, prefix, onPrefixChange, onUpdate, fieldId }) => {
-    const [open, setOpen] = useState(false);
-    const text = useMemo(() => { const full = value || ""; return full.startsWith(prefix) ? full.slice(prefix.length).trim() : full; }, [value, prefix]);
-    
-    return (
-        <div style={{ position: 'relative' }}>
-            <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
-            <EditorialPopover open={open} onClose={() => setOpen(false)} direction="down" width="200px" right="auto">
-                {["PHOTO:", "STILL:", "VIA:", "SOURCE:"].map(opt => (
-                    <button key={opt} onClick={(e) => { e.preventDefault(); onPrefixChange(opt); onUpdate(`${opt} ${text}`.trim()); setOpen(false); }} className="tpe-prefix-btn">{opt}</button>
-                ))}
-                <input placeholder="Custom Prefix..." onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ( (e.target as HTMLInputElement).value.endsWith(':') ? '' : ':' ); onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
-            </EditorialPopover>
-        </div>
-    );
-};
+export const SourcePrefixToolbar: React.FC<any> = (props) => (
+    <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />
+);
+
+export const ImageCreditToolbar: React.FC<any> = (props) => (
+    <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />
+);

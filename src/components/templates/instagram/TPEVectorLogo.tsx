@@ -12,11 +12,7 @@ export const TPEVectorLogo: React.FC<{
     scale = 1,
     showWordmark = true
 }) => {
-    const colors = {
-        pakistanGreen: "var(--ui-indicator)",
-        paperWhite: "var(--ui-text)",
-        crescentGold: "var(--ui-accent)",
-    };
+
 
     // Unified SVG Dimensions - Tightly bounded to prevent layout shifts
     // Wordmark version is ~72px wide to match 'PAKISTAN' wordmark bounds
@@ -40,11 +36,11 @@ export const TPEVectorLogo: React.FC<{
             {/* Monogram Group - Optically aligned with 'I' in PAKISTAN */}
             <g transform={`translate(${centerX - 24}, 0)`}>
                 {/* Rect (White Dash) */}
-                <rect x="6" y="22" width="12" height="6" fill={colors.paperWhite} />
+                <rect x="6" y="22" width="12" height="6" fill="var(--ui-text)" />
                 {/* Green P Path - Stem is at x=18-24 (Center 21) */}
-                <path fillRule="evenodd" clipRule="evenodd" d="M 18 6 H 24 A 11 11 0 0 1 24 28 V 42 H 18 V 6 Z M 24 12 V 22 A 5 5 0 0 0 24 12 Z" fill={colors.pakistanGreen} />
+                <path fillRule="evenodd" clipRule="evenodd" d="M 18 6 H 24 A 11 11 0 0 1 24 28 V 42 H 18 V 6 Z M 24 12 V 22 A 5 5 0 0 0 24 12 Z" fill="var(--ui-indicator)" />
                 {/* Gold Circle */}
-                <circle cx="32" cy="39" r="3" fill={colors.crescentGold} />
+                <circle cx="21" cy="24" r="2.5" fill="var(--ui-accent)" />
             </g>
 
             {/* Wordmark Group */}
@@ -54,7 +50,7 @@ export const TPEVectorLogo: React.FC<{
                         x="0"
                         y="0"
                         textAnchor="middle"
-                        fill={colors.crescentGold}
+                        fill="var(--ui-accent)"
                         style={{
                             fontFamily: 'var(--tpe-font-playfair)',
                             fontSize: '13px',
@@ -69,7 +65,7 @@ export const TPEVectorLogo: React.FC<{
                         x="0"
                         y="10"
                         textAnchor="middle"
-                        fill={colors.paperWhite}
+                        fill="var(--ui-text)"
                         style={{
                             fontFamily: 'var(--tpe-font-inter)',
                             fontSize: '8px',

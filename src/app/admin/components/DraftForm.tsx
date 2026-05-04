@@ -7,7 +7,6 @@ import { getDraftValue, updateDraftValue, updateDraftPrefix, updateSlideAsset } 
 import { EDITORIAL_STEPS } from "../../../config/editorial";
 import { useAssetResolver } from "../hooks/useAssetResolver";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
-import { BackIcon } from "../../../components/icons/TPEIcons";
 
 /**
  * 2027 Institutional Atomic Layer: SourceRow
@@ -20,8 +19,31 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
 
     return (
         <div className="tpe-source-row-wrapper">
-            <Toolbar value={getDraftValue(field, draft)} prefix={prefix} onPrefixChange={(p) => onChange(updateDraftPrefix(field, p, draft))} onUpdate={(v) => onChange(updateDraftValue(field, v, draft))} fieldId={field} />
+            <Toolbar value={getDraftValue(field, draft)} prefix={prefix} onPrefixChange={(p: string) => onChange(updateDraftPrefix(field, p, draft))} onUpdate={(v: string) => onChange(updateDraftValue(field, v, draft))} fieldId={field} />
             <input id={`input-${field}`} className={`tpe-input-field tpe-uppercase ${isCredit ? 'tpe-credit-input' : 'tpe-source-input'}`} placeholder={isCredit ? "CREDIT" : "SOURCE"} value={getDraftValue(field, draft)} onChange={(e) => onChange(updateDraftValue(field, e.target.value, draft))} />
+        </div>
+    );
+});
+
+const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => (
+    <>
+        <input className="tpe-input-field tpe-input-main tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} style={{ inlineSize: '140px' }} />
+        <span style={{ color: 'var(--ui-border)', fontSize: '20px', fontWeight: 200, display: 'flex', alignItems: 'center', marginInline: '-6px', pointerEvents: 'none' }}>|</span>
+        <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
+            <textarea id="input-headline" className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" placeholder="PRIMARY HEADLINE BULLETIN" value={draft.headline} onChange={(e) => onChange({ ...draft, headline: e.target.value })} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
+            <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />
+        </div>
+    </>
+));
+
+const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Draft, onChange: (d: Draft) => void }>(({ step, extraIndex, draft, onChange }) => {
+    const fieldId = step === 2 ? 'summary' : `extra-content-${extraIndex}`;
+    const placeholder = step === 2 ? "THE CORE STORY..." : "CONTEXT...";
+    const val = getDraftValue(fieldId, draft);
+    return (
+        <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
+            <textarea id={`input-${fieldId}`} className="tpe-textarea tpe-input-field tpe-input-main" placeholder={placeholder} value={val} onChange={(e) => onChange(updateDraftValue(fieldId, e.target.value, draft))} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
+            <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right={0} />
         </div>
     );
 });
@@ -56,20 +78,10 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </div>
 
                 <div className="tpe-flex-row" style={{ flex: 1, minInlineSize: 0, gap: '12px' }}>
-                    {step === 2 || step >= 3 ? (
-                        <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
-                            <textarea id={`input-${step === 2 ? 'summary' : `extra-content-${extraIndex}`}`} className="tpe-textarea tpe-input-field tpe-input-main" placeholder={step === 2 ? "THE CORE STORY..." : "CONTEXT..."} value={getDraftValue(step === 2 ? 'summary' : `extra-content-${extraIndex}`, draft)} onChange={(e) => onChange(updateDraftValue(step === 2 ? 'summary' : `extra-content-${extraIndex}`, e.target.value, draft))} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
-                            <EmojiToolbar fieldId={step === 2 ? 'summary' : `extra-content-${extraIndex}`} value={getDraftValue(step === 2 ? 'summary' : `extra-content-${extraIndex}`, draft)} onUpdate={(v) => onChange(updateDraftValue(step === 2 ? 'summary' : `extra-content-${extraIndex}`, v, draft))} popDirection="down" right={0} />
-                        </div>
+                    {step === 1 ? (
+                        <Slide1Editor draft={draft} onChange={onChange} />
                     ) : (
-                        <>
-                            <input className="tpe-input-field tpe-input-main tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} style={{ inlineSize: '140px' }} />
-                            <span style={{ color: 'var(--ui-border)', fontSize: '20px', fontWeight: 200, display: 'flex', alignItems: 'center', marginInline: '-6px', pointerEvents: 'none' }}>|</span>
-                            <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
-                                <textarea id="input-headline" className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" placeholder="PRIMARY HEADLINE BULLETIN" value={draft.headline} onChange={(e) => onChange({ ...draft, headline: e.target.value })} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
-                                <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />
-                            </div>
-                        </>
+                        <NarrativeEditor step={step} extraIndex={extraIndex} draft={draft} onChange={onChange} />
                     )}
                     <UnifiedAssetToolbar 
                         hasOverride={step === 1 ? !!draft.image : !!draft.slideAssets?.[step]?.image}

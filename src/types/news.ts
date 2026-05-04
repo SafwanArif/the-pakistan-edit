@@ -17,7 +17,7 @@ export interface Draft {
     category: string;
     summary?: string;
     scrim?: number;
-    // NOTE: Slide 3+ narrative content is strictly managed via extraSlides[n]
+
     sourceName?: string;
     sourcePrefix?: string;
     image?: string;
@@ -39,9 +39,7 @@ export interface Draft {
     slideAssets?: Record<number, SlideAsset>;
 }
 
-/** 
- * Institutional Factory: Generates a pristine Draft with fail-safe defaults 
- */
+
 export const createDefaultDraft = (): Draft => ({
     headline: "",
     category: "ECONOMY",
@@ -61,9 +59,7 @@ export const createDefaultDraft = (): Draft => ({
     slideAssets: {}
 });
 
-/**
- * Fail-safe Prefix Combiner: Sanitizes and joins editorial attribution strings.
- */
+
 export const combinePrefix = (prefix: string | undefined, text: string | undefined): string => {
     const p = prefix?.trim()?.toUpperCase() || "";
     const t = text?.trim() || "";
@@ -71,16 +67,14 @@ export const combinePrefix = (prefix: string | undefined, text: string | undefin
     return p ? `${p} ${t}` : t;
 };
 
-/**
- * Robust Slide Counter: Deterministic calculation of export targets.
- */
+
 export const getSlideCount = (draft: Draft): number => {
     let count = 1;
     if (draft.summary?.trim()) count = 2;
-    // Slide 3 is the first extraSlide
+
     if (draft.extraSlides && draft.extraSlides.length > 0 && draft.extraSlides[0]?.content?.trim()) {
         count = 3;
-        // Any slides beyond Slide 3
+
         if (draft.extraSlides.length > 1) {
             count += (draft.extraSlides.length - 1);
         }

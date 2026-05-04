@@ -41,7 +41,8 @@ export default function Home() {
             letterSpacing: '0.4em', 
             color: 'var(--ui-primary)', 
             textTransform: 'uppercase',
-            margin: 0
+            margin: 0,
+            marginInlineEnd: '-0.4em' // Optical correction for trailing letter-spacing
           }}>
             Institutional Content Engine
           </h1>
@@ -70,7 +71,11 @@ export default function Home() {
             borderRadius: 'var(--radius-sm)',
             textDecoration: 'none',
             transition: 'var(--transition-lux)',
-            boxShadow: '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)'
+            boxShadow: '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
@@ -81,7 +86,8 @@ export default function Home() {
             e.currentTarget.style.boxShadow = '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)';
           }}
         >
-          Enter Dashboard &rarr;
+          <span style={{ marginInlineStart: '18px' }}>Enter Dashboard</span>
+          <span style={{ fontSize: '16px', display: 'flex', alignItems: 'center' }}>&rarr;</span>
         </Link>
       </main>
 

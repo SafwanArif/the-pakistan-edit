@@ -4,6 +4,44 @@ import { EMOJIS, SOCIAL_ICONS } from "../../../config/editorial";
 import { getDraftValue, updateDraftValue } from "../utils/dataAccessors";
 import { EditorialPopover } from "./EditorialPopover";
 
+const FormatButton: React.FC<{ icon: string, label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color: string }> = ({ icon, label, syntax, fieldId, value, onUpdate, setHasSelection, color }) => (
+    <button 
+        onMouseDown={(e) => { 
+            e.preventDefault(); 
+            const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement; 
+            if (el) { 
+                const start = el.selectionStart!; 
+                const end = el.selectionEnd!; 
+                const newVal = value.substring(0, start) + syntax + value.substring(start, end) + syntax + value.substring(end); 
+                onUpdate(newVal); 
+                setHasSelection(false); 
+                setTimeout(() => { el.focus(); el.setSelectionRange(start + syntax.length, end + syntax.length); }, 0); 
+            } 
+        }} 
+        style={{ 
+            background: 'oklch(from var(--ui-text) l c h / 0.05)', 
+            color: color, 
+            border: 'none', 
+            padding: '0 12px',
+            height: '28px',
+            fontSize: '10px',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'var(--transition-fast)'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'oklch(from var(--ui-text) l c h / 0.1)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'oklch(from var(--ui-text) l c h / 0.05)'}
+    >
+        <span style={{ fontSize: '12px' }}>{icon}</span> {label}
+    </button>
+);
+
 export const EmojiToolbar: React.FC<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down', right?: string | number }> = ({ fieldId, value, onUpdate, popDirection = 'up', right = '12px' }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -51,7 +89,28 @@ export const EmojiToolbar: React.FC<{ fieldId: string, value: string, onUpdate: 
     return (
         <>
             {hasSelection && (
-                <button onMouseDown={(e) => { e.preventDefault(); const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement; if (el) { const start = el.selectionStart!; const end = el.selectionEnd!; const newVal = value.substring(0, start) + '*' + value.substring(start, end) + '*' + value.substring(end); onUpdate(newVal); setHasSelection(false); setTimeout(() => { el.focus(); el.setSelectionRange(start + 1, end + 1); }, 0); } }} className="tpe-toolbar-btn" style={{ background: '#111', color: 'var(--ui-accent)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.2)', position: 'fixed', left: goldPos.x, top: goldPos.y, transform: 'translate(-50%, 15px)', zIndex: 'var(--z-overlay)', boxShadow: 'var(--shadow-lg)' }}>✨ Make Selected Gold</button>
+                <div 
+                    style={{ 
+                        position: 'fixed', 
+                        left: goldPos.x, 
+                        top: goldPos.y, 
+                        transform: 'translate(-50%, 15px)', 
+                        zIndex: 'var(--z-overlay)', 
+                        display: 'flex', 
+                        gap: '6px',
+                        background: 'var(--ui-bg-popover)',
+                        backdropFilter: 'blur(var(--blur-md))',
+                        padding: '6px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid oklch(from var(--ui-border) l c h / 0.5)',
+                        boxShadow: 'var(--shadow-lg)'
+                    }}
+                >
+                    <FormatButton icon="✨" label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" />
+                    <FormatButton icon="B" label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
+                    <FormatButton icon="🟩" label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" />
+                    <FormatButton icon="⬛" label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
+                </div>
             )}
             <div style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>
                 <div style={{ position: 'relative' }}>

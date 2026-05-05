@@ -22,15 +22,21 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
         if (!content) return [];
         
         // Simplified Single-Character Regex Registry (2027 Minimalist Standard)
-        const splitRegex = new RegExp(`(\\*[^\\*]+?\\*)|(_[^_]+?_)|(#[^#]+?#)|(%[^%]+?%)|${FLAG_REGEX.source}`, 'g');
+        const splitRegex = new RegExp(`(\\^[^\\^]+?\\^)|(\\*[^\\*]+?\\*)|(_[^_]+?_)|(#[^#]+?#)|(%[^%]+?%)|${FLAG_REGEX.source}`, 'g');
         return content.split(splitRegex).filter(Boolean).map((part, i) => {
             const key = `${part}-${i}`;
             
-            // 1. GOLD TEXT ACCENT (*)
-            if (part.startsWith("*") && part.endsWith("*")) {
+            // 1. GOLD TEXT ACCENT (^)
+            if (part.startsWith("^") && part.endsWith("^")) {
                 const inner = part.slice(1, -1);
                 const hColor = "var(--ui-accent)";
                 return <span key={key} style={{ color: hColor, textShadow: isNested ? 'none' : `0 0 12px oklch(from ${hColor} l c h / 0.3)` }}>{parseText(inner, true)}</span>;
+            }
+            
+            // 1B. BOLD TEXT ACCENT (*)
+            if (part.startsWith("*") && part.endsWith("*")) {
+                const inner = part.slice(1, -1);
+                return <span key={key} style={{ fontWeight: 800 }}>{parseText(inner, true)}</span>;
             }
             
             // 2. GREEN TEXT ACCENT (_)
@@ -47,9 +53,10 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                     <span key={key} style={{ 
                         background: "var(--ui-indicator)", 
                         color: "var(--ui-text)",
-                        paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
-                        display: 'inline-block', marginInline: '2px',
-                        boxShadow: `0 4px 15px oklch(from var(--ui-indicator) l c h / 0.4)`
+                        paddingBlock: '2px', borderRadius: '2px',
+                        boxShadow: `4px 0 0 var(--ui-indicator), -4px 0 0 var(--ui-indicator), 0 4px 15px oklch(from var(--ui-indicator) l c h / 0.4)`,
+                        WebkitBoxDecorationBreak: 'clone',
+                        boxDecorationBreak: 'clone'
                     }}>
                         {parseText(inner, true)}
                     </span>
@@ -62,9 +69,10 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                 return (
                     <span key={key} style={{ 
                         background: 'black', 
-                        paddingInline: '8px', paddingBlock: '2px', borderRadius: '4px',
-                        display: 'inline-block', marginInline: '2px',
-                        boxShadow: `0 4px 15px oklch(from black l c h / 0.5)`
+                        paddingBlock: '2px', borderRadius: '2px',
+                        boxShadow: `4px 0 0 black, -4px 0 0 black, 0 4px 15px oklch(from black l c h / 0.5)`,
+                        WebkitBoxDecorationBreak: 'clone',
+                        boxDecorationBreak: 'clone'
                     }}>
                         {parseText(inner, true)}
                     </span>

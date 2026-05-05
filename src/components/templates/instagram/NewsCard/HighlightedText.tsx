@@ -49,33 +49,53 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
             // 3. GREEN BLOCK HIGHLIGHT (#)
             if (part.startsWith("#") && part.endsWith("#")) {
                 const inner = part.slice(1, -1);
+                const words = inner.split(" ");
                 return (
-                    <span key={key} style={{ 
-                        background: "var(--ui-indicator)", 
-                        color: "var(--ui-text)",
-                        borderRadius: '2px',
-                        boxShadow: `4px 0 0 var(--ui-indicator), -4px 0 0 var(--ui-indicator), 0 4px 15px oklch(from var(--ui-indicator) l c h / 0.4)`,
-                        WebkitBoxDecorationBreak: 'clone',
-                        boxDecorationBreak: 'clone'
-                    }}>
-                        {parseText(inner, true)}
-                    </span>
+                    <React.Fragment key={key}>
+                        {words.map((w, wIdx) => (
+                            <React.Fragment key={`${key}-${wIdx}`}>
+                                <span style={{ 
+                                    background: "var(--ui-indicator)", 
+                                    color: "var(--ui-text)",
+                                    borderRadius: '2px',
+                                    boxShadow: `4px 0 0 var(--ui-indicator), -4px 0 0 var(--ui-indicator), 0 4px 15px oklch(from var(--ui-indicator) l c h / 0.4)`,
+                                    WebkitBoxDecorationBreak: 'clone',
+                                    boxDecorationBreak: 'clone',
+                                    position: 'relative',
+                                    zIndex: 100 - wIdx
+                                }}>
+                                    {parseText(w, true)}
+                                </span>
+                                {wIdx < words.length - 1 && " "}
+                            </React.Fragment>
+                        ))}
+                    </React.Fragment>
                 );
             }
 
             // 4. BLACK BLOCK HIGHLIGHT (%)
             if (part.startsWith("%") && part.endsWith("%")) {
                 const inner = part.slice(1, -1);
+                const words = inner.split(" ");
                 return (
-                    <span key={key} style={{ 
-                        background: 'black', 
-                        borderRadius: '2px',
-                        boxShadow: `4px 0 0 black, -4px 0 0 black, 0 4px 15px oklch(from black l c h / 0.5)`,
-                        WebkitBoxDecorationBreak: 'clone',
-                        boxDecorationBreak: 'clone'
-                    }}>
-                        {parseText(inner, true)}
-                    </span>
+                    <React.Fragment key={key}>
+                        {words.map((w, wIdx) => (
+                            <React.Fragment key={`${key}-${wIdx}`}>
+                                <span style={{ 
+                                    background: 'black', 
+                                    borderRadius: '2px',
+                                    boxShadow: `4px 0 0 black, -4px 0 0 black, 0 4px 15px oklch(from black l c h / 0.5)`,
+                                    WebkitBoxDecorationBreak: 'clone',
+                                    boxDecorationBreak: 'clone',
+                                    position: 'relative',
+                                    zIndex: 100 - wIdx
+                                }}>
+                                    {parseText(w, true)}
+                                </span>
+                                {wIdx < words.length - 1 && " "}
+                            </React.Fragment>
+                        ))}
+                    </React.Fragment>
                 );
             }
 

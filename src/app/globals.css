@@ -1,4 +1,4 @@
-@layer reset, tokens, components;
+@layer reset, tokens, components, engine;
 
 @layer tokens {
 
@@ -866,17 +866,7 @@
       inline-size: 80px;
     }
 
-    .tpe-mobile-only {
-      display: flex !important;
-    }
 
-    .tpe-mobile-only {
-      display: flex !important;
-    }
-
-    .tpe-desktop-only {
-      display: none !important;
-    }
 
     .tpe-btn-gold, .tpe-btn-primary {
       padding-inline: 0 !important;
@@ -976,19 +966,7 @@
   inline-size: 100%;
 }
 
-.tpe-asset-prefix-dropdown {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline-start: 0;
-  background: var(--ui-bg-popover);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  z-index: 1001;
-  box-shadow: var(--shadow-md);
-}
+
 
 @keyframes tpe-tray-reveal {
   from { opacity: 0; transform: translateY(-10px) scale(0.95); }

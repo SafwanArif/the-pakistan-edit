@@ -42,7 +42,7 @@ const FormatButton: React.FC<{ icon: string, label: string, syntax: string, fiel
     </button>
 );
 
-export const EmojiToolbar: React.FC<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down', right?: string | number }> = ({ fieldId, value, onUpdate, popDirection = 'up', right = '12px' }) => {
+export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down', right?: string | number }>(({ fieldId, value, onUpdate, popDirection = 'up', right = '12px' }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [hasSelection, setHasSelection] = useState(false);
@@ -127,9 +127,9 @@ export const EmojiToolbar: React.FC<{ fieldId: string, value: string, onUpdate: 
             </div>
         </>
     );
-};
+});
 
-export const PrefixToolbar: React.FC<{ 
+export const PrefixToolbar = React.memo<{ 
     value: string, 
     prefix: string, 
     onPrefixChange: (p: string) => void, 
@@ -137,7 +137,7 @@ export const PrefixToolbar: React.FC<{
     fieldId?: string,
     options: string[],
     showSocial?: boolean
-}> = ({ value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial }) => {
+}>(({ value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial }) => {
     const [open, setOpen] = useState(false);
     const text = useMemo(() => value.startsWith(prefix) ? value.slice(prefix.length).trim() : value, [value, prefix]);
     
@@ -176,7 +176,7 @@ export const PrefixToolbar: React.FC<{
             </EditorialPopover>
         </div>
     );
-};
+});
 
 export const SourcePrefixToolbar: React.FC<any> = (props) => (
     <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />

@@ -15,7 +15,7 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
     const slide = parseInt(field.split('-')[2] || "1", 10);
     const prefix = isCredit ? (draft.slideAssets?.[slide]?.creditPrefix || "PHOTO:") : (getDraftValue(prefixField, draft) || "SOURCE:");
     const Toolbar = isCredit ? ImageCreditToolbar : SourcePrefixToolbar;
-    const isBulletin = field === 'category' || field === 'headline' || field === 'sourceName' || field === 'imageCredit';
+
 
     return (
         <div className="tpe-source-row-wrapper">

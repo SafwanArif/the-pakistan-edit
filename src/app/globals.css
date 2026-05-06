@@ -1015,7 +1015,7 @@
       flex: 1;
 
       &[placeholder="CATEGORY"] {
-        inline-size: 50px;
+        inline-size: 33px;
         margin-inline-start: -2px;
         flex: none;
       }

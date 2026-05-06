@@ -21,24 +21,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
     activeDraft, updateDraft, currentStep, setStep, draggingSlider, setDraggingSlider 
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
-    const extraIndex = currentStep - 3;
-    const isDeletable = currentStep > 3;
-    const extraSlides = useMemo(() => activeDraft.extraSlides || [], [activeDraft.extraSlides]);
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
-
-    const addExtraSlide = useCallback(() => {
-        const slides = [...extraSlides];
-        slides.splice(extraIndex + 1, 0, { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" });
-        updateDraft({ ...activeDraft, extraSlides: slides });
-        setStep(currentStep + 1);
-    }, [activeDraft, extraSlides, extraIndex, currentStep, updateDraft, setStep]);
-
-    const removeExtraSlide = useCallback((index: number) => {
-        const slides = [...extraSlides];
-        slides.splice(index, 1);
-        updateDraft({ ...activeDraft, extraSlides: slides });
-        setStep(currentStep - 1);
-    }, [activeDraft, extraSlides, currentStep, updateDraft, setStep]);
 
     const handleSliderChange = useCallback((field: any, value: number, min: number, max: number) => {
         const val = clamp(value, min, max);
@@ -115,30 +98,6 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                 </div>
             )}
 
-            {currentStep >= 3 && (
-                <div className="tpe-flex-row tpe-glass-panel" style={{ gap: '12px', padding: '6px 18px', borderRadius: '30px', pointerEvents: 'auto' }}>
-                    <div className="tpe-flex-row" style={{ position: 'relative', gap: '10px' }}>
-                        <input
-                            id={`input-extra-heading-${extraIndex}`}
-                            className="tpe-input-minimal tpe-terminal-text"
-                            placeholder={extraIndex === 0 ? "ANGLE HEADING" : "SUPPLEMENTAL HEADING"}
-                            value={extraSlides[extraIndex]?.heading || ""}
-                            onChange={(e) => updateDraft(updateDraftValue(`extra-heading-${extraIndex}`, e.target.value, activeDraft))}
-                            style={{ color: 'var(--ui-indicator)', fontWeight: 700, fontSize: '11px', borderBlockEnd: '1px solid oklch(from var(--ui-indicator) l c h / 0.2)', inlineSize: '260px' }}
-                        />
-                        <EmojiToolbar 
-                            fieldId={`extra-heading-${extraIndex}`} 
-                            value={extraSlides[extraIndex]?.heading || ""} 
-                            onUpdate={(v) => updateDraft(updateDraftValue(`extra-heading-${extraIndex}`, v, activeDraft))} 
-                        />
-                    </div>
-                    <div style={{ inlineSize: '1px', blockSize: '18px', background: 'oklch(from var(--ui-text) l c h / 0.05)' }} />
-                    <button onClick={addExtraSlide} className="tpe-btn-primary tpe-btn-icon" style={{ inlineSize: 'auto', paddingInline: '14px', background: 'var(--ui-accent)', fontSize: '8px' }}>ADD ANGLE</button>
-                    {isDeletable && (
-                        <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-asset-btn-danger tpe-btn-icon" style={{ inlineSize: 'auto', paddingInline: '8px', fontSize: '8px', fontWeight: 900 }}>DEL</button>
-                    )}
-                </div>
-            )}
         </div>
     );
 };

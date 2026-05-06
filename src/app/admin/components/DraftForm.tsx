@@ -57,6 +57,23 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
  */
 export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void }> = ({ draft, onChange, onSubmit, step, setStep }) => {
     const { resolving, resolve } = useAssetResolver(draft, onChange);
+    const extraSlides = useMemo(() => draft.extraSlides || [], [draft.extraSlides]);
+    const extraIndex = step - 3;
+    const isDeletable = step > 3;
+
+    const addExtraSlide = React.useCallback(() => {
+        const slides = [...extraSlides];
+        slides.splice(extraIndex + 1, 0, { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" });
+        onChange({ ...draft, extraSlides: slides });
+        setStep(step + 1);
+    }, [draft, extraSlides, extraIndex, step, onChange, setStep]);
+
+    const removeExtraSlide = React.useCallback((index: number) => {
+        const slides = [...extraSlides];
+        slides.splice(index, 1);
+        onChange({ ...draft, extraSlides: slides });
+        setStep(step - 1);
+    }, [draft, extraSlides, step, onChange, setStep]);
 
     useEffect(() => {
         const needsMain = draft.image && !draft.imageWidth;
@@ -72,8 +89,9 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     const stepLabel = useMemo(() => EDITORIAL_STEPS.find(s => s.step === step)?.label || `Angle ${step - 2}`, [step]);
 
     return (
-        <div className="tpe-flex-row tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
-            <div className="tpe-header-main">
+        <div className="tpe-flex-col tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
+            <div className="tpe-header-row">
+                <div className="tpe-header-main">
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '6px' }}>
                     <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
                     <div className="tpe-flex-row tpe-step-label">
@@ -149,6 +167,38 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     <span className="tpe-nav-btn-icon">→</span>
                 </button>
             </div>
+            </div>
+
+            {step >= 3 && (
+                <div className="tpe-angle-toolbar">
+                    <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
+                        <input
+                            id={`input-extra-heading-${extraIndex}`}
+                            className="tpe-input-minimal tpe-terminal-text tpe-angle-input"
+                            placeholder={extraIndex === 0 ? "ANGLE HEADING" : "SUPPLEMENTAL HEADING"}
+                            value={extraSlides[extraIndex]?.heading || ""}
+                            onChange={(e) => onChange(updateDraftValue(`extra-heading-${extraIndex}`, e.target.value, draft))}
+                        />
+                        <EmojiToolbar 
+                            fieldId={`extra-heading-${extraIndex}`} 
+                            value={extraSlides[extraIndex]?.heading || ""} 
+                            onUpdate={(v) => onChange(updateDraftValue(`extra-heading-${extraIndex}`, v, draft))}
+                            right={0}
+                        />
+                    </div>
+                    <div className="tpe-flex-row" style={{ gap: '8px' }}>
+                        <button onClick={addExtraSlide} className="tpe-btn-primary tpe-angle-btn">
+                            <span>ADD</span>
+                            <span>ANGLE</span>
+                        </button>
+                        {isDeletable && (
+                            <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-asset-btn-danger tpe-angle-btn">
+                                <span>DEL</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

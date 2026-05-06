@@ -640,6 +640,10 @@
     min-inline-size: 0;
   }
 
+  .tpe-category-input {
+    inline-size: 140px;
+  }
+
   .tpe-masthead-meta {
     display: flex;
     flex-direction: column;
@@ -1014,7 +1018,7 @@
       min-inline-size: 0;
       flex: 1;
 
-      &[placeholder="CATEGORY"] {
+      &.tpe-category-input {
         inline-size: 35px;
         margin-inline-start: -2px;
         flex: none;
@@ -1022,7 +1026,7 @@
     }
 
     .previews-container {
-      padding-block: 50px 40px;
+      padding-block: 25px 40px;
       padding-inline: 12px;
       gap: 24px;
     }

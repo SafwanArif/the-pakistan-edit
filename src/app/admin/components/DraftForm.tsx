@@ -31,7 +31,7 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
 
 const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => (
     <>
-        <input className="tpe-input-field tpe-input-main tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} style={{ inlineSize: '140px' }} />
+        <input className="tpe-input-field tpe-input-main tpe-uppercase tpe-category-input" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} />
         <span style={{ color: 'var(--ui-border)', fontSize: '20px', fontWeight: 200, display: 'flex', alignItems: 'center', marginInline: '-6px', pointerEvents: 'none' }}>|</span>
         <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
             <textarea id="input-headline" className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" placeholder="PRIMARY HEADLINE BULLETIN" value={draft.headline} onChange={(e) => onChange({ ...draft, headline: e.target.value })} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />

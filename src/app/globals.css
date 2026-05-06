@@ -628,7 +628,7 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 16px;
+    gap: 8px;
     min-inline-size: 0;
   }
 
@@ -636,7 +636,7 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 12px;
+    gap: 6px;
     min-inline-size: 0;
   }
 
@@ -988,11 +988,11 @@
     }
 
     .tpe-header-main {
-      gap: 4px;
+      gap: 2px;
     }
 
     .tpe-header-tools {
-      gap: 4px;
+      gap: 2px;
     }
 
     .tpe-step-number {

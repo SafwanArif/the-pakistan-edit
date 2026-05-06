@@ -74,7 +74,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     return (
         <div className="tpe-flex-row tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-header-main">
-                <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '10px' }}>
+                <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '6px' }}>
                     <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
                     <div className="tpe-flex-row tpe-step-label">
                         <span>{stepLabel}</span><span className="terminal-cursor">:</span>

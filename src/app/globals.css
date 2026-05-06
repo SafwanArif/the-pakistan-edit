@@ -624,6 +624,22 @@
     z-index: 30;
   }
 
+  .tpe-header-main {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 16px;
+    min-inline-size: 0;
+  }
+
+  .tpe-header-tools {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 12px;
+    min-inline-size: 0;
+  }
+
   .tpe-masthead-meta {
     display: flex;
     flex-direction: column;
@@ -690,6 +706,21 @@
       align-items: center;
       transform: translateY(-0.5px);
     }
+  }
+
+  .tpe-nav-back {
+    inline-size: 70px;
+  }
+
+  .tpe-nav-next {
+    inline-size: 130px;
+  }
+
+  .tpe-nav-cluster {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-inline-start: 12px;
   }
 
   .tpe-step-number {
@@ -952,6 +983,14 @@
       margin: 0;
     }
 
+    .tpe-header-main {
+      gap: 4px;
+    }
+
+    .tpe-header-tools {
+      gap: 4px;
+    }
+
     .tpe-step-number {
       display: none;
     }
@@ -970,12 +1009,15 @@
     }
 
     .tpe-input-main {
-      font-size: 15px;
-      padding-inline: 2px;
+      font-size: 14px;
+      padding-inline: 1px;
+      min-inline-size: 0;
+      flex: 1;
 
       &[placeholder="CATEGORY"] {
-        inline-size: 70px;
+        inline-size: 50px;
         margin-inline-start: -2px;
+        flex: none;
       }
     }
 
@@ -994,23 +1036,34 @@
     }
 
     .tpe-btn-gold, .tpe-btn-primary {
-      font-size: 9px;
-      margin-inline-start: 4px;
+      font-size: 7px;
+      margin-inline-start: 2px;
       min-inline-size: 0;
+      border-radius: 4px;
+    }
+
+    .tpe-nav-cluster {
+      gap: 2px;
+      margin-inline-start: 2px;
     }
 
     .tpe-nav-btn {
-      padding-inline: 10px;
-      gap: 4px;
-      font-size: 9px;
+      inline-size: 40px !important;
+      flex-direction: column;
+      gap: 0;
+      padding-inline: 0;
+      line-height: 1.05;
 
       .tpe-nav-btn-text {
         text-align: center;
-        white-space: nowrap;
+        inline-size: 100%;
+        word-wrap: break-word;
+        white-space: normal;
+        transform: translateY(0.5px);
       }
 
       .tpe-nav-btn-icon {
-        font-size: 10px;
+        display: none;
       }
     }
   }

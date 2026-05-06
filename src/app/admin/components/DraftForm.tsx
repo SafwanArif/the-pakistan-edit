@@ -73,7 +73,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
 
     return (
         <div className="tpe-flex-row tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
-            <div className="tpe-flex-row" style={{ flex: 1, gap: '16px', minInlineSize: 0 }}>
+            <div className="tpe-header-main">
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '10px' }}>
                     <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
                     <div className="tpe-flex-row tpe-step-label">
@@ -81,7 +81,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     </div>
                 </div>
 
-                <div className="tpe-flex-row" style={{ flex: 1, minInlineSize: 0, gap: '12px' }}>
+                <div className="tpe-header-tools">
                     {step === 1 ? (
                         <Slide1Editor draft={draft} onChange={onChange} />
                     ) : (
@@ -128,12 +128,11 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </div>
             </div>
 
-            <div className="tpe-flex-row" style={{ gap: '4px', marginInlineStart: '4px' }}>
+            <div className="tpe-nav-cluster">
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 
-                        className="tpe-nav-btn tpe-btn-gold"
-                        style={{ inlineSize: '70px' }}
+                        className="tpe-nav-btn tpe-btn-gold tpe-nav-back"
                     >
                         <span className="tpe-nav-btn-text">BACK</span>
                     </button>
@@ -141,8 +140,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 <button 
                     onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
                     disabled={!canProceed || resolving} 
-                    className={`tpe-nav-btn ${step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"}`} 
-                    style={{ inlineSize: '130px' }}
+                    className={`tpe-nav-btn ${step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"} tpe-nav-next`} 
                 >
                     <span className="tpe-nav-btn-text">
                         {resolving ? "RESOLVE" : 

@@ -1019,14 +1019,14 @@
       flex: 1;
 
       &.tpe-category-input {
-        inline-size: 50px;
+        inline-size: 60px;
         margin-inline-start: -2px;
         flex: none;
       }
     }
 
     .previews-container {
-      padding-block: 35px 40px;
+      padding-block: 40px 40px;
       padding-inline: 12px;
       gap: 24px;
     }

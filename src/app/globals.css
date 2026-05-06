@@ -1015,7 +1015,7 @@
       flex: 1;
 
       &[placeholder="CATEGORY"] {
-        inline-size: 33px;
+        inline-size: 35px;
         margin-inline-start: -2px;
         flex: none;
       }
@@ -1049,10 +1049,12 @@
 
     .tpe-nav-btn {
       inline-size: 40px !important;
+      block-size: 40px !important;
       flex-direction: column;
       gap: 0;
       padding-inline: 0;
       line-height: 1.05;
+      flex-shrink: 0;
 
       .tpe-nav-btn-text {
         text-align: center;

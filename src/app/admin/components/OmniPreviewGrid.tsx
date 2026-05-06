@@ -71,8 +71,8 @@ export const OmniPreviewGrid: React.FC<OmniPreviewGridProps> = ({ draft, current
     }, []);
 
     return (
-        <div style={{ inlineSize: '100%', blockSize: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div className="previews-container" style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '30px', alignContent: 'center', inlineSize: '100%', maxWidth: '1200px', margin: '0 auto', padding: '0 40px' }}>
+        <div className="tpe-flex-col" style={{ inlineSize: '100%', blockSize: '100%' }}>
+            <div className="previews-container">
                 {platformConfigs.map(p => (
                     <PreviewItem key={p.id} p={p} displayDraft={displayDraft} currentStep={currentStep} totalSlides={getSlideCount(draft)} />
                 ))}

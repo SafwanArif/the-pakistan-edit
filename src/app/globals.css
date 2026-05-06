@@ -709,6 +709,18 @@
     align-items: center;
     justify-content: space-between;
   }
+
+  .previews-container {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 30px;
+    align-content: center;
+    inline-size: 100%;
+    max-inline-size: 1200px;
+    margin: 0 auto;
+    padding-inline: 40px;
+  }
 }
 
 @layer engine {
@@ -968,9 +980,9 @@
     }
 
     .previews-container {
-      padding-block: 50px 40px;
-      padding-inline: 16px;
-      gap: 32px;
+      padding-block: 100px 40px;
+      padding-inline: 12px;
+      gap: 24px;
     }
 
     .tpe-source-row-wrapper {
@@ -982,26 +994,23 @@
     }
 
     .tpe-btn-gold, .tpe-btn-primary {
-      font-size: 8px;
+      font-size: 9px;
       margin-inline-start: 4px;
       min-inline-size: 0;
     }
 
     .tpe-nav-btn {
-      inline-size: 42px;
-      flex-direction: column;
-      gap: 0;
-      line-height: 1.1;
-      white-space: normal;
+      padding-inline: 10px;
+      gap: 4px;
+      font-size: 9px;
 
       .tpe-nav-btn-text {
         text-align: center;
-        inline-size: 100%;
-        word-wrap: break-word;
+        white-space: nowrap;
       }
 
       .tpe-nav-btn-icon {
-        display: none;
+        font-size: 10px;
       }
     }
   }

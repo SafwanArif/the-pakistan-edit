@@ -16,7 +16,6 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
     const prefix = isCredit ? (draft.slideAssets?.[slide]?.creditPrefix || "PHOTO:") : (getDraftValue(prefixField, draft) || "SOURCE:");
     const Toolbar = isCredit ? ImageCreditToolbar : SourcePrefixToolbar;
 
-
     return (
         <div className="tpe-source-row-wrapper">
             <Toolbar value={getDraftValue(field, draft)} prefix={prefix} onPrefixChange={(p: string) => onChange(updateDraftPrefix(field, p, draft))} onUpdate={(v: string) => onChange(updateDraftValue(field, v, draft))} fieldId={field} />
@@ -24,6 +23,11 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
         </div>
     );
 });
+
+/**
+ * 2027 Institutional Atomic Layer: Slide1Editor
+ */
+
 
 const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => (
     <>
@@ -71,9 +75,9 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
         <div className="tpe-flex-row tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-flex-row" style={{ flex: 1, gap: '16px', minInlineSize: 0 }}>
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '10px' }}>
-                    <span className="tpe-step-number" style={{ color: 'oklch(from var(--ui-text) l c h / 0.4)', fontSize: '20px', fontWeight: 300, inlineSize: '32px' }}>{step.toString().padStart(2, '0')}</span>
-                    <div className="tpe-flex-row tpe-step-label" style={{ fontSize: '13px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', inlineSize: '145px', justifyContent: 'space-between' }}>
-                        <span>{stepLabel}</span><span className="terminal-cursor" style={{ transform: 'translateY(-1.75px)' }}>:</span>
+                    <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
+                    <div className="tpe-flex-row tpe-step-label">
+                        <span>{stepLabel}</span><span className="terminal-cursor">:</span>
                     </div>
                 </div>
 
@@ -110,6 +114,11 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                         creditPrefix={step === 1 ? draft.creditPrefix : draft.slideAssets?.[step]?.creditPrefix}
                         onCreditUpdate={(v) => onChange(updateDraftValue(step === 1 ? 'imageCredit' : `slide-credit-${step}`, v, draft))}
                         onCreditPrefixChange={(p) => onChange(updateDraftPrefix(step === 1 ? 'imageCredit' : `slide-credit-${step}`, p, draft))}
+                        showSource={step !== 1}
+                        sourceValue={getDraftValue(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, draft)}
+                        sourcePrefix={step === 1 ? "" : (step === 2 ? (draft.sourcePrefix || "SOURCE:") : (draft.extraSlides?.[extraIndex]?.sourcePrefix || "SOURCE:"))}
+                        onSourceUpdate={(v) => onChange(updateDraftValue(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, v, draft))}
+                        onSourcePrefixChange={(p) => onChange(updateDraftPrefix(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, p, draft))}
                     />
                     <div className="tpe-flex-row tpe-desktop-only" style={{ gap: '12px' }}>
                         {step !== 1 && (
@@ -124,22 +133,22 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                     <button 
                         onClick={() => setStep(step - 1)} 
                         className="tpe-nav-btn tpe-btn-gold"
-                        style={{ inlineSize: '70px', gap: '6px', paddingInline: '0' }}
+                        style={{ inlineSize: '70px' }}
                     >
-                        <span className="tpe-nav-btn-text" style={{ transform: 'translateY(1px)' }}>BACK</span>
+                        <span className="tpe-nav-btn-text">BACK</span>
                     </button>
                 )}
                 <button 
                     onClick={() => canProceed && (step < 2 + (draft.extraSlides?.length || 0) ? setStep(step + 1) : onSubmit(draft))} 
                     disabled={!canProceed || resolving} 
                     className={`tpe-nav-btn ${step < 2 + (draft.extraSlides?.length || 0) ? "tpe-btn-gold" : "tpe-btn-primary"}`} 
-                    style={{ inlineSize: '130px', gap: '6px', paddingInline: '0' }}
+                    style={{ inlineSize: '130px' }}
                 >
-                    <span className="tpe-nav-btn-text" style={{ transform: 'translateY(1px)' }}>
+                    <span className="tpe-nav-btn-text">
                         {resolving ? "RESOLVE" : 
                          (canProceed ? (step < 2 + (draft.extraSlides?.length || 0) ? "NEXT STEP" : "EXPORT BATCH") : "INPUT REQ.")}
                     </span>
-                    <span className="tpe-nav-btn-icon" style={{ fontSize: '13px', display: 'flex', alignItems: 'center', transform: 'translateY(-0.5px)' }}>→</span>
+                    <span className="tpe-nav-btn-icon">→</span>
                 </button>
             </div>
         </div>

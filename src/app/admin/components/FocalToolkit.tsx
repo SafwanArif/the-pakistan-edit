@@ -62,22 +62,8 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             {asset.image && (
                 <button 
                     onClick={() => setIsExpanded(!isExpanded)}
-                    className="tpe-glass-panel"
-                    style={{ 
-                        pointerEvents: 'auto', 
-                        padding: '6px 16px', 
-                        borderRadius: '20px', 
-                        fontSize: '9px', 
-                        fontWeight: 900, 
-                        color: isExpanded ? 'var(--ui-accent)' : 'var(--ui-text-dim)', 
-                        border: isExpanded ? '1px solid var(--ui-accent)' : '1px solid oklch(from var(--ui-text) l c h / 0.1)',
-                        letterSpacing: '0.1em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        boxShadow: isExpanded ? '0 0 20px oklch(from var(--ui-accent) l c h / 0.2)' : 'none'
-                    }}
+                    className="tpe-hud-toggle"
+                    data-active={isExpanded}
                 >
                     <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
                     FOCAL TOOLS
@@ -88,19 +74,9 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             )}
 
             {isExpanded && (
-                <div className="tpe-flex-col tpe-glass-panel" style={{ 
-                    gap: '15px', 
-                    padding: '20px', 
-                    borderRadius: '24px', 
-                    pointerEvents: 'auto', 
-                    inlineSize: 'auto', 
-                    minInlineSize: '300px',
-                    boxShadow: 'var(--shadow-xl)',
-                    animation: 'tpe-hud-reveal 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                    border: '1px solid oklch(from var(--ui-accent) l c h / 0.1)'
-                }}>
+                <div className="tpe-flex-col tpe-glass-panel tpe-hud-container">
                     {/* 2x3 GRID SYSTEM (VERTICAL) */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px 30px', inlineSize: '100%' }}>
+                    <div className="tpe-hud-grid">
                         {[
                             { id: "zoom", label: "ZOOM", min: 10, max: 800, value: asset.imageZoom, field: "imageZoom" },
                             { id: "posX", label: "PAN X", min: 0, max: 100, value: asset.imagePosX, field: "imagePosX" },
@@ -120,7 +96,8 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                                     ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'].forEach(f => d = update(f, f === 'imageZoom' ? 100 : 50, d));
                                     updateDraft(d);
                                 }}
-                                className="tpe-btn-primary" style={{ padding: '2px', borderRadius: '8px', inlineSize: '32px', blockSize: '32px', boxShadow: 'none', flexShrink: 0 }}
+                                className="tpe-btn-primary tpe-btn-icon"
+                                style={{ boxShadow: 'none' }}
                             >
                                 {asset.snapMode === 'width' ? (
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/><path d="M12 2l-3 3m6 0l-3-3M2 12l3-3m0 6l-3-3M12 22l-3-3m6 0l-3 3M22 12l-3-3m0 6l3-3"/></svg>
@@ -130,7 +107,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3.5"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
                                 )}
                             </button>
-                            <span style={{ fontSize: '7px', fontWeight: 800, opacity: 0.5 }}>SNAP</span>
+                            <span className="focal-slider-label">SNAP</span>
                         </div>
 
                         <FocalSlider id="scrim" label="OPACITY" min={0} max={100} value={asset.scrim ?? 0} field="scrim" onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === 'scrim'} />
@@ -143,11 +120,11 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                     <div className="tpe-flex-row" style={{ position: 'relative', gap: '10px' }}>
                         <input
                             id={`input-extra-heading-${extraIndex}`}
-                            className="tpe-input-minimal tpe-uppercase"
+                            className="tpe-input-minimal tpe-terminal-text"
                             placeholder={extraIndex === 0 ? "ANGLE HEADING" : "SUPPLEMENTAL HEADING"}
                             value={extraSlides[extraIndex]?.heading || ""}
                             onChange={(e) => updateDraft(updateDraftValue(`extra-heading-${extraIndex}`, e.target.value, activeDraft))}
-                            style={{ color: 'var(--ui-indicator)', fontWeight: 700, fontSize: '11px', borderBlockEnd: '1px solid oklch(from var(--ui-indicator) l c h / 0.2)', inlineSize: '260px', letterSpacing: '0.05em' }}
+                            style={{ color: 'var(--ui-indicator)', fontWeight: 700, fontSize: '11px', borderBlockEnd: '1px solid oklch(from var(--ui-indicator) l c h / 0.2)', inlineSize: '260px' }}
                         />
                         <EmojiToolbar 
                             fieldId={`extra-heading-${extraIndex}`} 
@@ -156,9 +133,9 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                         />
                     </div>
                     <div style={{ inlineSize: '1px', blockSize: '18px', background: 'oklch(from var(--ui-text) l c h / 0.05)' }} />
-                    <button onClick={addExtraSlide} className="tpe-btn-primary" style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '8px', background: 'var(--ui-accent)', fontWeight: 800 }}>ADD ANGLE</button>
+                    <button onClick={addExtraSlide} className="tpe-btn-primary tpe-btn-icon" style={{ inlineSize: 'auto', paddingInline: '14px', background: 'var(--ui-accent)', fontSize: '8px' }}>ADD ANGLE</button>
                     {isDeletable && (
-                        <button onClick={() => removeExtraSlide(extraIndex)} style={{ background: 'oklch(from red l c h / 0.1)', color: 'oklch(from red l c h / 0.8)', border: '1px solid oklch(from red l c h / 0.2)', padding: '4px 8px', borderRadius: '6px', fontSize: '8px', fontWeight: 900, cursor: 'pointer' }}>DEL</button>
+                        <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-asset-btn-danger tpe-btn-icon" style={{ inlineSize: 'auto', paddingInline: '8px', fontSize: '8px', fontWeight: 900 }}>DEL</button>
                     )}
                 </div>
             )}

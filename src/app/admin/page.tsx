@@ -25,8 +25,8 @@ export default function AdminDashboard() {
         try {
             await runExportEngine(draft, setExporting);
         } catch (e) {
-            alert("Export Engine Failure. Check console for logs.");
-            setExporting(null);
+            // Error is now handled via ExportOverlay status state
+            console.error("ADMIN_DASHBOARD_EXPORT_INTERCEPT:", e);
         }
     }, []);
 
@@ -39,14 +39,27 @@ export default function AdminDashboard() {
             <header className="command-ribbon">
                 <div className="tpe-progress-container">
                     {Array.from({ length: totalSteps }).map((_, i) => (
-                        <div key={i} onClick={() => setCurrentStep(i + 1)} className="tpe-progress-segment" style={{ background: currentStep >= i + 1 ? (i < 1 ? 'var(--ui-indicator)' : i === 1 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'transparent', boxShadow: currentStep === i + 1 ? '0 0 10px white' : 'none' }} />
+                        <div 
+                            key={i} 
+                            onClick={() => setCurrentStep(i + 1)} 
+                            className="tpe-progress-segment" 
+                            data-active={currentStep === i + 1}
+                            style={{ 
+                                background: currentStep >= i + 1 ? (i < 1 ? 'var(--ui-indicator)' : i === 1 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'transparent' 
+                            }} 
+                        />
                     ))}
                 </div>
                 <div onClick={resetState} className="tpe-flex-center" style={{ cursor: 'pointer' }}><TPEVectorLogo scale={1.08} showWordmark={false} /></div>
                 <div className="tpe-flex-row" style={{ flex: 1 }}>
                     <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} />
                 </div>
-                {exporting && <ExportOverlay status={exporting} />}
+                {exporting && (
+                    <ExportOverlay 
+                        status={exporting} 
+                        onClose={() => setExporting(null)} 
+                    />
+                )}
             </header>
 
             <main className="sandbox-grid">

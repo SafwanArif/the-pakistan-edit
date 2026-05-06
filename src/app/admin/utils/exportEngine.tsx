@@ -7,6 +7,7 @@ import { NewsCard } from "../../../components/templates/instagram/NewsCard/index
 
 /**
  * Institutional Export Engine: Deterministic Asset Generation Pipeline
+ * v2027.5: Robust memory management and error failsafes.
  */
 export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void) => {
     onStatus("Initializing Export Engine...");
@@ -14,9 +15,11 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
     const platforms: Platform[] = ["tiktok", "instagram", "square"];
     const zip = new JSZip();
 
+    let root: any = null;
+
     try {
         const container = document.getElementById('export-capture-surface');
-        if (!container) throw new Error("Capture surface fault");
+        if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
 
         const sanitize = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         const getGold = (t: string) => [...new Set((t.match(/\*([^*]+)\*/g) || []).map(m => sanitize(m.replace(/\*/g, ''))))];
@@ -38,21 +41,33 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
                 const temp = document.createElement("div");
                 temp.style.inlineSize = `${OMNI_CONFIG[p].width}px`;
                 temp.style.blockSize = `${OMNI_CONFIG[p].height}px`;
-                container.innerHTML = ""; container.appendChild(temp);
+                temp.style.position = "absolute";
+                temp.style.left = "-9999px"; // Off-screen failsafe
+                
+                container.innerHTML = ""; 
+                container.appendChild(temp);
 
-                const root = createRoot(temp);
+                root = createRoot(temp);
                 root.render(<NewsCard {...draft} slide={s} platform={p} totalSlides={totalSlides} />);
                 
+                // Deterministic Wait Sequence
                 await new Promise(r => requestAnimationFrame(r));
                 await document.fonts.ready;
                 
                 const images = Array.from(temp.querySelectorAll('img'));
                 await Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise(resolve => { img.onload = resolve; img.onerror = resolve; })));
 
-                await new Promise(r => setTimeout(r, 50));
+                await new Promise(r => setTimeout(r, 100)); // Buffer for sub-pixel stabilization
                 
-                const blob = await toBlob(temp, { width: OMNI_CONFIG[p].width, height: OMNI_CONFIG[p].height, pixelRatio: 1, backgroundColor: '#050505', cacheBust: true });
-                if (!blob) throw new Error(`Render fault: ${p} S${s}`);
+                const blob = await toBlob(temp, { 
+                    width: OMNI_CONFIG[p].width, 
+                    height: OMNI_CONFIG[p].height, 
+                    pixelRatio: 1, 
+                    backgroundColor: '#050505', 
+                    cacheBust: true 
+                });
+
+                if (!blob) throw new Error(`RENDER_FAULT: Failed to capture ${p} Slide ${s}`);
 
                 const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
                 const curText = s === 1 ? draft.headline : s === 2 ? (draft.summary || "") : `${draft.extraSlides?.[s-3]?.heading} ${draft.extraSlides?.[s-3]?.content}`;
@@ -62,11 +77,13 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
                 if (fileName.length > 150) fileName = fileName.substring(0, 146) + ".png";
 
                 zip.file(fileName, blob);
+                
                 root.unmount();
+                root = null;
             }
         }
 
-        onStatus("Packaging Bundle...");
+        onStatus("Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
         const link = document.createElement("a");
         const url = URL.createObjectURL(content);
@@ -76,9 +93,14 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         URL.revokeObjectURL(url);
         
         onStatus("Complete! 🎉");
-        setTimeout(() => onStatus(null), 2500);
-    } catch (e) {
-        console.error("EXPORT_ENGINE_CRITICAL:", e);
+        setTimeout(() => onStatus(null), 3000);
+    } catch (e: any) {
+        onStatus(`ERROR: ${e.message || "Export Failed"}`);
+        console.error("EXPORT_ENGINE_CRITICAL_FAILURE:", e);
         throw e;
+    } finally {
+        if (root) {
+            try { root.unmount(); } catch (e) {}
+        }
     }
 };

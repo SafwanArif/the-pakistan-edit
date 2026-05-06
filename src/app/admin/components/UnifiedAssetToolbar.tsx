@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Draft } from "../../../types/news";
 import { updateSlideAsset } from "../utils/dataAccessors";
 import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
-import { ImageCreditToolbar } from "./EditorialTools";
+import { ImageCreditToolbar, SourcePrefixToolbar } from "./EditorialTools";
 
 interface UnifiedAssetToolbarProps {
     hasOverride: boolean;
@@ -17,6 +17,12 @@ interface UnifiedAssetToolbarProps {
     creditPrefix?: string;
     onCreditUpdate?: (v: string) => void;
     onCreditPrefixChange?: (p: string) => void;
+    // Narrative Source Props
+    showSource?: boolean;
+    sourceValue?: string;
+    sourcePrefix?: string;
+    onSourceUpdate?: (v: string) => void;
+    onSourcePrefixChange?: (p: string) => void;
 }
 
 /**
@@ -24,7 +30,11 @@ interface UnifiedAssetToolbarProps {
  * High-fidelity, compact control ribbon for asset ingestion.
  * Preserves the exact visual DNA (Gold/Green/Red/Black palette).
  */
-export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOverride, currentUrl, onLink, onUpload, onClear, creditValue, creditPrefix, onCreditUpdate, onCreditPrefixChange }) => {
+export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ 
+    hasOverride, currentUrl, onLink, onUpload, onClear, 
+    creditValue, creditPrefix, onCreditUpdate, onCreditPrefixChange,
+    showSource, sourceValue, sourcePrefix, onSourceUpdate, onSourcePrefixChange
+}) => {
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [url, setUrl] = useState(currentUrl || "");
     const linkInputRef = useRef<HTMLInputElement>(null);
@@ -147,7 +157,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                     </div>
                 )}
 
-                {/* 2027 ASSET METADATA ROW */}
+                {/* 2027 ASSET METADATA ROW (PHOTO CREDIT) */}
                 {hasOverride && onCreditUpdate && (
                     <div className="tpe-asset-tray-metadata" style={{ margin: 0, paddingBlockStart: '10px' }}>
                         <div className="tpe-source-row-wrapper" style={{ margin: 0 }}>
@@ -163,6 +173,27 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({ hasOv
                                 placeholder="CREDIT" 
                                 value={creditValue || ""} 
                                 onChange={(e) => onCreditUpdate(e.target.value)} 
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* 2027 NARRATIVE SOURCE ROW (MOBILE-ONLY) */}
+                {showSource && onSourceUpdate && (
+                    <div className="tpe-asset-tray-metadata tpe-mobile-only" style={{ margin: 0, paddingBlockStart: hasOverride ? '8px' : '0', borderBlockStart: hasOverride ? '1px solid var(--ui-border)' : 'none' }}>
+                        <div className="tpe-source-row-wrapper" style={{ margin: 0 }}>
+                            <SourcePrefixToolbar 
+                                value={sourceValue || ""} 
+                                prefix={sourcePrefix || "SOURCE:"} 
+                                onPrefixChange={(p: string) => onSourcePrefixChange?.(p)} 
+                                onUpdate={onSourceUpdate} 
+                            />
+                            <input 
+                                className="tpe-input-field tpe-uppercase tpe-source-input" 
+                                style={{ flex: 1, minWidth: 0, margin: 0 }}
+                                placeholder="SOURCE" 
+                                value={sourceValue || ""} 
+                                onChange={(e) => onSourceUpdate(e.target.value)} 
                             />
                         </div>
                     </div>

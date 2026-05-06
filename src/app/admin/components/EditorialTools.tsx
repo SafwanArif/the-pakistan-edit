@@ -18,25 +18,8 @@ const FormatButton: React.FC<{ icon: string, label: string, syntax: string, fiel
                 setTimeout(() => { el.focus(); el.setSelectionRange(start + syntax.length, end + syntax.length); }, 0); 
             } 
         }} 
-        style={{ 
-            background: 'oklch(from var(--ui-text) l c h / 0.05)', 
-            color: color, 
-            border: 'none', 
-            padding: '0 12px',
-            height: '28px',
-            fontSize: '10px',
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            transition: 'var(--transition-fast)'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.background = 'oklch(from var(--ui-text) l c h / 0.1)'}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'oklch(from var(--ui-text) l c h / 0.05)'}
+        className="tpe-format-btn"
+        style={{ color: color }}
     >
         <span style={{ fontSize: '12px' }}>{icon}</span> {label}
     </button>
@@ -90,24 +73,12 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
         <>
             {hasSelection && (
                 <div 
-                    style={{ 
-                        position: 'fixed', 
-                        left: goldPos.x, 
-                        top: goldPos.y, 
-                        transform: 'translate(-50%, 15px)', 
-                        zIndex: 'var(--z-overlay)', 
-                        display: 'flex', 
-                        gap: '6px',
-                        background: 'var(--ui-bg-popover)',
-                        backdropFilter: 'blur(var(--blur-md))',
-                        padding: '6px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid oklch(from var(--ui-border) l c h / 0.5)',
-                        boxShadow: 'var(--shadow-lg)'
-                    }}
+                    className="tpe-selection-popover"
+                    style={{ left: goldPos.x, top: goldPos.y }}
                 >
                     <FormatButton icon="✨" label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" />
                     <FormatButton icon="B" label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
+                    <FormatButton icon="I" label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text-dim)" />
                     <FormatButton icon="🟩" label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" />
                     <FormatButton icon="⬛" label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
                 </div>
@@ -117,7 +88,7 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '0', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
                     <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="240px">
                         <input autoFocus placeholder="Search emojis..." value={search} onChange={(e) => setSearch(e.target.value)} className="tpe-popover-input" />
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+                        <div className="tpe-emoji-picker-grid">
                             {filtered.map(emoji => (
                                 <button key={emoji.label} onClick={(e) => { e.preventDefault(); handleEmojiClick(emoji.icon); }} className="tpe-emoji-btn">{emoji.icon}</button>
                             ))}
@@ -167,7 +138,7 @@ export const PrefixToolbar = React.memo<{
                 ))}
                 <input placeholder="Custom Prefix..." onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ( (e.target as HTMLInputElement).value.endsWith(':') ? '' : ':' ); onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
                 {showSocial && fieldId && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid var(--ui-border)' }}>
+                    <div className="tpe-social-grid">
                         {SOCIAL_ICONS.map(soc => (
                             <button key={soc.label} onClick={(e) => { e.preventDefault(); handleIconClick(soc.icon); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
                         ))}

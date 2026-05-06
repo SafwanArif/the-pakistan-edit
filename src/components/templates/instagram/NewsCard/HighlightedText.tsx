@@ -22,7 +22,7 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
         if (!content) return [];
         
         // Simplified Single-Character Regex Registry (2027 Minimalist Standard)
-        const splitRegex = new RegExp(`(\\^[^\\^]+?\\^)|(\\*[^\\*]+?\\*)|(_[^_]+?_)|(#[^#]+?#)|(%[^%]+?%)|${FLAG_REGEX.source}`, 'g');
+        const splitRegex = new RegExp(`(\\^[^\\^]+?\\^)|(\\*[^\\*]+?\\*)|(_[^_]+?_)|(#[^#]+?#)|(%[^%]+?%)|(\\/[^\\/]+?\\/)|${FLAG_REGEX.source}`, 'g');
         return content.split(splitRegex).filter(Boolean).map((part, i) => {
             const key = `${part}-${i}`;
             
@@ -79,7 +79,13 @@ export const HighlightedText = React.memo<{ text?: string, color?: string }>(({ 
                 );
             }
 
-            // 5. FLAG ICON REGISTRY
+            // 5. ITALIC TEXT ACCENT (/)
+            if (part.startsWith("/") && part.endsWith("/")) {
+                const inner = part.slice(1, -1);
+                return <span key={key} style={{ fontStyle: 'italic' }}>{parseText(inner, true)}</span>;
+            }
+
+            // 6. FLAG ICON REGISTRY
             if (FLAGS[part]) {
                 return <img key={key} src={FLAGS[part]} alt="flag" style={{ blockSize: '1.05em', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} />;
             }

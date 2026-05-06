@@ -1,4 +1,5 @@
 import { Draft } from "../../../types/news";
+import { produce } from "immer";
 
 /**
  * 2027 Institutional Data Engine: Unified Property Resolver
@@ -12,11 +13,14 @@ const PATH_MAP: Record<string, string> = {
     'credit': 'imageCredit'
 };
 
-const resolveExtra = (fieldId: string) => {
+const resolveExtra = (fieldId: string): { type: string, idx: number } | null => {
     const match = fieldId.match(/extra-(heading|content|source)-(\d+)/);
     if (match && match[1] && match[2]) {
         const typeKey = match[1];
-        return { type: PATH_MAP[typeKey], idx: parseInt(match[2], 10) };
+        const resolvedType = PATH_MAP[typeKey];
+        if (resolvedType) {
+            return { type: resolvedType, idx: parseInt(match[2], 10) };
+        }
     }
     return null;
 };
@@ -32,34 +36,54 @@ export const getDraftValue = (fieldId: string, draft: Draft): string => {
 };
 
 export const updateDraftValue = (fieldId: string, newVal: string, draft: Draft): Draft => {
-    const extra = resolveExtra(fieldId);
-    if (extra) {
-        const slides = [...(draft.extraSlides || [])];
-        const currentSlide = slides[extra.idx] || { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
-        slides[extra.idx] = { ...currentSlide, [extra.type as any]: newVal };
-        return { ...draft, extraSlides: slides };
-    }
-    
-    const assetMatch = fieldId.match(/slide-credit-(\d+)/);
-    if (assetMatch && assetMatch[1]) return updateSlideAsset(parseInt(assetMatch[1], 10), 'imageCredit', newVal, draft);
-    
-    return { ...draft, [fieldId]: newVal };
+    return produce(draft, draft => {
+        const extra = resolveExtra(fieldId);
+        if (extra) {
+            if (!draft.extraSlides) draft.extraSlides = [];
+            if (!draft.extraSlides[extra.idx]) {
+                draft.extraSlides[extra.idx] = { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
+            }
+            (draft.extraSlides as any)[extra.idx][extra.type] = newVal;
+            return;
+        }
+        
+        const assetMatch = fieldId.match(/slide-credit-(\d+)/);
+        if (assetMatch && assetMatch[1]) {
+            const slide = parseInt(assetMatch[1], 10);
+            if (!draft.slideAssets) draft.slideAssets = {};
+            if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
+            draft.slideAssets[slide].imageCredit = newVal;
+            return;
+        }
+        
+        (draft as any)[fieldId] = newVal;
+    });
 };
 
 export const updateDraftPrefix = (fieldId: string, prefix: string, draft: Draft): Draft => {
-    const extra = resolveExtra(fieldId);
-    if (extra) {
-        const slides = [...(draft.extraSlides || [])];
-        const currentSlide = slides[extra.idx] || { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
-        slides[extra.idx] = { ...currentSlide, sourcePrefix: prefix };
-        return { ...draft, extraSlides: slides };
-    }
-    
-    const assetMatch = fieldId.match(/slide-credit-(\d+)/);
-    if (assetMatch && assetMatch[1]) return updateSlideAsset(parseInt(assetMatch[1], 10), 'creditPrefix', prefix, draft);
-    
-    const prefixField = fieldId === 'sourceName' ? 'sourcePrefix' : 'creditPrefix';
-    return { ...draft, [prefixField]: prefix };
+    return produce(draft, draft => {
+        const extra = resolveExtra(fieldId);
+        if (extra) {
+            if (!draft.extraSlides) draft.extraSlides = [];
+            if (!draft.extraSlides[extra.idx]) {
+                draft.extraSlides[extra.idx] = { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
+            }
+            (draft.extraSlides as any)[extra.idx].sourcePrefix = prefix;
+            return;
+        }
+        
+        const assetMatch = fieldId.match(/slide-credit-(\d+)/);
+        if (assetMatch && assetMatch[1]) {
+            const slide = parseInt(assetMatch[1], 10);
+            if (!draft.slideAssets) draft.slideAssets = {};
+            if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
+            draft.slideAssets[slide].creditPrefix = prefix;
+            return;
+        }
+        
+        const prefixField = fieldId === 'sourceName' ? 'sourcePrefix' : 'creditPrefix';
+        (draft as any)[prefixField] = prefix;
+    });
 };
 
 /**
@@ -112,7 +136,9 @@ export const getEffectiveSlideAsset = (slide: number, draft: Draft): any => {
 };
 
 export const updateSlideAsset = (slide: number, field: string, value: any, draft: Draft): Draft => {
-    const assets = { ...(draft.slideAssets || {}) };
-    assets[slide] = { ...(assets[slide] || {}), [field]: value };
-    return { ...draft, slideAssets: assets };
+    return produce(draft, draft => {
+        if (!draft.slideAssets) draft.slideAssets = {};
+        if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
+        (draft.slideAssets[slide] as any)[field] = value;
+    });
 };

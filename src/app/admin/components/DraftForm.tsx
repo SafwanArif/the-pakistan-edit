@@ -84,7 +84,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
         });
     }, [draft.image, draft.imageWidth, draft.slideAssets, resolve]);
 
-    const extraIndex = step - 3;
+
     const canProceed = step === 1 ? (!!draft.category?.trim() && !!draft.headline?.trim() && !!draft.image) : (step === 2 ? !!draft.summary?.trim() : !!draft.extraSlides?.[0]?.content?.trim());
     const stepLabel = useMemo(() => EDITORIAL_STEPS.find(s => s.step === step)?.label || `Angle ${step - 2}`, [step]);
 

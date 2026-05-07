@@ -92,7 +92,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     return (
         <div className="tpe-flex-col tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-header-row">
-                <div onClick={onReset} style={{ cursor: 'pointer', marginInlineEnd: '12px', display: 'flex', alignItems: 'center' }}>
+                <div onClick={onReset} style={{ cursor: 'pointer', marginInlineEnd: '2px', display: 'flex', alignItems: 'center' }}>
                     <TPEVectorLogo scale={1.08} showWordmark={false} />
                 </div>
                 <div className="tpe-header-main">

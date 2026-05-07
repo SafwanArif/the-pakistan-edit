@@ -628,7 +628,7 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 8px;
+    gap: 6px;
     min-inline-size: 0;
   }
 
@@ -798,7 +798,7 @@
     flex-direction: column;
     align-items: stretch;
     inline-size: 100%;
-    padding-inline: 20px;
+    padding-inline: 4px 20px;
   }
 
   .tpe-header-row {
@@ -1072,7 +1072,7 @@
     }
 
     .tpe-draft-form-container {
-      padding-inline: 12px;
+      padding-inline: 2px 4px;
     }
 
     .tpe-header-row {

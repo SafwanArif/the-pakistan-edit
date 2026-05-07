@@ -7,6 +7,7 @@ import { getDraftValue, updateDraftValue, updateDraftPrefix, updateSlideAsset } 
 import { EDITORIAL_STEPS } from "../../../config/editorial";
 import { useAssetResolver } from "../hooks/useAssetResolver";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
+import { TPEVectorLogo } from "../../../components/templates/instagram/TPEVectorLogo";
 
 /**
  * 2027 Institutional Atomic Layer: SourceRow
@@ -55,7 +56,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
 /**
  * 2027 Institutional Standard: DraftForm
  */
-export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void }> = ({ draft, onChange, onSubmit, step, setStep }) => {
+export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void, onReset?: () => void }> = ({ draft, onChange, onSubmit, step, setStep, onReset }) => {
     const { resolving, resolve } = useAssetResolver(draft, onChange);
     const extraSlides = useMemo(() => draft.extraSlides || [], [draft.extraSlides]);
     const extraIndex = step - 3;
@@ -91,6 +92,9 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     return (
         <div className="tpe-flex-col tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-header-row">
+                <div onClick={onReset} style={{ cursor: 'pointer', marginInlineEnd: '12px', display: 'flex', alignItems: 'center' }}>
+                    <TPEVectorLogo scale={1.08} showWordmark={false} />
+                </div>
                 <div className="tpe-header-main">
                 <div className="tpe-flex-row" style={{ flexShrink: 0, gap: '6px' }}>
                     <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>

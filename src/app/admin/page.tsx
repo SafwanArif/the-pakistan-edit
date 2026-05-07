@@ -50,9 +50,8 @@ export default function AdminDashboard() {
                         />
                     ))}
                 </div>
-                <div onClick={resetState} className="tpe-flex-center" style={{ cursor: 'pointer' }}><TPEVectorLogo scale={1.08} showWordmark={false} /></div>
                 <div className="tpe-flex-row" style={{ flex: 1 }}>
-                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} />
+                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} />
                 </div>
                 {exporting && (
                     <ExportOverlay 

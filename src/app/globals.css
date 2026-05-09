@@ -624,6 +624,20 @@
     z-index: 30;
   }
 
+  .tpe-logo-wrapper {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin-inline-end: 6px;
+  }
+
+  .tpe-step-cluster {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
   .tpe-header-main {
     display: flex;
     align-items: center;
@@ -1033,12 +1047,20 @@
       margin: 0;
     }
 
+    .tpe-logo-wrapper {
+      margin-inline-end: 2px;
+    }
+
+    .tpe-step-cluster {
+      gap: 2px;
+    }
+
     .tpe-header-main {
-      gap: 0px;
+      gap: 2px;
     }
 
     .tpe-header-tools {
-      gap: 0px;
+      gap: 2px;
     }
 
     .tpe-step-number {
@@ -1065,18 +1087,18 @@
       flex: 1;
 
       &.tpe-category-input {
-        inline-size: 50px;
+        inline-size: 65px;
         margin-inline-start: -2px;
         flex: none;
       }
     }
 
     .tpe-draft-form-container {
-      padding-inline: 0px 4px;
+      padding-inline: 2px 4px;
     }
 
     .tpe-header-row {
-      gap: 4px;
+      gap: 2px;
     }
 
     .tpe-angle-toolbar {

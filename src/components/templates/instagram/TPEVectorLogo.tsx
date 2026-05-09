@@ -14,17 +14,18 @@ export const TPEVectorLogo: React.FC<{
 }) => {
 
 
-    // Unified SVG Dimensions - Tightly bounded to prevent layout shifts
-    // Wordmark version is ~72px wide to match 'PAKISTAN' wordmark bounds
-    const width = showWordmark ? 72 : 48;
-    const height = showWordmark ? 85 : 48;
-    const centerX = width / 2;
+    // Unified SVG Dimensions
+    // Wordmark version: 72x85, Monogram version: cropped to exact bounds (29x36)
+    const width = showWordmark ? 72 : 29;
+    const height = showWordmark ? 85 : 36;
+    const viewBox = showWordmark ? "0 0 72 85" : "6 6 29 36";
+    const centerX = showWordmark ? 72 / 2 : 24; // Ensure translate(0,0) when standalone
 
     return (
         <svg 
             width={width * scale} 
             height={height * scale} 
-            viewBox={`0 0 ${width} ${height}`} 
+            viewBox={viewBox} 
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
             style={{ 

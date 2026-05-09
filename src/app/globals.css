@@ -1034,11 +1034,11 @@
     }
 
     .tpe-header-main {
-      gap: 2px;
+      gap: 0px;
     }
 
     .tpe-header-tools {
-      gap: 2px;
+      gap: 0px;
     }
 
     .tpe-step-number {
@@ -1065,14 +1065,14 @@
       flex: 1;
 
       &.tpe-category-input {
-        inline-size: 65px;
+        inline-size: 50px;
         margin-inline-start: -2px;
         flex: none;
       }
     }
 
     .tpe-draft-form-container {
-      padding-inline: 2px 4px;
+      padding-inline: 0px 4px;
     }
 
     .tpe-header-row {

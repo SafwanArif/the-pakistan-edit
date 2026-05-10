@@ -658,6 +658,16 @@
     inline-size: 140px;
   }
 
+  .tpe-separator-pipe {
+    color: var(--ui-border);
+    font-size: 20px;
+    font-weight: 200;
+    display: flex;
+    align-items: center;
+    margin-inline: -6px;
+    pointer-events: none;
+  }
+
   .tpe-masthead-meta {
     display: flex;
     flex-direction: column;
@@ -1048,7 +1058,7 @@
     }
 
     .tpe-logo-wrapper {
-      margin-inline-end: 0;
+      margin-inline-end: 2px;
     }
 
     .tpe-step-cluster {
@@ -1057,7 +1067,6 @@
 
     .tpe-header-main {
       gap: 2px;
-      transform: translateX(0.5px);
     }
 
     .tpe-header-tools {
@@ -1096,8 +1105,7 @@
 
     .tpe-separator-pipe {
       margin-inline: 0 !important;
-      font-size: 16px !important;
-      opacity: 0.5;
+      font-size: 16px;
     }
 
     .tpe-draft-form-container {

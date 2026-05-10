@@ -644,7 +644,6 @@
     flex: 1;
     gap: 6px;
     min-inline-size: 0;
-    transform: translateX(0.25px);
   }
 
   .tpe-header-tools {
@@ -1058,6 +1057,7 @@
 
     .tpe-header-main {
       gap: 2px;
+      transform: translateX(0.5px);
     }
 
     .tpe-header-tools {
@@ -1095,7 +1095,9 @@
     }
 
     .tpe-separator-pipe {
-      display: none !important;
+      margin-inline: 0 !important;
+      font-size: 16px !important;
+      opacity: 0.5;
     }
 
     .tpe-draft-form-container {

@@ -905,11 +905,11 @@
     color: var(--ui-accent);
     font-size: 1.2em;
     text-shadow: 0 0 8px oklch(from var(--ui-accent) l c h / 0.5);
-    transform: translate(2px, -1.75px);
+    transform: translateY(-1.75px);
 
     @media (max-width: 768px) {
-      margin-inline-end: 4.5px;
-      transform: translate(-2px, -1.75px);
+      margin-inline-end: 0;
+      transform: translateY(-1.75px);
     }
   }
 
@@ -1048,11 +1048,11 @@
     }
 
     .tpe-logo-wrapper {
-      margin-inline-end: 2px;
+      margin-inline-end: 0;
     }
 
     .tpe-step-cluster {
-      gap: 2px;
+      gap: 0;
     }
 
     .tpe-header-main {
@@ -1088,9 +1088,13 @@
 
       &.tpe-category-input {
         inline-size: 65px;
-        margin-inline-start: -2px;
+        margin-inline-start: 0;
         flex: none;
       }
+    }
+
+    .tpe-separator-pipe {
+      display: none !important;
     }
 
     .tpe-draft-form-container {

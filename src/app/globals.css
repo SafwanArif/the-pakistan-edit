@@ -1050,12 +1050,7 @@
 
   /* 🏛️ 2027 MOBILE OVERRIDES REGISTRY */
   @media (max-width: 768px) {
-    .tpe-draft-form-container,
-    .tpe-draft-form-container > div:first-child,
-    .tpe-draft-form-container > div:first-child > div:first-child {
-      gap: 0;
-      margin: 0;
-    }
+
 
     .tpe-logo-wrapper {
       margin-inline-end: 2px;

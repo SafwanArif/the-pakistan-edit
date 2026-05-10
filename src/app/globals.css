@@ -644,6 +644,7 @@
     flex: 1;
     gap: 6px;
     min-inline-size: 0;
+    transform: translateX(0.25px);
   }
 
   .tpe-header-tools {

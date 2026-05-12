@@ -4,7 +4,7 @@ import { EMOJIS, SOCIAL_ICONS } from "../../../config/editorial";
 import { getDraftValue, updateDraftValue } from "../utils/dataAccessors";
 import { EditorialPopover } from "./EditorialPopover";
 
-const FormatButton: React.FC<{ icon: string, label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color: string }> = ({ icon, label, syntax, fieldId, value, onUpdate, setHasSelection, color }) => (
+const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color?: string, bg?: string, bold?: boolean, italic?: boolean }> = ({ label, syntax, fieldId, value, onUpdate, setHasSelection, color, bg, bold, italic }) => (
     <button 
         onMouseDown={(e) => { 
             e.preventDefault(); 
@@ -19,9 +19,16 @@ const FormatButton: React.FC<{ icon: string, label: string, syntax: string, fiel
             } 
         }} 
         className="tpe-format-btn"
-        style={{ color: color }}
+        style={{ 
+            color: color || 'var(--ui-text)', 
+            background: bg || 'transparent',
+            fontWeight: bold ? 700 : 400, 
+            fontStyle: italic ? 'italic' : 'normal',
+            textTransform: 'uppercase',
+            padding: bg ? '2px 6px' : '0'
+        }}
     >
-        <span style={{ fontSize: '12px' }}>{icon}</span> {label}
+        {label}
     </button>
 );
 
@@ -76,11 +83,11 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     className="tpe-selection-popover"
                     style={{ left: goldPos.x, top: goldPos.y }}
                 >
-                    <FormatButton icon="✨" label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" />
-                    <FormatButton icon="B" label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
-                    <FormatButton icon="I" label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text-dim)" />
-                    <FormatButton icon="🟩" label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" />
-                    <FormatButton icon="⬛" label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" />
+                    <FormatButton label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" bold />
+                    <FormatButton label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} bold />
+                    <FormatButton label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} italic />
+                    <FormatButton label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" bold />
+                    <FormatButton label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-bg)" bg="var(--ui-text)" bold />
                 </div>
             )}
             <div style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>

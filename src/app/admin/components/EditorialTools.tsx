@@ -4,7 +4,7 @@ import { EMOJIS, SOCIAL_ICONS } from "../../../config/editorial";
 import { getDraftValue, updateDraftValue } from "../utils/dataAccessors";
 import { EditorialPopover } from "./EditorialPopover";
 
-const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color?: string, bg?: string, bold?: boolean, italic?: boolean }> = ({ label, syntax, fieldId, value, onUpdate, setHasSelection, color, bg, bold, italic }) => (
+const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntax, fieldId, value, onUpdate, setHasSelection, color, effectStyle }) => (
     <button 
         onMouseDown={(e) => { 
             e.preventDefault(); 
@@ -19,14 +19,7 @@ const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, v
             } 
         }} 
         className="tpe-format-btn"
-        style={{ 
-            color: color || 'var(--ui-text)', 
-            background: bg || 'transparent',
-            fontWeight: bold ? 700 : 400, 
-            fontStyle: italic ? 'italic' : 'normal',
-            textTransform: 'uppercase',
-            padding: bg ? '2px 6px' : '0'
-        }}
+        style={{ color: color, ...effectStyle }}
     >
         {label}
     </button>
@@ -83,11 +76,11 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     className="tpe-selection-popover"
                     style={{ left: goldPos.x, top: goldPos.y }}
                 >
-                    <FormatButton label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" bold />
-                    <FormatButton label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} bold />
-                    <FormatButton label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} italic />
-                    <FormatButton label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" bold />
-                    <FormatButton label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-bg)" bg="var(--ui-text)" bold />
+                    <FormatButton label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" effectStyle={{ fontWeight: 800 }} />
+                    <FormatButton label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" effectStyle={{ fontWeight: 800 }} />
+                    <FormatButton label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text-dim)" effectStyle={{ fontStyle: 'italic' }} />
+                    <FormatButton label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" effectStyle={{ fontWeight: 800 }} />
+                    <FormatButton label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-bg)" effectStyle={{ background: 'var(--ui-text)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }} />
                 </div>
             )}
             <div style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>

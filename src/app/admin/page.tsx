@@ -17,7 +17,7 @@ import { ExportOverlay } from "./components/ExportOverlay";
  * Orchestrates the editorial workflow within a high-density, logical layout.
  */
 export default function AdminDashboard() {
-    const { isMounted, currentStep, setCurrentStep, activeDraft, updateDraft, resetState } = useEditorialState();
+    const { isMounted, currentStep, setCurrentStep, activeDraft, updateDraft, resetState, undo, redo, canUndo, canRedo } = useEditorialState();
     const [exporting, setExporting] = useState<string | null>(null);
     const [draggingSlider, setDraggingSlider] = useState<string | null>(null);
 
@@ -63,7 +63,7 @@ export default function AdminDashboard() {
 
             <main className="sandbox-grid">
                 <OmniPreviewGrid draft={activeDraft} currentStep={currentStep} />
-                <FocalToolkit activeDraft={activeDraft} updateDraft={updateDraft} currentStep={currentStep} setStep={setCurrentStep} draggingSlider={draggingSlider} setDraggingSlider={setDraggingSlider} />
+                <FocalToolkit activeDraft={activeDraft} updateDraft={updateDraft} currentStep={currentStep} setStep={setCurrentStep} draggingSlider={draggingSlider} setDraggingSlider={setDraggingSlider} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
             </main>
 
             <div id="export-capture-surface" style={{ position: 'fixed', insetInlineStart: '-5000px' }} />

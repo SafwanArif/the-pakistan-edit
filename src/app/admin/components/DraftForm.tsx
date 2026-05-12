@@ -30,26 +30,63 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
  */
 
 
-const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => (
-    <>
-        <input className="tpe-input-field tpe-input-main tpe-uppercase tpe-category-input" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} />
-        <span className="tpe-separator-pipe">|</span>
-        <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
-            <textarea id="input-headline" className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" placeholder="PRIMARY HEADLINE BULLETIN" value={draft.headline} onChange={(e) => onChange({ ...draft, headline: e.target.value })} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
-            <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />
-        </div>
-    </>
-));
+const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => {
+    const [isExpanded, setIsExpanded] = React.useState(false);
+    return (
+        <>
+            <input className="tpe-input-field tpe-input-main tpe-uppercase tpe-category-input" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} />
+            <span className="tpe-separator-pipe">|</span>
+            <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
+                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onPointerDown={() => setIsExpanded(false)} />}
+                <textarea 
+                    id="input-headline" 
+                    className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" 
+                    placeholder="PRIMARY HEADLINE BULLETIN" 
+                    value={draft.headline} 
+                    onChange={(e) => onChange({ ...draft, headline: e.target.value })} 
+                    onFocus={() => setIsExpanded(true)}
+                    style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
+                />
+                {isExpanded && <button onPointerDown={(e) => { e.preventDefault(); setIsExpanded(false); }} className="tpe-done-btn tpe-mobile-only">DONE</button>}
+                <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />
+            </div>
+        </>
+    );
+});
 
 const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Draft, onChange: (d: Draft) => void }>(({ step, extraIndex, draft, onChange }) => {
+    const [isExpanded, setIsExpanded] = React.useState(false);
     const fieldId = step === 2 ? 'summary' : `extra-content-${extraIndex}`;
     const placeholder = step === 2 ? "THE CORE STORY..." : "CONTEXT...";
     const val = getDraftValue(fieldId, draft);
     return (
-        <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
-            <textarea id={`input-${fieldId}`} className="tpe-textarea tpe-input-field tpe-input-main" placeholder={placeholder} value={val} onChange={(e) => onChange(updateDraftValue(fieldId, e.target.value, draft))} style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} />
-            <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right={0} />
-        </div>
+        <>
+            {step >= 3 && (
+                <>
+                    <input 
+                        className="tpe-input-field tpe-input-main tpe-uppercase tpe-category-input" 
+                        placeholder={extraIndex === 0 ? "ANGLE" : "SUPPLEMENT"} 
+                        value={draft.extraSlides?.[extraIndex]?.heading || ""} 
+                        onChange={(e) => onChange(updateDraftValue(`extra-heading-${extraIndex}`, e.target.value, draft))} 
+                    />
+                    <span className="tpe-separator-pipe">|</span>
+                </>
+            )}
+            <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
+                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onPointerDown={() => setIsExpanded(false)} />}
+                <textarea 
+                    id={`input-${fieldId}`} 
+                    className="tpe-textarea tpe-input-field tpe-input-main" 
+                    placeholder={placeholder} 
+                    value={val} 
+                    onChange={(e) => onChange(updateDraftValue(fieldId, e.target.value, draft))} 
+                    onFocus={() => setIsExpanded(true)}
+                    style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
+                />
+                {isExpanded && <button onPointerDown={(e) => { e.preventDefault(); setIsExpanded(false); }} className="tpe-done-btn tpe-mobile-only">DONE</button>}
+                <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right={0} />
+            </div>
+        </>
     );
 });
 
@@ -92,7 +129,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
     return (
         <div className="tpe-flex-col tpe-draft-form-container" style={{ color: 'var(--ui-text)', blockSize: '100%', inlineSize: '100%' }}>
             <div className="tpe-header-row">
-                <div onClick={onReset} className="tpe-logo-wrapper">
+                <div onClick={() => { if (window.confirm("Clear all draft progress?")) onReset?.(); }} className="tpe-logo-wrapper">
                     <TPEVectorLogo scale={1.0} showWordmark={false} />
                 </div>
                 <div className="tpe-header-main">
@@ -151,6 +188,14 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
             </div>
 
             <div className="tpe-nav-cluster">
+                {step >= 3 && (
+                    <div className="tpe-flex-row" style={{ gap: '4px' }}>
+                        <button onClick={addExtraSlide} className="tpe-nav-btn tpe-btn-primary" style={{ paddingInline: '8px' }}>+</button>
+                        {isDeletable && (
+                            <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-nav-btn tpe-asset-btn-danger" style={{ paddingInline: '8px' }}>-</button>
+                        )}
+                    </div>
+                )}
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 
@@ -172,37 +217,6 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                 </button>
             </div>
             </div>
-
-            {step >= 3 && (
-                <div className="tpe-angle-toolbar">
-                    <div className="tpe-flex-row" style={{ flex: 1, position: 'relative' }}>
-                        <input
-                            id={`input-extra-heading-${extraIndex}`}
-                            className="tpe-input-minimal tpe-terminal-text tpe-angle-input"
-                            placeholder={extraIndex === 0 ? "ANGLE HEADING" : "SUPPLEMENTAL HEADING"}
-                            value={extraSlides[extraIndex]?.heading || ""}
-                            onChange={(e) => onChange(updateDraftValue(`extra-heading-${extraIndex}`, e.target.value, draft))}
-                        />
-                        <EmojiToolbar 
-                            fieldId={`extra-heading-${extraIndex}`} 
-                            value={extraSlides[extraIndex]?.heading || ""} 
-                            onUpdate={(v) => onChange(updateDraftValue(`extra-heading-${extraIndex}`, v, draft))}
-                            right={0}
-                        />
-                    </div>
-                    <div className="tpe-flex-row" style={{ gap: '8px' }}>
-                        <button onClick={addExtraSlide} className="tpe-btn-primary tpe-angle-btn">
-                            <span>ADD</span>
-                            <span>ANGLE</span>
-                        </button>
-                        {isDeletable && (
-                            <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-asset-btn-danger tpe-angle-btn">
-                                <span>DEL</span>
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

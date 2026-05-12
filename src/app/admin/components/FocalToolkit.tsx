@@ -13,12 +13,16 @@ interface FocalToolkitProps {
     setStep: (step: number) => void;
     draggingSlider: string | null;
     setDraggingSlider: (slider: string | null) => void;
+    undo?: () => void;
+    redo?: () => void;
+    canUndo?: boolean;
+    canRedo?: boolean;
 }
 
 const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
 export const FocalToolkit: React.FC<FocalToolkitProps> = ({ 
-    activeDraft, updateDraft, currentStep, setStep, draggingSlider, setDraggingSlider 
+    activeDraft, updateDraft, currentStep, setStep, draggingSlider, setDraggingSlider, undo, redo, canUndo, canRedo
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
@@ -41,20 +45,40 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             gap: '8px', 
             alignItems: 'center' 
         }}>
-            {/* HUD TOGGLE PILL */}
-            {asset.image && (
+            {/* CONTEXTUAL HUD ROW */}
+            <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
                 <button 
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="tpe-hud-toggle"
-                    data-active={isExpanded}
+                    onClick={undo} 
+                    disabled={!canUndo} 
+                    className="tpe-hud-toggle" 
+                    style={{ opacity: canUndo ? 1 : 0.3, pointerEvents: canUndo ? 'auto' : 'none' }}
                 >
-                    <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
-                    FOCAL TOOLS
-                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
-                        <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg>
                 </button>
-            )}
+
+                {asset.image && (
+                    <button 
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="tpe-hud-toggle"
+                        data-active={isExpanded}
+                    >
+                        <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
+                        FOCAL TOOLS
+                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
+                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    </button>
+                )}
+
+                <button 
+                    onClick={redo} 
+                    disabled={!canRedo} 
+                    className="tpe-hud-toggle" 
+                    style={{ opacity: canRedo ? 1 : 0.3, pointerEvents: canRedo ? 'auto' : 'none' }}
+                >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"/></svg>
+                </button>
+            </div>
 
             {isExpanded && (
                 <div className="tpe-flex-col tpe-glass-panel tpe-hud-container">

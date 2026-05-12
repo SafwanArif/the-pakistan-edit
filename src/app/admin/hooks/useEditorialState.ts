@@ -88,7 +88,7 @@ export const useEditorialState = () => {
         setHistoryState(prev => {
             if (prev.index > 0) {
                 const newIndex = prev.index - 1;
-                const previousDraft = prev.stack[newIndex];
+                const previousDraft = prev.stack[newIndex]!;
                 setActiveDraft(previousDraft);
                 set('tpe_active_draft', previousDraft);
                 return { ...prev, index: newIndex };
@@ -102,7 +102,7 @@ export const useEditorialState = () => {
         setHistoryState(prev => {
             if (prev.index < prev.stack.length - 1) {
                 const newIndex = prev.index + 1;
-                const nextDraft = prev.stack[newIndex];
+                const nextDraft = prev.stack[newIndex]!;
                 setActiveDraft(nextDraft);
                 set('tpe_active_draft', nextDraft);
                 return { ...prev, index: newIndex };

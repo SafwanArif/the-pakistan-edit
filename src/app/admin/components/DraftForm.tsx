@@ -185,17 +185,7 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                         )}
                     </div>
                 </div>
-            </div>
-
             <div className="tpe-nav-cluster">
-                {step >= 3 && (
-                    <div className="tpe-flex-row" style={{ gap: '4px' }}>
-                        <button onClick={addExtraSlide} className="tpe-nav-btn tpe-btn-primary" style={{ paddingInline: '8px' }}>+</button>
-                        {isDeletable && (
-                            <button onClick={() => removeExtraSlide(extraIndex)} className="tpe-nav-btn tpe-asset-btn-danger" style={{ paddingInline: '8px' }}>-</button>
-                        )}
-                    </div>
-                )}
                 {step > 1 && (
                     <button 
                         onClick={() => setStep(step - 1)} 

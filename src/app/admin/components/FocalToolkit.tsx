@@ -32,6 +32,24 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
         updateDraft(currentStep === 1 ? { ...activeDraft, [field]: val } : updateSlideAsset(currentStep, field, val, activeDraft));
     }, [activeDraft, currentStep, updateDraft]);
 
+    const handleAddAngle = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const newSlides = [...(activeDraft.extraSlides || [])];
+        newSlides.push({ id: Date.now().toString(), heading: '', content: '' });
+        updateDraft(currentStep === 1 ? { ...activeDraft, extraSlides: newSlides } : updateSlideAsset(currentStep, 'extraSlides', newSlides, activeDraft));
+        setStep(2 + newSlides.length);
+    };
+
+    const handleRemoveAngle = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const index = currentStep - 3;
+        if (index < 0 || !activeDraft.extraSlides) return;
+        const slides = [...activeDraft.extraSlides];
+        slides.splice(index, 1);
+        updateDraft(currentStep === 1 ? { ...activeDraft, extraSlides: slides } : updateSlideAsset(currentStep, 'extraSlides', slides, activeDraft));
+        setStep(currentStep - 1);
+    };
+
     if (currentStep < 1) return null;
 
     return (
@@ -51,18 +69,24 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                     onClick={undo} 
                     disabled={!canUndo} 
                     className="tpe-hud-toggle" 
-                    style={{ opacity: canUndo ? 1 : 0.3, pointerEvents: canUndo ? 'auto' : 'none' }}
+                    style={{ opacity: canUndo ? 1 : 0.3, pointerEvents: canUndo ? 'auto' : 'none', padding: '4px 8px' }}
                 >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg>
                 </button>
+
+                {currentStep >= 3 && (
+                    <button onClick={handleAddAngle} className="tpe-hud-toggle" style={{ padding: '4px 8px', color: 'var(--ui-accent)', fontWeight: 800 }}>
+                        +
+                    </button>
+                )}
 
                 {asset.image && (
                     <button 
                         onClick={() => setIsExpanded(!isExpanded)}
                         className="tpe-hud-toggle"
                         data-active={isExpanded}
+                        style={{ padding: '4px 10px', fontSize: '11px', letterSpacing: '0.5px' }}
                     >
-                        <div style={{ inlineSize: '6px', blockSize: '6px', borderRadius: '50%', background: isExpanded ? 'var(--ui-accent)' : 'currentColor', boxShadow: isExpanded ? '0 0 8px var(--ui-accent)' : 'none' }} />
                         FOCAL TOOLS
                         <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
                             <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -70,11 +94,17 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                     </button>
                 )}
 
+                {currentStep >= 3 && activeDraft.extraSlides && activeDraft.extraSlides.length > 0 && (
+                    <button onClick={handleRemoveAngle} className="tpe-hud-toggle" style={{ padding: '4px 8px', color: 'var(--ui-error, #ff4444)', fontWeight: 800 }}>
+                        -
+                    </button>
+                )}
+
                 <button 
                     onClick={redo} 
                     disabled={!canRedo} 
                     className="tpe-hud-toggle" 
-                    style={{ opacity: canRedo ? 1 : 0.3, pointerEvents: canRedo ? 'auto' : 'none' }}
+                    style={{ opacity: canRedo ? 1 : 0.3, pointerEvents: canRedo ? 'auto' : 'none', padding: '4px 8px' }}
                 >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"/></svg>
                 </button>

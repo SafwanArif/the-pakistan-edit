@@ -38,8 +38,8 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(
 
         const handleGlobalInteraction = (e: Event) => {
             const target = e.target as HTMLElement;
-            // Ignore if tapping the textarea itself or the formatting popover
-            if (target.id === 'input-headline' || target.closest('.tpe-textarea') || target.closest('.tpe-selection-popover') || target.closest('.tpe-format-btn')) {
+            // Ignore if tapping the textarea itself, formatting popover, emoji picker, or HUD toggles
+            if (target.id === 'input-headline' || target.closest('.tpe-textarea') || target.closest('.tpe-selection-popover') || target.closest('.tpe-format-btn') || target.closest('.tpe-emoji-toolbar') || target.closest('.tpe-hud-toggle')) {
                 return;
             }
             
@@ -90,7 +90,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
 
         const handleGlobalInteraction = (e: Event) => {
             const target = e.target as HTMLElement;
-            if (target.id === `input-${fieldId}` || target.closest('.tpe-textarea') || target.closest('.tpe-selection-popover') || target.closest('.tpe-format-btn')) {
+            if (target.id === `input-${fieldId}` || target.closest('.tpe-textarea') || target.closest('.tpe-selection-popover') || target.closest('.tpe-format-btn') || target.closest('.tpe-emoji-toolbar') || target.closest('.tpe-hud-toggle')) {
                 return;
             }
             

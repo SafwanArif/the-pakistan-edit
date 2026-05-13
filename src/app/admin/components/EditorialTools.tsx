@@ -83,7 +83,7 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     <FormatButton label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-bg)" effectStyle={{ background: 'var(--ui-text)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }} />
                 </div>
             )}
-            <div style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>
+            <div className="tpe-emoji-toolbar" style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>
                 <div style={{ position: 'relative' }}>
                     <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '0', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
                     <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="240px">

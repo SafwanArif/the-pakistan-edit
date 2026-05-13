@@ -180,7 +180,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
 
                 {/* 2027 NARRATIVE SOURCE ROW (MOBILE-ONLY) */}
                 {showSource && onSourceUpdate && (
-                    <div className="tpe-asset-tray-metadata tpe-mobile-only" style={{ margin: 0, paddingBlockStart: hasOverride ? '8px' : '0', borderBlockStart: hasOverride ? '1px solid var(--ui-border)' : 'none' }}>
+                    <div className="tpe-asset-tray-metadata" style={{ paddingBlockStart: hasOverride ? '8px' : '0', borderBlockStart: hasOverride ? '1px solid var(--ui-border)' : 'none' }}>
                         <div className="tpe-source-row-wrapper" style={{ margin: 0 }}>
                             <SourcePrefixToolbar 
                                 value={sourceValue || ""} 

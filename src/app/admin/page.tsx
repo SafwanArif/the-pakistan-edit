@@ -40,26 +40,27 @@ export default function AdminDashboard() {
                 <div className="tpe-flex-row" style={{ flex: 1 }}>
                     <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
                 </div>
-                <div className="tpe-progress-container">
-                    {Array.from({ length: totalSteps }).map((_, i) => (
-                        <div 
-                            key={i} 
-                            onClick={() => setCurrentStep(i + 1)} 
-                            className="tpe-progress-segment" 
-                            data-active={currentStep === i + 1}
-                            style={{ 
-                                background: currentStep >= i + 1 ? (i < 1 ? 'var(--ui-indicator)' : i === 1 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'transparent' 
-                            }} 
-                        />
-                    ))}
-                </div>
-                {exporting && (
-                    <ExportOverlay 
-                        status={exporting} 
-                        onClose={() => setExporting(null)} 
-                    />
-                )}
             </header>
+
+            <div className="tpe-progress-container">
+                {Array.from({ length: totalSteps }).map((_, i) => (
+                    <div 
+                        key={i} 
+                        onClick={() => setCurrentStep(i + 1)} 
+                        className="tpe-progress-segment" 
+                        data-active={currentStep === i + 1}
+                        style={{ 
+                            background: currentStep >= i + 1 ? (i < 1 ? 'var(--ui-indicator)' : i === 1 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'transparent' 
+                        }} 
+                    />
+                ))}
+            </div>
+            {exporting && (
+                <ExportOverlay 
+                    status={exporting} 
+                    onClose={() => setExporting(null)} 
+                />
+            )}
 
             <main className="sandbox-grid">
                 <OmniPreviewGrid draft={activeDraft} currentStep={currentStep} />

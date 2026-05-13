@@ -79,7 +79,7 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void, un
                     onFocus={() => setIsExpanded(true)}
                     style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
                 />
-                <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={6} />
+                <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right="10px" />
             </div>
         </>
     );
@@ -144,7 +144,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
                     onFocus={() => setIsExpanded(true)}
                     style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
                 />
-                <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right={6} />
+                <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right="10px" />
             </div>
         </>
     );
@@ -233,11 +233,11 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
                         creditPrefix={step === 1 ? draft.creditPrefix : draft.slideAssets?.[step]?.creditPrefix}
                         onCreditUpdate={(v) => onChange(updateDraftValue(step === 1 ? 'imageCredit' : `slide-credit-${step}`, v, draft))}
                         onCreditPrefixChange={(p) => onChange(updateDraftPrefix(step === 1 ? 'imageCredit' : `slide-credit-${step}`, p, draft))}
-                        showSource={true}
-                        sourceValue={getDraftValue(step === 1 || step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, draft)}
-                        sourcePrefix={step === 1 || step === 2 ? (draft.sourcePrefix || "SOURCE:") : (draft.extraSlides?.[extraIndex]?.sourcePrefix || "SOURCE:")}
-                        onSourceUpdate={(v) => onChange(updateDraftValue(step === 1 || step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, v, draft))}
-                        onSourcePrefixChange={(p) => onChange(updateDraftPrefix(step === 1 || step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, p, draft))}
+                        showSource={step !== 1}
+                        sourceValue={getDraftValue(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, draft)}
+                        sourcePrefix={step === 1 ? "" : (step === 2 ? (draft.sourcePrefix || "SOURCE:") : (draft.extraSlides?.[extraIndex]?.sourcePrefix || "SOURCE:"))}
+                        onSourceUpdate={(v) => onChange(updateDraftValue(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, v, draft))}
+                        onSourcePrefixChange={(p) => onChange(updateDraftPrefix(step === 2 ? 'sourceName' : `extra-source-${extraIndex}`, p, draft))}
                     />
                     <div className="tpe-flex-row tpe-desktop-only" style={{ gap: '12px' }}>
                         {step !== 1 && (

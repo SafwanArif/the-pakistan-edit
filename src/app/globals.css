@@ -701,13 +701,11 @@
 
   /* --- PROGRESS TRACK --- */
   .tpe-progress-container {
-    position: absolute;
-    inset-block-start: auto;
-    inset-block-end: 0;
-    inset-inline: 0;
+    position: relative;
     display: flex;
     block-size: 3px;
     z-index: var(--z-system);
+    background: oklch(from var(--ui-text) l c h / 0.05);
   }
 
   .tpe-progress-segment {
@@ -814,11 +812,10 @@
     backdrop-filter: blur(var(--blur-md));
     z-index: var(--z-system);
     position: relative;
-    padding-block-end: 0px;
+    padding-block-end: 0;
 
     @media (max-width: 768px) {
       padding-inline: 0 4px;
-      padding-block-end: 0px;
       gap: 0;
       position: sticky;
       top: 0;

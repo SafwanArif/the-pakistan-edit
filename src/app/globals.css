@@ -1163,7 +1163,32 @@
         inline-size: 65px;
         margin-inline-start: 0;
         flex: none;
+        transition: flex 0.3s cubic-bezier(0.16, 1, 0.3, 1), inline-size 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       }
+
+      &.tpe-category-input:focus {
+        flex: 1;
+        inline-size: auto;
+      }
+
+      &.tpe-category-input:focus ~ .tpe-textarea-wrapper {
+        flex: 0 0 32px !important;
+        transition: flex 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      &.tpe-category-input:focus ~ .tpe-textarea-wrapper .tpe-textarea {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+      }
+    }
+
+    .tpe-textarea-wrapper {
+      transition: flex 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    
+    .tpe-textarea-wrapper .tpe-textarea {
+      transition: opacity 0.2s !important;
     }
 
     .tpe-separator-pipe {

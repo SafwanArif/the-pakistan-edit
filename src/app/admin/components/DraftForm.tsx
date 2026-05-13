@@ -65,7 +65,7 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void, un
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
                 {isExpanded && (
-                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '50%', top: 'calc(60px + 18vh - 40px)', transform: 'translateX(-50%)', display: 'flex', gap: '24px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '50%', top: 'calc(60px + 15vh - 40px)', transform: 'translateX(-50%)', display: 'flex', gap: '24px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
                         <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
                         <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
                     </div>
@@ -130,7 +130,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
                 {isExpanded && (
-                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '50%', top: 'calc(60px + 18vh - 40px)', transform: 'translateX(-50%)', display: 'flex', gap: '24px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '50%', top: 'calc(60px + 15vh - 40px)', transform: 'translateX(-50%)', display: 'flex', gap: '24px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
                         <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
                         <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
                     </div>

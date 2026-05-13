@@ -1092,7 +1092,7 @@
       border-bottom: 1px solid var(--ui-border) !important;
       border-bottom-left-radius: 16px !important;
       border-bottom-right-radius: 16px !important;
-      padding: 16px !important;
+      padding: 48px 16px 16px 16px !important;
       font-size: 16px !important;
       box-shadow: 0 20px 40px rgba(0,0,0,0.9) !important;
       transition: none !important; /* CRITICAL: Prevent geometry interpolation jank */

@@ -65,9 +65,9 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void, un
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
                 {isExpanded && (
-                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 'var(--z-toolbar)' }}>
-                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
-                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '16px', top: '72px', display: 'flex', gap: '16px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
+                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
+                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
                     </div>
                 )}
                 <textarea 
@@ -130,9 +130,9 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
                 {isExpanded && (
-                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 'var(--z-toolbar)' }}>
-                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
-                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'fixed', left: '16px', top: '72px', display: 'flex', gap: '16px', zIndex: 'calc(var(--z-toolbar) + 1)' }}>
+                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
+                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text-dim)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
                     </div>
                 )}
                 <textarea 

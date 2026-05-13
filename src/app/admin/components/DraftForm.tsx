@@ -208,5 +208,6 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
             </div>
             </div>
         </div>
+        </div>
     );
 };

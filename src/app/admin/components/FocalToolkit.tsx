@@ -35,7 +35,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
     const handleAddAngle = (e: React.MouseEvent) => {
         e.preventDefault();
         const newSlides = [...(activeDraft.extraSlides || [])];
-        newSlides.push({ id: Date.now().toString(), heading: '', content: '' });
+        newSlides.push({ heading: '', content: '', sourceName: '', sourcePrefix: 'SOURCE:' });
         updateDraft(currentStep === 1 ? { ...activeDraft, extraSlides: newSlides } : updateSlideAsset(currentStep, 'extraSlides', newSlides, activeDraft));
         setStep(2 + newSlides.length);
     };

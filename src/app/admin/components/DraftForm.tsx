@@ -32,12 +32,21 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
 
 const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
+
+    const handleClose = React.useCallback((e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsExpanded(false);
+        const el = document.getElementById('input-headline');
+        if (el) el.blur();
+    }, []);
+
     return (
         <>
             <input className="tpe-input-field tpe-input-main tpe-uppercase tpe-category-input" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} />
             <span className="tpe-separator-pipe">|</span>
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
-                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(false); }} onTouchStart={(e) => { e.stopPropagation(); setIsExpanded(false); }} />}
+                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onClick={handleClose} onTouchStart={handleClose} />}
                 <textarea 
                     id="input-headline" 
                     className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" 
@@ -47,7 +56,7 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(
                     onFocus={() => setIsExpanded(true)}
                     style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
                 />
-                {isExpanded && <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(false); }} onTouchStart={(e) => { e.stopPropagation(); setIsExpanded(false); }} className="tpe-done-btn tpe-mobile-only">DONE</button>}
+                {isExpanded && <button onClick={handleClose} onTouchStart={handleClose} className="tpe-done-btn tpe-mobile-only">DONE</button>}
                 <EmojiToolbar fieldId="headline" value={draft.headline} onUpdate={(v) => onChange({ ...draft, headline: v })} popDirection="down" right={0} />
             </div>
         </>
@@ -59,6 +68,15 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
     const fieldId = step === 2 ? 'summary' : `extra-content-${extraIndex}`;
     const placeholder = step === 2 ? "THE CORE STORY..." : "CONTEXT...";
     const val = getDraftValue(fieldId, draft);
+
+    const handleClose = React.useCallback((e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsExpanded(false);
+        const el = document.getElementById(`input-${fieldId}`);
+        if (el) el.blur();
+    }, [fieldId]);
+
     return (
         <>
             {step >= 3 && (
@@ -73,7 +91,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
                 </>
             )}
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
-                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(false); }} onTouchStart={(e) => { e.stopPropagation(); setIsExpanded(false); }} />}
+                {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" onClick={handleClose} onTouchStart={handleClose} />}
                 <textarea 
                     id={`input-${fieldId}`} 
                     className="tpe-textarea tpe-input-field tpe-input-main" 
@@ -83,7 +101,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
                     onFocus={() => setIsExpanded(true)}
                     style={{ paddingInlineEnd: '30px', paddingTop: '7.5px' }} 
                 />
-                {isExpanded && <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExpanded(false); }} onTouchStart={(e) => { e.stopPropagation(); setIsExpanded(false); }} className="tpe-done-btn tpe-mobile-only">DONE</button>}
+                {isExpanded && <button onClick={handleClose} onTouchStart={handleClose} className="tpe-done-btn tpe-mobile-only">DONE</button>}
                 <EmojiToolbar fieldId={fieldId} value={val} onUpdate={(v) => onChange(updateDraftValue(fieldId, v, draft))} popDirection="down" right={0} />
             </div>
         </>

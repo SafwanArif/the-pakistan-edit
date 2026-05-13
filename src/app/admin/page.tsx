@@ -37,6 +37,9 @@ export default function AdminDashboard() {
     return (
         <div className="dashboard-container">
             <header className="command-ribbon">
+                <div className="tpe-flex-row" style={{ flex: 1 }}>
+                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+                </div>
                 <div className="tpe-progress-container">
                     {Array.from({ length: totalSteps }).map((_, i) => (
                         <div 
@@ -49,9 +52,6 @@ export default function AdminDashboard() {
                             }} 
                         />
                     ))}
-                </div>
-                <div className="tpe-flex-row" style={{ flex: 1 }}>
-                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
                 </div>
                 {exporting && (
                     <ExportOverlay 

@@ -85,17 +85,19 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                         onClick={() => setIsExpanded(!isExpanded)}
                         className="tpe-hud-toggle"
                         data-active={isExpanded}
-                        style={{ padding: '4px 10px', fontSize: '11px', letterSpacing: '0.5px' }}
+                        style={{ padding: '4px 10px', fontSize: '11px', letterSpacing: '0.5px', fontWeight: 'normal' }}
                     >
                         FOCAL TOOLS
-                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }}>
-                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
                     </button>
                 )}
 
                 {currentStep >= 3 && activeDraft.extraSlides && activeDraft.extraSlides.length > 0 && (
-                    <button onClick={handleRemoveAngle} className="tpe-hud-toggle" style={{ padding: '4px 8px', color: 'var(--ui-error, #ff4444)', fontWeight: 800 }}>
+                    <button 
+                        onClick={handleRemoveAngle} 
+                        className="tpe-hud-toggle" 
+                        disabled={currentStep === 3}
+                        style={{ padding: '4px 8px', color: currentStep === 3 ? 'var(--ui-text-dim)' : 'var(--ui-error, #ff4444)', opacity: currentStep === 3 ? 0.3 : 1, fontWeight: 800 }}
+                    >
                         -
                     </button>
                 )}

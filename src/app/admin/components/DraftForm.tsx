@@ -30,7 +30,7 @@ const SourceRow = React.memo<{ field: string, prefixField: string, draft: Draft,
  */
 
 
-const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(({ draft, onChange }) => {
+const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void, undo?: () => void, redo?: () => void, canUndo?: boolean, canRedo?: boolean }>(({ draft, onChange, undo, redo, canUndo, canRedo }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
 
     useEffect(() => {
@@ -64,6 +64,12 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(
             <span className="tpe-separator-pipe">|</span>
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
+                {isExpanded && (
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 'var(--z-toolbar)' }}>
+                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
+                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
+                    </div>
+                )}
                 <textarea 
                     id="input-headline" 
                     className="tpe-textarea tpe-input-field tpe-input-main tpe-uppercase" 
@@ -79,7 +85,7 @@ const Slide1Editor = React.memo<{ draft: Draft, onChange: (d: Draft) => void }>(
     );
 });
 
-const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Draft, onChange: (d: Draft) => void }>(({ step, extraIndex, draft, onChange }) => {
+const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Draft, onChange: (d: Draft) => void, undo?: () => void, redo?: () => void, canUndo?: boolean, canRedo?: boolean }>(({ step, extraIndex, draft, onChange, undo, redo, canUndo, canRedo }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
     const fieldId = step === 2 ? 'summary' : `extra-content-${extraIndex}`;
     const placeholder = step === 2 ? "THE CORE STORY..." : "CONTEXT...";
@@ -123,6 +129,12 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
             )}
             <div className={`tpe-flex-row tpe-textarea-wrapper ${isExpanded ? 'tpe-expanded' : ''}`} style={{ flex: 1, position: 'relative' }}>
                 {isExpanded && <div className="tpe-overlay-backdrop tpe-mobile-only" />}
+                {isExpanded && (
+                    <div className="tpe-expanded-header-tools tpe-mobile-only tpe-hud-toggle" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 'var(--z-toolbar)' }}>
+                        <button onClick={(e) => { e.preventDefault(); undo?.(); }} disabled={!canUndo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canUndo ? 1 : 0.4 }}>↩</button>
+                        <button onClick={(e) => { e.preventDefault(); redo?.(); }} disabled={!canRedo} style={{ background: 'transparent', border: 'none', color: 'var(--ui-text)', fontWeight: 800, fontSize: '18px', padding: '4px', cursor: 'pointer', opacity: canRedo ? 1 : 0.4 }}>↪</button>
+                    </div>
+                )}
                 <textarea 
                     id={`input-${fieldId}`} 
                     className="tpe-textarea tpe-input-field tpe-input-main" 
@@ -141,7 +153,7 @@ const NarrativeEditor = React.memo<{ step: number, extraIndex: number, draft: Dr
 /**
  * 2027 Institutional Standard: DraftForm
  */
-export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void, onReset?: () => void }> = ({ draft, onChange, onSubmit, step, setStep, onReset }) => {
+export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, onSubmit: (d: Draft) => void, step: number, setStep: (s: number) => void, onReset?: () => void, undo?: () => void, redo?: () => void, canUndo?: boolean, canRedo?: boolean }> = ({ draft, onChange, onSubmit, step, setStep, onReset, undo, redo, canUndo, canRedo }) => {
     const { resolving, resolve } = useAssetResolver(draft, onChange);
     const extraSlides = useMemo(() => draft.extraSlides || [], [draft.extraSlides]);
     const extraIndex = step - 3;
@@ -190,9 +202,9 @@ export const DraftForm: React.FC<{ draft: Draft, onChange: (d: Draft) => void, o
 
                 <div className="tpe-header-tools">
                     {step === 1 ? (
-                        <Slide1Editor draft={draft} onChange={onChange} />
+                        <Slide1Editor draft={draft} onChange={onChange} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
                     ) : (
-                        <NarrativeEditor step={step} extraIndex={extraIndex} draft={draft} onChange={onChange} />
+                        <NarrativeEditor step={step} extraIndex={extraIndex} draft={draft} onChange={onChange} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
                     )}
                     <UnifiedAssetToolbar 
                         hasOverride={step === 1 ? !!draft.image : !!draft.slideAssets?.[step]?.image}

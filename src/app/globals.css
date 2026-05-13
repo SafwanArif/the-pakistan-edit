@@ -1076,6 +1076,10 @@
       min-block-size: 42px; /* Prevent layout collapse when textarea becomes fixed */
     }
 
+    .tpe-textarea {
+      transition: none !important;
+    }
+
     .tpe-expanded .tpe-textarea {
       position: fixed !important;
       left: 0 !important;
@@ -1091,6 +1095,7 @@
       padding: 16px !important;
       font-size: 16px !important;
       box-shadow: 0 20px 40px rgba(0,0,0,0.9) !important;
+      transition: none !important; /* CRITICAL: Prevent geometry interpolation jank */
     }
 
     .tpe-selection-popover {

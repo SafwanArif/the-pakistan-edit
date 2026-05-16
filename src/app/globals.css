@@ -303,13 +303,13 @@
   /* --- DRAFT FORM LAYOUT --- */
   .tpe-draft-form-container {
     inline-size: 100%;
-    padding: 0 var(--space-md);
+    padding: 0 8px; /* 🏛️ Minimal padding */
   }
 
   .tpe-header-row {
     display: flex;
     align-items: center;
-    gap: var(--space-md);
+    gap: 8px; /* 🏛️ Tightened gap */
     block-size: var(--ui-header-height);
   }
 
@@ -320,14 +320,15 @@
     opacity: 0.8;
     transition: var(--transition-fast);
     flex-shrink: 0;
+    margin-inline-end: 4px; /* 🏛️ Minimal margin */
     &:hover { opacity: 1; transform: scale(1.05); }
   }
 
   .tpe-header-main {
-    flex: 2; /* 🏛️ Give more priority to the input area */
+    flex: 2;
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: 4px; /* 🏛️ Tightened gap */
     min-inline-size: 0;
   }
 
@@ -335,7 +336,7 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px; /* 🏛️ Tightened gap */
     inline-size: 100%;
     min-inline-size: 0;
   }
@@ -393,7 +394,7 @@
   .tpe-nav-cluster {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px; /* 🏛️ Tightened gap */
   }
 
   .tpe-nav-btn {

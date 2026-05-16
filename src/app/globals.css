@@ -469,29 +469,51 @@
   color: var(--ui-text);
   overflow: hidden;
   contain: layout paint;
+  
+  /* Institutional Safezones */
+  --safe-bottom: 80px;
+  --safe-x: 50px;
+  --safe-top: 180px;
+
+  &[data-platform="tiktok"] {
+    --safe-bottom: 180px; /* Clear Tiktok UI */
+    --safe-x: 60px;
+    --logo-top: 100px;
+  }
+  
+  &[data-platform="instagram"] {
+    --safe-bottom: 120px;
+    --safe-x: 50px;
+    --logo-top: 80px;
+  }
 }
 
 .tpe-full-absolute { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
 
 .tpe-news-logo-overlay {
   position: absolute;
-  inset-block-start: var(--p-top, 70px);
+  inset-block-start: var(--logo-top, 80px);
   inset-inline-start: 50%;
-  transform: translateX(-50%) scale(var(--logo-scale, 1));
+  transform: translateX(-50%);
   z-index: 10;
 }
 
 .tpe-news-inner {
-  padding-block: var(--off-top, 320px) var(--off-bottom, 206px);
-  padding-inline: var(--p-left, 50px) var(--p-right, 50px);
-  justify-content: flex-end;
-  z-index: 8;
+  position: absolute;
+  inset: 0;
+  padding: 0 var(--safe-x);
+  padding-block-end: var(--safe-bottom);
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
+  z-index: 8;
 }
 
 .tpe-news-cat-container {
-  margin-block-end: 16px;
+  position: absolute;
+  inset-block-start: var(--logo-top, 80px);
+  inset-inline-start: var(--safe-x);
+  z-index: 9;
   animation: tpe-fade-in 0.6s ease-out;
 }
 
@@ -509,6 +531,7 @@
   line-height: 1.05;
   text-transform: uppercase;
   color: var(--ui-text);
+  margin-block-end: 20px;
 }
 
 .tpe-news-h3-container {
@@ -534,20 +557,19 @@
   font-weight: 600;
   line-height: 1.25;
   color: var(--ui-text);
+  margin-block-end: 20px;
 }
 
 .tpe-news-source {
   position: absolute;
-  inset-block-end: var(--p-bottom, 150px);
-  inset-inline-start: var(--p-left, 50px);
-  inset-inline-end: var(--p-right, 50px);
+  inset-block-end: calc(var(--safe-bottom) - 60px);
+  inset-inline-start: var(--safe-x);
   font-size: var(--source-size, 14px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: oklch(from var(--ui-text) l c h / 0.6);
   z-index: 9;
-  justify-content: space-between;
 }
 
 /* --- MOBILE ADAPTATION --- */

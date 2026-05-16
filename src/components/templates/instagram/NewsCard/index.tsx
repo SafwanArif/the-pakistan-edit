@@ -21,31 +21,17 @@ interface NewsCardProps {
  */
 export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, platform = 'instagram' }) => {
     const { heading, content, source, photo, asset, type } = useNewsCardState(draft, step);
-    const cfg = OMNI_CONFIG[platform];
-
-    const cardStyles = {
-        '--card-w': `${cfg.width}px`, 
-        '--card-h': `${cfg.height}px`,
-        '--p-top': `${cfg.padding.top}px`,
-        '--p-right': `${cfg.padding.right}px`,
-        '--p-bottom': `${cfg.padding.bottom}px`,
-        '--p-left': `${cfg.padding.left}px`,
-        '--off-top': `${cfg.offsets.top}px`,
-        '--off-bottom': `${cfg.offsets.bottom}px`,
-        '--logo-scale': cfg.logoScale,
-        '--h1-size': cfg.typography.h1,
-        '--narrative-size': type === 'bulletin' ? cfg.typography.slide2 : cfg.typography.slide3,
-        '--h3-size': cfg.typography.slide3Heading,
-        '--cat-size': cfg.catFontSize,
-        '--source-size': cfg.handleFontSize
-    } as React.CSSProperties;
+    const dimensions = OMNI_CONFIG[platform];
 
     return (
         <div 
             className="tpe-news-card" 
             data-slide-type={type} 
             data-platform={platform}
-            style={cardStyles}
+            style={{ 
+                '--card-w': `${dimensions.width}px`, 
+                '--card-h': `${dimensions.height}px` 
+            } as any}
         >
             {/* BACKGROUND LAYER */}
             <div className="tpe-news-bg tpe-full-absolute">

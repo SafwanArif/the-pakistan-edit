@@ -2,9 +2,9 @@
 
 import React, { useCallback, useMemo } from "react";
 import { Draft } from "../../../types/news";
-import { EmojiToolbar } from "./EditorialTools";
-import { updateDraftValue, updateSlideAsset, getEffectiveSlideAsset } from "../utils/dataAccessors";
+import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
+import { useClickOutside } from "../hooks/useClickOutside";
 
 interface FocalToolkitProps {
     activeDraft: Draft;
@@ -21,22 +21,28 @@ interface FocalToolkitProps {
 
 const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
+/**
+ * 2027 Institutional Standard: FocalToolkit
+ * High-fidelity control interface for asset focal point and metadata logic.
+ * Orchestrates pan, zoom, and snap-mode transformations.
+ */
 export const FocalToolkit: React.FC<FocalToolkitProps> = ({ 
     activeDraft, updateDraft, currentStep, setStep, draggingSlider, setDraggingSlider, undo, redo, canUndo, canRedo
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
+    const hudRef = useClickOutside(() => setIsExpanded(false));
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
 
-    const handleSliderChange = useCallback((field: any, value: number, min: number, max: number) => {
+    const handleSliderChange = useCallback((field: string, value: number, min: number, max: number) => {
         const val = clamp(value, min, max);
-        updateDraft(currentStep === 1 ? { ...activeDraft, [field]: val } : updateSlideAsset(currentStep, field, val, activeDraft));
+        updateDraft(DraftResolver.set(`slide-${currentStep}-${field}`, val, activeDraft));
     }, [activeDraft, currentStep, updateDraft]);
 
     const handleAddAngle = (e: React.MouseEvent) => {
         e.preventDefault();
         const newSlides = [...(activeDraft.extraSlides || [])];
         newSlides.push({ heading: '', content: '', sourceName: '', sourcePrefix: 'SOURCE:' });
-        updateDraft(currentStep === 1 ? { ...activeDraft, extraSlides: newSlides } : updateSlideAsset(currentStep, 'extraSlides', newSlides, activeDraft));
+        updateDraft({ ...activeDraft, extraSlides: newSlides });
         setStep(2 + newSlides.length);
     };
 
@@ -46,14 +52,14 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
         if (index < 0 || !activeDraft.extraSlides) return;
         const slides = [...activeDraft.extraSlides];
         slides.splice(index, 1);
-        updateDraft(currentStep === 1 ? { ...activeDraft, extraSlides: slides } : updateSlideAsset(currentStep, 'extraSlides', slides, activeDraft));
+        updateDraft({ ...activeDraft, extraSlides: slides });
         setStep(currentStep - 1);
     };
 
     if (currentStep < 1) return null;
 
     return (
-        <div className="tpe-flex-col" style={{ 
+        <div ref={hudRef} className="tpe-flex-col" style={{ 
             position: 'fixed', 
             insetBlockStart: '60px', 
             insetInlineStart: 0, 
@@ -64,18 +70,19 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             alignItems: 'center' 
         }}>
             {/* CONTEXTUAL HUD ROW */}
-            <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
+            <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center', pointerEvents: 'auto' }}>
                 <button 
                     onClick={undo} 
                     disabled={!canUndo} 
                     className="tpe-hud-toggle" 
+                    aria-label="Undo"
                     style={{ opacity: canUndo ? 1 : 0.3, pointerEvents: canUndo ? 'auto' : 'none', padding: '4px 8px' }}
                 >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg>
                 </button>
 
                 {currentStep >= 3 && (
-                    <button onClick={handleAddAngle} className="tpe-hud-toggle" style={{ padding: '4px 12px', color: 'var(--ui-accent)', fontWeight: 800 }}>
+                    <button onClick={handleAddAngle} className="tpe-hud-toggle" aria-label="Add Angle" style={{ padding: '4px 12px', color: 'var(--ui-accent)', fontWeight: 800 }}>
                         +
                     </button>
                 )}
@@ -96,6 +103,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                         onClick={handleRemoveAngle} 
                         disabled={currentStep === 3}
                         className="tpe-hud-toggle" 
+                        aria-label="Remove Angle"
                         style={{ 
                             padding: '4px 12px', 
                             color: currentStep === 3 ? 'var(--ui-text-dim)' : 'var(--ui-error, #ff4444)', 
@@ -119,8 +127,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             </div>
 
             {isExpanded && (
-                <div className="tpe-flex-col tpe-glass-panel tpe-hud-container">
-                    {/* 2x3 GRID SYSTEM (VERTICAL) */}
+                <div className="tpe-flex-col tpe-glass-panel tpe-hud-container" style={{ pointerEvents: 'auto' }}>
                     <div className="tpe-hud-grid">
                         {[
                             { id: "zoom", label: "ZOOM", min: 10, max: 800, value: asset.imageZoom, field: "imageZoom" },
@@ -136,13 +143,13 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                                 onClick={() => {
                                     const modes: ('height' | 'width' | 'grid')[] = ['height', 'width', 'grid'];
                                     const next = modes[(modes.indexOf(asset.snapMode) + 1) % 3];
-                                    const update = (f: string, v: any, d: Draft) => currentStep === 1 ? { ...d, [f]: v } : updateSlideAsset(currentStep, f, v, d);
-                                    let d = update('snapMode', next, activeDraft);
-                                    ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'].forEach(f => d = update(f, f === 'imageZoom' ? 100 : 50, d));
+                                    let d = DraftResolver.set(`slide-${currentStep}-snapMode`, next, activeDraft);
+                                    ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'].forEach(f => d = DraftResolver.set(`slide-${currentStep}-${f}`, f === 'imageZoom' ? 100 : 50, d));
                                     updateDraft(d);
                                 }}
                                 className="tpe-btn-primary tpe-btn-icon"
                                 style={{ boxShadow: 'none' }}
+                                aria-label="Toggle Snap Mode"
                             >
                                 {asset.snapMode === 'width' ? (
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5"><path d="M12 2v20M2 12h20"/><path d="M12 2l-3 3m6 0l-3-3M2 12l3-3m0 6l-3-3M12 22l-3-3m6 0l-3 3M22 12l-3-3m0 6l3-3"/></svg>
@@ -159,7 +166,6 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                     </div>
                 </div>
             )}
-
         </div>
     );
 };

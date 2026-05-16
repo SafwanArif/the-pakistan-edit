@@ -4,27 +4,24 @@ import { Draft, getSlideCount } from "../../../types/news";
 import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import React from "react";
 import { NewsCard } from "../../../components/templates/instagram/NewsCard/index";
+import { sanitize, getGoldKeywords, getAnchorKeyword } from "./textUtils";
 
 /**
  * Institutional Export Engine: Deterministic Asset Generation Pipeline
- * v2027.5: Robust memory management and error failsafes.
+ * v2027.Simplified: Streamlined root management and centralized naming.
  */
 export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void) => {
-    onStatus("Initializing Export Engine...");
+    onStatus("Initializing Institutional Pipeline...");
+    
     const totalSlides = getSlideCount(draft);
     const platforms: Platform[] = ["tiktok", "instagram", "square"];
     const zip = new JSZip();
-
-    let root: any = null;
 
     try {
         const container = document.getElementById('export-capture-surface');
         if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
 
-        const sanitize = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        const getGold = (t: string) => [...new Set((t.match(/\*([^*]+)\*/g) || []).map(m => sanitize(m.replace(/\*/g, ''))))];
-
-        const anchorKW = getGold(draft.headline)[0] || sanitize(draft.headline.split(' ').slice(0, 3).join('-')) || "news";
+        const anchorKW = getAnchorKeyword(draft.headline);
         const brandTag = "the-pakistan-edit";
 
         zip.file("seo-metadata.txt", `THE PAKISTAN EDIT - SEO BUNDLE\n\nANCHOR: ${anchorKW}\nTAG: ${brandTag}`);
@@ -33,53 +30,54 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         const total = platforms.length * totalSlides;
         const { createRoot } = await import("react-dom/client");
 
+        // 🏛️ 2027 Optimized: Single render root per export batch
+        const temp = document.createElement("div");
+        temp.style.position = "absolute";
+        temp.style.insetInlineStart = "-5000px";
+        container.appendChild(temp);
+        const root = createRoot(temp);
+
         for (const p of platforms) {
             for (let s = 1; s <= totalSlides; s++) {
                 count++;
                 onStatus(`[${count}/${total}] Rendering ${p} S${s}...`);
                 
-                const temp = document.createElement("div");
-                temp.style.inlineSize = `${OMNI_CONFIG[p].width}px`;
-                temp.style.blockSize = `${OMNI_CONFIG[p].height}px`;
-                temp.style.position = "absolute";
-                temp.style.left = "-9999px"; // Off-screen failsafe
-                
-                container.innerHTML = ""; 
-                container.appendChild(temp);
+                temp.style.width = `${OMNI_CONFIG[p].width}px`;
+                temp.style.height = `${OMNI_CONFIG[p].height}px`;
 
-                root = createRoot(temp);
-                root.render(<NewsCard {...draft} slide={s} platform={p} totalSlides={totalSlides} />);
+                // 🏛️ Fixed: NewsCard props mapping
+                root.render(<NewsCard draft={draft} step={s} platform={p} />);
                 
-                // Deterministic Wait Sequence
-                await new Promise(r => requestAnimationFrame(r));
+                await new Promise(r => setTimeout(r, 200)); 
                 await document.fonts.ready;
                 
+                // Wait for all images in the card to load
                 const images = Array.from(temp.querySelectorAll('img'));
-                await Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise(resolve => { img.onload = resolve; img.onerror = resolve; })));
+                await Promise.all(images.map(img => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+                }));
 
-                await new Promise(r => setTimeout(r, 100)); // Buffer for sub-pixel stabilization
+                await new Promise(r => requestAnimationFrame(r));
                 
                 const blob = await toBlob(temp, { 
                     width: OMNI_CONFIG[p].width, 
                     height: OMNI_CONFIG[p].height, 
                     pixelRatio: 1, 
-                    backgroundColor: '#050505', 
-                    cacheBust: true 
+                    backgroundColor: '#050505',
+                    style: { transform: 'none', transition: 'none' }
                 });
 
-                if (!blob) throw new Error(`RENDER_FAULT: Failed to capture ${p} Slide ${s}`);
+                if (!blob || blob.size < 1000) {
+                    throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
+                }
 
+                // 🏛️ Deterministic Naming
                 const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
-                const curText = s === 1 ? draft.headline : s === 2 ? (draft.summary || "") : `${draft.extraSlides?.[s-3]?.heading} ${draft.extraSlides?.[s-3]?.content}`;
-                const kwCurrent = getGold(curText).filter(k => k !== anchorKW);
-                
-                let fileName = `${platformCode}${s}-${brandTag}-${anchorKW}${kwCurrent.length > 0 ? `-${kwCurrent.join('-')}` : ""}.png`;
-                if (fileName.length > 150) fileName = fileName.substring(0, 146) + ".png";
+                const slideAnchor = s === 1 ? anchorKW : (s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s-3]?.heading || "angle"));
+                const fileName = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}.png`.substring(0, 150);
 
                 zip.file(fileName, blob);
-                
-                root.unmount();
-                root = null;
             }
         }
 
@@ -92,15 +90,13 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         link.click();
         URL.revokeObjectURL(url);
         
+        root.unmount();
+        container.removeChild(temp);
+        
         onStatus("Complete! 🎉");
         setTimeout(() => onStatus(null), 3000);
     } catch (e: any) {
         onStatus(`ERROR: ${e.message || "Export Failed"}`);
-        console.error("EXPORT_ENGINE_CRITICAL_FAILURE:", e);
         throw e;
-    } finally {
-        if (root) {
-            try { root.unmount(); } catch (e) {}
-        }
     }
 };

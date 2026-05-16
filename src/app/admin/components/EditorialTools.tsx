@@ -1,22 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Draft } from "../../../types/news";
+import React, { useState, useMemo } from "react";
 import { EMOJIS, SOCIAL_ICONS } from "../../../config/editorial";
-import { getDraftValue, updateDraftValue } from "../utils/dataAccessors";
+import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
 
-const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, setHasSelection: (b: boolean) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntax, fieldId, value, onUpdate, setHasSelection, color, effectStyle }) => (
+/**
+ * 2027 Institutional Primitive: FormatButton
+ */
+export const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntax, fieldId, value, onUpdate, color, effectStyle }) => (
     <button 
         onMouseDown={(e) => { 
             e.preventDefault(); 
-            const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement; 
-            if (el) { 
-                const start = el.selectionStart!; 
-                const end = el.selectionEnd!; 
-                const newVal = value.substring(0, start) + syntax + value.substring(start, end) + syntax + value.substring(end); 
-                onUpdate(newVal); 
-                setHasSelection(false); 
-                setTimeout(() => { el.focus(); el.setSelectionRange(start + syntax.length, end + syntax.length); }, 0); 
-            } 
+            wrapSelectionWithSyntax(fieldId, value, syntax, onUpdate);
         }} 
         className="tpe-format-btn"
         style={{ color: color, ...effectStyle }}
@@ -25,81 +19,32 @@ const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, v
     </button>
 );
 
-export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down', right?: string | number }>(({ fieldId, value, onUpdate, popDirection = 'up', right = '12px' }) => {
+/**
+ * 2027 Institutional Primitive: EmojiToolbar
+ */
+export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down' }>(({ fieldId, value, onUpdate, popDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
-    const [hasSelection, setHasSelection] = useState(false);
-    const [goldPos, setGoldPos] = useState({ x: 0, y: 0 });
-    
-    useEffect(() => {
-        const el = document.getElementById(`input-${fieldId}`);
-        if (!el) return;
-        const onActivity = () => {
-            const inputEl = el as HTMLInputElement | HTMLTextAreaElement;
-            if (inputEl.selectionStart !== inputEl.selectionEnd && inputEl.selectionStart !== null) {
-                const rect = inputEl.getBoundingClientRect();
-                setGoldPos({ x: rect.left + (rect.width / 2), y: rect.bottom });
-                setHasSelection(true);
-            } else {
-                setHasSelection(false);
-            }
-        };
-        el.addEventListener("mouseup", onActivity);
-        el.addEventListener("touchend", onActivity);
-        el.addEventListener("keyup", onActivity);
-        return () => {
-            el.removeEventListener("mouseup", onActivity);
-            el.removeEventListener("touchend", onActivity);
-            el.removeEventListener("keyup", onActivity);
-        };
-    }, [fieldId]);
-
     const filtered = useMemo(() => EMOJIS.filter(e => e.label.toLowerCase().includes(search.toLowerCase())), [search]);
 
-    const handleEmojiClick = (emojiIcon: string) => {
-        const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement;
-        if (el && el.selectionStart !== null) {
-            const start = el.selectionStart;
-            const end = el.selectionEnd || start;
-            const newVal = value.substring(0, start) + emojiIcon + value.substring(end);
-            onUpdate(newVal);
-            setTimeout(() => { el.focus(); el.setSelectionRange(start + emojiIcon.length, start + emojiIcon.length); }, 0);
-        }
-        setOpen(false);
-        setSearch("");
-    };
-
     return (
-        <>
-            {hasSelection && (
-                <div 
-                    className="tpe-selection-popover"
-                    style={{ left: goldPos.x, top: goldPos.y }}
-                >
-                    <FormatButton label="Gold" syntax="^" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-accent)" effectStyle={{ fontWeight: 800 }} />
-                    <FormatButton label="Bold" syntax="*" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text)" effectStyle={{ fontWeight: 800 }} />
-                    <FormatButton label="Italic" syntax="/" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-text-dim)" effectStyle={{ fontStyle: 'italic' }} />
-                    <FormatButton label="Green" syntax="_" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-indicator)" effectStyle={{ fontWeight: 800 }} />
-                    <FormatButton label="Block" syntax="%" fieldId={fieldId} value={value} onUpdate={onUpdate} setHasSelection={setHasSelection} color="var(--ui-bg)" effectStyle={{ background: 'var(--ui-text)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }} />
+        <div style={{ position: 'relative' }}>
+            <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
+            <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="240px">
+                <input autoFocus placeholder="Search emojis..." value={search} onChange={(e) => setSearch(e.target.value)} className="tpe-popover-input" />
+                <div className="tpe-emoji-picker-grid">
+                    {filtered.map(emoji => (
+                        <button key={emoji.label} onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value, emoji.icon, onUpdate); setOpen(false); }} className="tpe-emoji-btn">{emoji.icon}</button>
+                    ))}
                 </div>
-            )}
-            <div className="tpe-emoji-toolbar" style={{ position: 'absolute', right: right, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '6px', zIndex: 'var(--z-toolbar)', alignItems: 'center' }}>
-                <div style={{ position: 'relative' }}>
-                    <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '0', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
-                    <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="240px">
-                        <input autoFocus placeholder="Search emojis..." value={search} onChange={(e) => setSearch(e.target.value)} className="tpe-popover-input" />
-                        <div className="tpe-emoji-picker-grid">
-                            {filtered.map(emoji => (
-                                <button key={emoji.label} onClick={(e) => { e.preventDefault(); handleEmojiClick(emoji.icon); }} className="tpe-emoji-btn">{emoji.icon}</button>
-                            ))}
-                        </div>
-                    </EditorialPopover>
-                </div>
-            </div>
-        </>
+            </EditorialPopover>
+        </div>
     );
 });
 
+/**
+ * 2027 Institutional Primitive: PrefixToolbar
+ */
 export const PrefixToolbar = React.memo<{ 
     value: string, 
     prefix: string, 
@@ -112,23 +57,6 @@ export const PrefixToolbar = React.memo<{
     const [open, setOpen] = useState(false);
     const text = useMemo(() => value.startsWith(prefix) ? value.slice(prefix.length).trim() : value, [value, prefix]);
     
-    const handleIconClick = (icon: string) => {
-        if (!fieldId) return;
-        const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement;
-        let newVal = value;
-        if (el && el.selectionStart !== null) {
-            const start = el.selectionStart;
-            const end = el.selectionEnd || start;
-            newVal = value.substring(0, start) + icon + value.substring(end);
-            onUpdate(newVal);
-            setTimeout(() => { el.focus(); el.setSelectionRange(start + icon.length, start + icon.length); }, 0);
-        } else {
-            newVal = value ? value + " " + icon : icon;
-            onUpdate(newVal);
-        }
-        setOpen(false);
-    };
-
     return (
         <div style={{ position: 'relative' }}>
             <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
@@ -136,11 +64,11 @@ export const PrefixToolbar = React.memo<{
                 {options.map(opt => (
                     <button key={opt} onClick={(e) => { e.preventDefault(); onPrefixChange(opt); onUpdate(`${opt} ${text}`.trim()); setOpen(false); }} className="tpe-prefix-btn">{opt}</button>
                 ))}
-                <input placeholder="Custom Prefix..." onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ( (e.target as HTMLInputElement).value.endsWith(':') ? '' : ':' ); onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
+                <input placeholder="Custom..." onKeyDown={(e) => { if (e.key === 'Enter') { const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ":"; onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
                 {showSocial && fieldId && (
                     <div className="tpe-social-grid">
                         {SOCIAL_ICONS.map(soc => (
-                            <button key={soc.label} onClick={(e) => { e.preventDefault(); handleIconClick(soc.icon); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
+                            <button key={soc.label} onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value, soc.icon, onUpdate); setOpen(false); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
                         ))}
                     </div>
                 )}
@@ -149,10 +77,5 @@ export const PrefixToolbar = React.memo<{
     );
 });
 
-export const SourcePrefixToolbar: React.FC<any> = (props) => (
-    <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />
-);
-
-export const ImageCreditToolbar: React.FC<any> = (props) => (
-    <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />
-);
+export const SourcePrefixToolbar: React.FC<any> = (props) => <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />;
+export const ImageCreditToolbar: React.FC<any> = (props) => <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />;

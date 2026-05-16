@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Draft, createDefaultDraft } from '../../../types/news';
-import { get, set, del } from 'idb-keyval';
+import { get, set } from 'idb-keyval';
 
 /**
  * 2027 Institutional Engine: useEditorialState
@@ -12,6 +12,7 @@ export const useEditorialState = () => {
     const [activeDraft, setActiveDraft] = useState<Draft>(createDefaultDraft());
     const [historyState, setHistoryState] = useState<{ stack: Draft[], index: number }>({ stack: [], index: -1 });
     const historyTimeout = useRef<NodeJS.Timeout | null>(null);
+    const saveTimeout = useRef<NodeJS.Timeout | null>(null);
 
     const commitToHistory = useCallback((draftToCommit: Draft) => {
         setHistoryState(prev => {
@@ -29,36 +30,12 @@ export const useEditorialState = () => {
             let draft = createDefaultDraft();
             let step = 1;
 
-            // 1. Check for Legacy localStorage data (Migration)
-            const legacyDraft = localStorage.getItem('tpe_active_draft');
-            const legacyStep = localStorage.getItem('tpe_current_step');
+            // 🏛️ 2027 ENGINE: LOAD FROM PERSISTENCE (IndexedDB)
+            const savedDraft = await get<Draft>('tpe_active_draft');
+            if (savedDraft) draft = { ...draft, ...savedDraft };
 
-            if (legacyDraft) {
-                try {
-                    const parsed = JSON.parse(legacyDraft);
-                    if (typeof parsed === 'object' && parsed !== null) {
-                        draft = { ...draft, ...parsed };
-                        // Move to IndexedDB and clean up
-                        await set('tpe_active_draft', draft);
-                        localStorage.removeItem('tpe_active_draft');
-                    }
-                } catch (e) {
-                    localStorage.removeItem('tpe_active_draft');
-                }
-            } else {
-                // 2. Load from IndexedDB
-                const savedDraft = await get<Draft>('tpe_active_draft');
-                if (savedDraft) draft = { ...draft, ...savedDraft };
-            }
-
-            if (legacyStep) {
-                step = parseInt(legacyStep) || 1;
-                await set('tpe_current_step', step);
-                localStorage.removeItem('tpe_current_step');
-            } else {
-                const savedStep = await get<number>('tpe_current_step');
-                if (savedStep) step = savedStep;
-            }
+            const savedStep = await get<number>('tpe_current_step');
+            if (savedStep) step = savedStep;
 
             setActiveDraft(draft);
             setCurrentStep(step);
@@ -71,7 +48,12 @@ export const useEditorialState = () => {
 
     const updateDraft = useCallback(async (newDraft: Draft, immediateCommit = false) => {
         setActiveDraft(newDraft);
-        await set('tpe_active_draft', newDraft);
+
+        // 🏛️ 2027 PERFORMANCE: THROTTLED PERSISTENCE
+        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+        saveTimeout.current = setTimeout(async () => {
+            await set('tpe_active_draft', newDraft);
+        }, 150);
 
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
 
@@ -83,6 +65,7 @@ export const useEditorialState = () => {
             }, 1000);
         }
     }, [commitToHistory]);
+
 
     const undo = useCallback(async () => {
         setHistoryState(prev => {

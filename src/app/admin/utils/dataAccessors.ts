@@ -1,144 +1,139 @@
-import { Draft } from "../../../types/news";
-import { produce } from "immer";
+import { Draft, SlideAsset } from "../../../types/news";
 
 /**
- * 2027 Institutional Data Engine: Unified Property Resolver
- * Replaces manual path logic with dynamic schema mapping.
+ * 2027 Institutional Standard: DraftResolver
+ * Centralized logic for structured path resolution within the Draft model.
+ * Replaces iterative string-splitting and regex with deterministic field mapping.
  */
-
-const PATH_MAP: Record<string, string> = {
-    'heading': 'heading',
-    'content': 'content',
-    'source': 'sourceName',
-    'credit': 'imageCredit'
-};
-
-const resolveExtra = (fieldId: string): { type: string, idx: number } | null => {
-    const match = fieldId.match(/extra-(heading|content|source)-(\d+)/);
-    if (match && match[1] && match[2]) {
-        const typeKey = match[1];
-        const resolvedType = PATH_MAP[typeKey];
-        if (resolvedType) {
-            return { type: resolvedType, idx: parseInt(match[2], 10) };
+export const DraftResolver = {
+    /**
+     * Resolves a field value based on its semantic path.
+     * Paths: 'headline', 'category', 'summary', 'slide-X-image', 'extra-X-heading', etc.
+     */
+    get: (path: string, draft: Draft): any => {
+        if (!path) return "";
+        
+        // 1. Direct Properties
+        if (['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix'].includes(path)) {
+            return (draft as any)[path];
         }
+
+        // 2. Extra Slides (Angles)
+        if (path.startsWith('extra-')) {
+            const parts = path.split('-'); // extra-heading-0, extra-content-0, extra-source-0
+            const index = parseInt(parts[2], 10);
+            const field = parts[1];
+            if (field === 'heading') return draft.extraSlides?.[index]?.heading || "";
+            if (field === 'content') return draft.extraSlides?.[index]?.content || "";
+            if (field === 'source') return draft.extraSlides?.[index]?.sourceName || "";
+            if (field === 'sourcePrefix') return draft.extraSlides?.[index]?.sourcePrefix || "SOURCE:";
+        }
+
+        // 3. Slide Assets (Focal/Metatada)
+        if (path.startsWith('slide-')) {
+            const parts = path.split('-'); // slide-1-image, slide-2-imageCredit
+            const slideNum = parseInt(parts[1], 10);
+            const field = parts[2];
+            
+            // Step 1 uses root properties
+            if (slideNum === 1) {
+                if (field === 'image') return draft.image;
+                if (field === 'imageCredit') return draft.imageCredit;
+                if (field === 'creditPrefix') return draft.creditPrefix;
+                return (draft as any)[field];
+            }
+
+            return (draft.slideAssets?.[slideNum] as any)?.[field] || "";
+        }
+
+        return (draft as any)[path] || "";
+    },
+
+    /**
+     * Updates a draft with a new value for a given path.
+     */
+    set: (path: string, value: any, draft: Draft): Draft => {
+        const d = { ...draft };
+
+        // 1. Direct Properties
+        if (['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix'].includes(path)) {
+            (d as any)[path] = value;
+            return d;
+        }
+
+        // 2. Extra Slides
+        if (path.startsWith('extra-')) {
+            const parts = path.split('-');
+            const index = parseInt(parts[2], 10);
+            const field = parts[1];
+            if (!d.extraSlides) d.extraSlides = [];
+            if (!d.extraSlides[index]) d.extraSlides[index] = { heading: '', content: '' };
+            
+            if (field === 'heading') d.extraSlides[index].heading = value;
+            if (field === 'content') d.extraSlides[index].content = value;
+            if (field === 'source') d.extraSlides[index].sourceName = value;
+            if (field === 'sourcePrefix') d.extraSlides[index].sourcePrefix = value;
+            return d;
+        }
+
+        // 3. Slide Assets
+        if (path.startsWith('slide-')) {
+            const parts = path.split('-');
+            const slideNum = parseInt(parts[1], 10);
+            const field = parts[2];
+
+            if (slideNum === 1) {
+                (d as any)[field === 'image' ? 'image' : field] = value;
+                return d;
+            }
+
+            if (!d.slideAssets) d.slideAssets = {};
+            if (!d.slideAssets[slideNum]) d.slideAssets[slideNum] = {};
+            (d.slideAssets[slideNum] as any)[field] = value;
+            return d;
+        }
+
+        (d as any)[path] = value;
+        return d;
     }
-    return null;
-};
-
-export const getDraftValue = (fieldId: string, draft: Draft): string => {
-    const extra = resolveExtra(fieldId);
-    if (extra) return draft.extraSlides?.[extra.idx]?.[extra.type as keyof typeof draft.extraSlides[0]] || "";
-    
-    const assetMatch = fieldId.match(/slide-credit-(\d+)/);
-    if (assetMatch && assetMatch[1]) return draft.slideAssets?.[parseInt(assetMatch[1], 10)]?.imageCredit || "";
-    
-    return (draft[fieldId as keyof Draft] as string) || "";
-};
-
-export const updateDraftValue = (fieldId: string, newVal: string, draft: Draft): Draft => {
-    return produce(draft, draft => {
-        const extra = resolveExtra(fieldId);
-        if (extra) {
-            if (!draft.extraSlides) draft.extraSlides = [];
-            if (!draft.extraSlides[extra.idx]) {
-                draft.extraSlides[extra.idx] = { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
-            }
-            (draft.extraSlides as any)[extra.idx][extra.type] = newVal;
-            return;
-        }
-        
-        const assetMatch = fieldId.match(/slide-credit-(\d+)/);
-        if (assetMatch && assetMatch[1]) {
-            const slide = parseInt(assetMatch[1], 10);
-            if (!draft.slideAssets) draft.slideAssets = {};
-            if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
-            draft.slideAssets[slide].imageCredit = newVal;
-            return;
-        }
-        
-        (draft as any)[fieldId] = newVal;
-    });
-};
-
-export const updateDraftPrefix = (fieldId: string, prefix: string, draft: Draft): Draft => {
-    return produce(draft, draft => {
-        const extra = resolveExtra(fieldId);
-        if (extra) {
-            if (!draft.extraSlides) draft.extraSlides = [];
-            if (!draft.extraSlides[extra.idx]) {
-                draft.extraSlides[extra.idx] = { heading: "", content: "", sourceName: "", sourcePrefix: "SOURCE:" };
-            }
-            (draft.extraSlides as any)[extra.idx].sourcePrefix = prefix;
-            return;
-        }
-        
-        const assetMatch = fieldId.match(/slide-credit-(\d+)/);
-        if (assetMatch && assetMatch[1]) {
-            const slide = parseInt(assetMatch[1], 10);
-            if (!draft.slideAssets) draft.slideAssets = {};
-            if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
-            draft.slideAssets[slide].creditPrefix = prefix;
-            return;
-        }
-        
-        const prefixField = fieldId === 'sourceName' ? 'sourcePrefix' : 'creditPrefix';
-        (draft as any)[prefixField] = prefix;
-    });
 };
 
 /**
- * Institutional Data Factory: 2027 Sequential Asset Inheritance
+ * Legacy Adapters (For compatibility during refactor)
  */
-export const getEffectiveSlideAsset = (slide: number, draft: Draft): any => {
-    let result = {
-        image: draft.image,
-        scrim: draft.scrim ?? 0,
-        imagePosX: draft.imagePosX ?? 50,
-        imagePosY: draft.imagePosY ?? 50,
-        imagePosY_Square: draft.imagePosY_Square ?? draft.imagePosY ?? 50,
-        imageZoom: draft.imageZoom ?? 100,
-        snapMode: draft.snapMode || 'height',
-        imageWidth: draft.imageWidth,
-        imageHeight: draft.imageHeight,
-        imageCredit: draft.imageCredit,
-        creditPrefix: draft.creditPrefix || "PHOTO:",
-    };
+export const getDraftValue = DraftResolver.get;
+export const updateDraftValue = DraftResolver.set;
 
-    if (slide <= 1) return result;
-
-    for (let i = 2; i <= slide; i++) {
-        const specific = draft.slideAssets?.[i];
-        const isNewImage = specific?.image !== undefined && specific.image !== result.image;
-        const isInherited = !specific?.image;
-        
-        let defaultScrim = result.scrim;
-        if (!specific || specific.scrim === undefined) {
-            if (i === 2) defaultScrim = 35; 
-            else if (i >= 3) defaultScrim = 45; 
-        }
-
-        result = {
-            image: specific?.image || result.image,
-            scrim: specific?.scrim ?? defaultScrim,
-            imagePosX: specific?.imagePosX ?? result.imagePosX,
-            imagePosY: specific?.imagePosY ?? result.imagePosY,
-            imagePosY_Square: specific?.imagePosY_Square ?? result.imagePosY_Square,
-            imageZoom: specific?.imageZoom ?? result.imageZoom,
-            snapMode: specific?.snapMode || result.snapMode,
-            imageWidth: specific?.imageWidth ?? result.imageWidth,
-            imageHeight: specific?.imageHeight ?? result.imageHeight,
-            imageCredit: (isNewImage) ? (specific?.imageCredit || "") : (isInherited ? "" : (specific?.imageCredit || "")),
-            creditPrefix: (isNewImage) ? (specific?.creditPrefix || "PHOTO:") : (isInherited ? "PHOTO:" : (specific?.creditPrefix || "PHOTO:")),
-        };
-    }
-
-    return result;
+export const updateDraftPrefix = (field: string, prefix: string, draft: Draft): Draft => {
+    const isCredit = field.includes('credit') || field.includes('Credit');
+    const path = isCredit ? (field.includes('-') ? field.replace('imageCredit', 'creditPrefix') : 'creditPrefix') 
+                          : (field.includes('-') ? field.replace('source', 'sourcePrefix').replace('Name', 'Prefix') : 'sourcePrefix');
+    return DraftResolver.set(path, prefix, draft);
 };
 
 export const updateSlideAsset = (slide: number, field: string, value: any, draft: Draft): Draft => {
-    return produce(draft, draft => {
-        if (!draft.slideAssets) draft.slideAssets = {};
-        if (!draft.slideAssets[slide]) draft.slideAssets[slide] = {};
-        (draft.slideAssets[slide] as any)[field] = value;
-    });
+    return DraftResolver.set(`slide-${slide}-${field}`, value, draft);
+};
+
+/**
+ * 2027 Institutional Resolver: getEffectiveSlideAsset
+ * Handles inheritance chain for assets across slides.
+ */
+export const getEffectiveSlideAsset = (step: number, draft: Draft): SlideAsset => {
+    const asset: SlideAsset = { ...draft.slideAssets?.[step] };
+    
+    // Inheritance logic: If current step has no image, try to fall back to root image (Slide 1)
+    if (!asset.image) {
+        asset.image = draft.image;
+        asset.imageWidth = draft.imageWidth;
+        asset.imageHeight = draft.imageHeight;
+        asset.imageZoom = draft.imageZoom;
+        asset.imagePosX = draft.imagePosX;
+        asset.imagePosY = draft.imagePosY;
+        asset.imagePosY_Square = draft.imagePosY_Square;
+        asset.snapMode = draft.snapMode;
+        asset.scrim = draft.scrim;
+    }
+
+    return asset;
 };

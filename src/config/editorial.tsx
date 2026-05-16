@@ -34,7 +34,25 @@ export const SOCIAL_ICONS = [
  * Streamlined 2027 Model: Core Meta + Narrative Architecture
  */
 export const EDITORIAL_STEPS = [
-    { step: 1, label: 'The Bulletin', field: 'headline' },
-    { step: 2, label: 'Core Story', field: 'summary' },
-    { step: 3, label: 'Missing Context', field: 'extra-content-0' }
+    { 
+        step: 1, 
+        label: 'The Bulletin', 
+        fields: ['category', 'headline'],
+        required: ['category', 'headline', 'image'],
+        tools: ['emoji', 'asset']
+    },
+    { 
+        step: 2, 
+        label: 'Core Story', 
+        fields: ['summary'],
+        required: ['summary'],
+        tools: ['emoji', 'asset', 'source']
+    },
+    { 
+        step: 3, 
+        label: 'Missing Context', 
+        fields: ['extra-heading-0', 'extra-content-0'],
+        required: ['extra-content-0'],
+        tools: ['emoji', 'asset', 'source']
+    }
 ];

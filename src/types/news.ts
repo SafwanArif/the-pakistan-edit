@@ -1,4 +1,13 @@
+export interface StepConfig {
+    step: number;
+    label: string;
+    fields: string[];
+    required: string[];
+    tools: ('emoji' | 'asset' | 'source' | 'credit')[];
+}
+
 export interface SlideAsset {
+
     image?: string;
     imagePosX?: number;
     imagePosY?: number;

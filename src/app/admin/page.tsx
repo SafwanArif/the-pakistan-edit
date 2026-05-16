@@ -4,6 +4,7 @@ import React, { useState, useCallback } from "react";
 import { Draft } from "../../types/news";
 import { useEditorialState } from "./hooks/useEditorialState";
 import { runExportEngine } from "./utils/exportEngine";
+import { EDITORIAL_STEPS } from "../../config/editorial";
 
 // Institutional Components
 import { DraftForm } from "./components/DraftForm";
@@ -11,6 +12,7 @@ import { OmniPreviewGrid } from "./components/OmniPreviewGrid";
 import { FocalToolkit } from "./components/FocalToolkit";
 import { TPEVectorLogo } from "../../components/templates/instagram/TPEVectorLogo";
 import { ExportOverlay } from "./components/ExportOverlay";
+import { SelectionPopover } from "./components/SelectionPopover";
 
 /**
  * 2027 Institutional Command Center: AdminDashboard
@@ -43,18 +45,27 @@ export default function AdminDashboard() {
             </header>
 
             <div className="tpe-progress-container">
-                {Array.from({ length: totalSteps }).map((_, i) => (
-                    <div 
-                        key={i} 
-                        onClick={() => setCurrentStep(i + 1)} 
-                        className="tpe-progress-segment" 
-                        data-active={currentStep === i + 1}
-                        style={{ 
-                            background: currentStep >= i + 1 ? (i < 1 ? 'var(--ui-indicator)' : i === 1 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'transparent' 
-                        }} 
-                    />
-                ))}
+                {Array.from({ length: totalSteps }).map((_, i) => {
+                    const stepNum = i + 1;
+                    const isActive = currentStep === stepNum;
+                    const config = EDITORIAL_STEPS.find(s => s.step === stepNum) || EDITORIAL_STEPS[2];
+                    
+                    const segmentColor = (currentStep >= stepNum) 
+                        ? (stepNum === 1 ? 'var(--ui-indicator)' : (stepNum === 2 ? 'var(--ui-accent)' : 'var(--ui-text)'))
+                        : 'transparent';
+
+                    return (
+                        <div 
+                            key={i} 
+                            onClick={() => setCurrentStep(stepNum)} 
+                            className="tpe-progress-segment" 
+                            data-active={isActive}
+                            style={{ background: segmentColor }} 
+                        />
+                    );
+                })}
             </div>
+
             {exporting && (
                 <ExportOverlay 
                     status={exporting} 
@@ -68,6 +79,7 @@ export default function AdminDashboard() {
             </main>
 
             <div id="export-capture-surface" style={{ position: 'fixed', insetInlineStart: '-5000px' }} />
+            <SelectionPopover draft={activeDraft} onChange={updateDraft} />
         </div>
     );
 }

@@ -1,106 +1,65 @@
-import React, { useMemo } from "react";
-import { TPEMasthead } from "../TPEMasthead";
-import { EditorialScrim } from "../EditorialScrim";
-import { OMNI_CONFIG, Platform } from "../../../../config/omnichannel";
+"use client";
+
+import React from "react";
+import { Draft } from "../../../../types/news";
+import { useNewsCardState } from "../../../hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
-import { SlideAsset } from "../../../../types/news";
-import { getEffectiveSlideAsset } from "../../../../app/admin/utils/dataAccessors";
 
-
-
-export interface NewsCardProps {
-    headline?: string; category?: string; summary?: string; bgImage?: string;
-    slide?: number; imageCredit?: string; creditPrefix?: string; sourceName?: string; sourcePrefix?: string;
-    imagePosX?: number; imagePosY?: number; imagePosY_Square?: number; imageZoom?: number;
-    imageWidth?: number; imageHeight?: number; snapMode?: 'width' | 'height' | 'grid';
-    scrim?: number; platform?: Platform; totalSlides?: number;
-    extraSlides?: { heading: string; content: string; sourceName?: string; sourcePrefix?: string; }[];
-    slideAssets?: Record<number, SlideAsset>;
+interface NewsCardProps {
+    draft: Draft;
+    step?: number;
+    platform?: 'instagram' | 'facebook' | 'tiktok' | 'x';
 }
 
 /**
- * 2027 Intelligence Standard: NewsCard
- * Zero-Math Architecture. Offloads all layout and focal calculations to the CSS Engine.
+ * 2027 Institutional Standard: NewsCard (Zero-Logic Rendering)
+ * A pure visual component that offloads all data resolution to the useNewsCardState hook.
  */
-export const NewsCard = React.memo<NewsCardProps>((props) => {
-    const { slide = 1, platform = "instagram", totalSlides = 1 } = props;
-    const config = OMNI_CONFIG[platform] || OMNI_CONFIG.instagram;
-
-    const asset = useMemo(() => {
-        const effective = getEffectiveSlideAsset(slide, props as any);
-        return {
-            image: effective.image, zoom: effective.imageZoom, 
-            posX: effective.imagePosX, posY: (platform === 'square' && effective.imagePosY_Square !== undefined) ? effective.imagePosY_Square : effective.imagePosY, 
-            mode: effective.snapMode, scrim: effective.scrim, 
-            photoCredit: effective.imageCredit, photoPrefix: effective.creditPrefix
-        };
-    }, [slide, props, platform]);
-
-    const sourceText = useMemo(() => {
-        if (slide === 1) return "";
-        const ex = slide === 2 ? { sourcePrefix: props.sourcePrefix, sourceName: props.sourceName } : props.extraSlides?.[slide - 3];
-        return ex?.sourceName ? (ex.sourcePrefix?.trim()?.toUpperCase() ? `${ex.sourcePrefix.toUpperCase()} ${ex.sourceName}` : ex.sourceName) : "";
-    }, [slide, props.sourceName, props.sourcePrefix, props.extraSlides]);
-
-    const photoText = useMemo(() => asset.photoCredit ? (asset.photoPrefix?.trim() ? `${asset.photoPrefix.toUpperCase()} ${asset.photoCredit}` : asset.photoCredit) : "", [asset]);
-
-    const backgroundLayer = <AssetLayer bgImage={asset.image} zoom={asset.zoom} posX={asset.posX} posY={asset.posY} mode={asset.mode} />;
+export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, platform = 'instagram' }) => {
+    const { heading, content, source, photo, asset, type } = useNewsCardState(draft, step);
 
     return (
-        <div className="tpe-news-card" data-slide-type={slide === 1 ? "bulletin" : "narrative"} style={{ 
-            '--card-w': `${config.width}px`, 
-            '--card-h': `${config.height}px`,
-            '--pad-top': `${config.padding.top}px`, '--pad-right': `${config.padding.right}px`, '--pad-bottom': `${config.padding.bottom}px`, '--pad-left': `${config.padding.left}px`,
-            '--off-top': `${config.offsets.top}px`, '--off-bottom': `${config.offsets.bottom}px`,
-            '--font-h1': config.typography.h1, '--font-slide2': config.typography.slide2, '--font-slide3': config.typography.slide3, '--font-prompt': config.typography.prompt, '--font-h3': config.typography.slide3Heading
-        } as React.CSSProperties}>
-            {/* 2027 Scenario A & B: Native Scrim and Image Layers */}
-            <div className="tpe-news-bg">{backgroundLayer}</div>
-            {asset.scrim > 0 && (
-                <div style={{ 
-                    position: "absolute", inset: 0, 
-                    background: `oklch(from black l c h / ${(asset.scrim ?? 0) / 100})`, 
-                    zIndex: 10,
-                    transition: 'background 0.3s ease'
-                }} />
-            )}
-            
-            <TPEMasthead category={props.category || "ECONOMY"} platform={platform} />
-            <div className="tpe-news-source">
-                {(sourceText && photoText) && <span>{photoText}</span>}
-                <span>{sourceText || photoText}</span>
+        <div className="tpe-news-card" data-slide-type={type} data-platform={platform}>
+            {/* BACKGROUND LAYER */}
+            <div className="tpe-news-bg">
+                <AssetLayer 
+                    bgImage={asset.image || ""} 
+                    zoom={asset.imageZoom || 100} 
+                    posX={asset.imagePosX || 50} 
+                    posY={asset.imagePosY || 50} 
+                    mode={asset.snapMode || 'height'} 
+                />
+                {asset.scrim ? (
+                    <div style={{ position: 'absolute', inset: 0, background: `rgba(0,0,0,${asset.scrim / 100})`, zIndex: 6 }} />
+                ) : (
+                    <div className="tpe-news-scrim" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.9) 100%)', zIndex: 6 }} />
+                )}
             </div>
 
-            {slide === 1 && <EditorialScrim />}
-            <div className="tpe-news-inner tpe-full-absolute tpe-flex-col">
-                <div className="tpe-flex-row tpe-news-progress">
-                    {Array.from({ length: totalSlides }).map((_, i) => {
-                        const s = i + 1; const active = slide === s;
-                        const color = active ? (s === 1 ? 'var(--ui-indicator)' : s === 2 ? 'var(--ui-accent)' : 'var(--ui-text)') : 'oklch(from var(--ui-text) l c h / 0.15)';
-                        return <div key={i} style={{ inlineSize: totalSlides > 5 ? '60px' : '80px', blockSize: '4px', background: color, boxShadow: active ? `0 0 20px ${color}` : 'none', transition: 'all 0.3s' }} />;
-                    })}
-                </div>
-                {slide === 1 ? (
+            {/* CONTENT LAYER */}
+            <div className="tpe-news-inner tpe-flex-col tpe-full-absolute">
+                {type === 'bulletin' ? (
                     <div className="tpe-news-h1">
-                        <HighlightedText text={props.headline} />
+                        <HighlightedText text={heading} />
                     </div>
                 ) : (
                     <>
-                        {props.extraSlides?.[slide - 3]?.heading && (
-                            <div className="tpe-flex-row tpe-news-h3-container">
-                                <div className="tpe-news-h3-bar" />
-                                <h3 className="tpe-news-h3">
-                                    <HighlightedText text={props.extraSlides?.[slide - 3]?.heading} />
-                                </h3>
-                            </div>
-                        )}
-                        <p className={`tpe-news-narrative ${slide === 2 ? 'tpe-news-slide2' : 'tpe-news-slide3'}`}>
-                            <HighlightedText text={slide === 2 ? props.summary : props.extraSlides?.[slide - 3]?.content} />
-                        </p>
-                        {slide === totalSlides && slide > 2 && <p className="tpe-news-prompt">HAVE YOUR SAY BELOW ↓</p>}
+                        <div className="tpe-news-h3-container tpe-flex-row">
+                            <div className="tpe-news-h3-bar" />
+                            <h3 className="tpe-news-h3">{heading}</h3>
+                        </div>
+                        <div className="tpe-news-narrative tpe-news-slide2">
+                            <HighlightedText text={content} />
+                        </div>
                     </>
                 )}
+            </div>
+
+            {/* METADATA LAYER */}
+            <div className="tpe-news-source">
+                {source && <span>{source}</span>}
+                {photo && <span>{photo}</span>}
             </div>
         </div>
     );

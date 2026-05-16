@@ -474,11 +474,13 @@
   /* 🏛️ Safe-Zone Registry */
   --safe-top: 100px;
   --safe-bottom: 180px;
+  --safe-right: 60px;
   --news-padding: 60px;
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
     --safe-bottom: 240px;
+    --safe-right: 140px; /* 🏛️ TikTok Right Safe-Zone */
     --news-padding: 80px;
   }
 }
@@ -523,7 +525,7 @@
   font-size: 24px;
   font-weight: 900;
   text-transform: uppercase;
-  color: var(--ui-accent);
+  color: var(--ui-text); /* 🏛️ Reset to White */
   letter-spacing: 0.05em;
 }
 
@@ -531,11 +533,14 @@
   font-size: 14px;
   font-weight: 900;
   text-transform: uppercase;
-  color: var(--ui-accent);
+  color: var(--ui-text); /* 🏛️ Reset to White */
   letter-spacing: 0.1em;
 }
 
-.tpe-slash { opacity: 0.4; margin-inline-end: 4px; }
+.tpe-slash { 
+  color: oklch(from var(--ui-text) l c h / 0.5); /* 🏛️ Reset to Grey */
+  margin-inline-end: 4px; 
+}
 
 .tpe-watermark {
   font-size: 12px;
@@ -546,19 +551,21 @@
 
 /* --- CONTENT LAYER --- */
 .tpe-news-inner {
-  padding-inline: var(--news-padding);
+  padding-inline-start: var(--news-padding);
+  padding-inline-end: var(--safe-right);
   padding-block-end: var(--safe-bottom);
   justify-content: flex-end;
   z-index: 8;
 }
 
 .tpe-news-h1 {
+  font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 88px;
   font-weight: 800;
   line-height: 1.0;
   text-transform: uppercase;
   color: var(--ui-text);
-  max-inline-size: 90%;
+  max-inline-size: 100%;
 }
 
 .tpe-news-h3-container {
@@ -573,12 +580,14 @@
 }
 
 .tpe-news-h3 {
+  font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 32px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
 .tpe-news-content {
+  font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 42px;
   font-weight: 600;
   line-height: 1.2;
@@ -602,7 +611,9 @@
   color: var(--ui-text);
 }
 
-.tpe-slash-dim { opacity: 0.3; }
+.tpe-slash-dim { 
+  color: oklch(from var(--ui-text) l c h / 0.3); 
+}
 
 .tpe-metadata-cluster {
   gap: 12px;

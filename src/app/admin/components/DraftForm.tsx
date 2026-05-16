@@ -88,7 +88,6 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                                             placeholder={f.includes('heading') || f === 'category' ? "CATEGORY" : "CONTENT..."}
                                             isMain={f === 'headline' || f.includes('content')}
                                             isCategory={f === 'category' || f.includes('heading')}
-                                            tools={config.tools as any}
                                             onFocus={() => setFocusedField(f)}
                                             onBlur={() => setFocusedField(null)}
                                         />

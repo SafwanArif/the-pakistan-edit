@@ -470,15 +470,89 @@
   contain: layout paint;
 }
 
+.tpe-full-absolute { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+
+.tpe-news-logo-overlay {
+  position: absolute;
+  inset-block-start: var(--logo-top, 70px);
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.tpe-news-inner {
+  padding: var(--news-padding, 60px);
+  justify-content: flex-end;
+  z-index: 8;
+}
+
+.tpe-news-cat-container {
+  margin-block-end: 16px;
+  animation: tpe-fade-in 0.6s ease-out;
+}
+
+.tpe-news-cat {
+  font-size: var(--cat-size, 20px);
+  font-weight: 900;
+  color: var(--ui-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.tpe-news-h1 {
+  font-size: var(--h1-size, 86px);
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--ui-text);
+}
+
+.tpe-news-h3-container {
+  margin-block-end: 12px;
+  gap: 12px;
+}
+
+.tpe-news-h3-bar {
+  inline-size: 4px;
+  block-size: 24px;
+  background: var(--ui-accent);
+}
+
+.tpe-news-h3 {
+  font-size: var(--h3-size, 27px);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tpe-news-narrative {
+  font-size: var(--narrative-size, 41px);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ui-text);
+}
+
+.tpe-news-source {
+  position: absolute;
+  inset-block-end: var(--source-bottom, 150px);
+  inset-inline-start: var(--source-left, 50px);
+  font-size: var(--source-size, 14px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: oklch(from var(--ui-text) l c h / 0.6);
+  z-index: 9;
+}
+
 /* --- MOBILE ADAPTATION --- */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   :root {
     --layout-dir: column;
     --container-overflow: auto;
     --header-position: sticky;
   }
   .tpe-mobile-only { display: flex !important; }
-  .tpe-desktop-only { display: none !important; }
+  .tpe-desktop-only { display: none !important; visibility: hidden !important; width: 0 !important; height: 0 !important; overflow: hidden !important; }
   
   .dashboard-container { block-size: auto; min-block-size: 100vh; }
   .command-ribbon { top: 0; }

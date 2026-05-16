@@ -6,6 +6,7 @@ import { Platform } from "../../../../config/omnichannel";
 import { useNewsCardState } from "../../../../app/admin/hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
+import { TPEVectorLogo } from "../TPEVectorLogo";
 
 interface NewsCardProps {
     draft: Draft;
@@ -14,8 +15,8 @@ interface NewsCardProps {
 }
 
 /**
- * 2027 Institutional Standard: NewsCard (Zero-Logic Rendering)
- * A pure visual component that offloads all data resolution to the useNewsCardState hook.
+ * 2027 Institutional Standard: NewsCard (Restored Narrative)
+ * Pure visual component with full narrative fidelity and asset resolution.
  */
 export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, platform = 'instagram' }) => {
     const { heading, content, source, photo, asset, type } = useNewsCardState(draft, step);
@@ -23,7 +24,7 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
     return (
         <div className="tpe-news-card" data-slide-type={type} data-platform={platform}>
             {/* BACKGROUND LAYER */}
-            <div className="tpe-news-bg">
+            <div className="tpe-news-bg tpe-full-absolute">
                 <AssetLayer 
                     bgImage={asset.image || ""} 
                     zoom={asset.imageZoom || 100} 
@@ -34,16 +35,26 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                 {asset.scrim ? (
                     <div style={{ position: 'absolute', inset: 0, background: `rgba(0,0,0,${asset.scrim / 100})`, zIndex: 6 }} />
                 ) : (
-                    <div className="tpe-news-scrim" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.9) 100%)', zIndex: 6 }} />
+                    <div className="tpe-news-scrim" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.95) 100%)', zIndex: 6 }} />
                 )}
+            </div>
+
+            {/* INSTITUTIONAL LOGO LAYER */}
+            <div className="tpe-news-logo-overlay">
+                <TPEVectorLogo scale={platform === 'square' ? 0.8 : 1.2} />
             </div>
 
             {/* CONTENT LAYER */}
             <div className="tpe-news-inner tpe-flex-col tpe-full-absolute">
                 {type === 'bulletin' ? (
-                    <div className="tpe-news-h1">
-                        <HighlightedText text={heading} />
-                    </div>
+                    <>
+                        <div className="tpe-news-cat-container">
+                            <span className="tpe-news-cat">{draft.category || "NEWS"}</span>
+                        </div>
+                        <div className="tpe-news-h1">
+                            <HighlightedText text={heading} />
+                        </div>
+                    </>
                 ) : (
                     <>
                         <div className="tpe-news-h3-container tpe-flex-row">
@@ -58,8 +69,9 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
             </div>
 
             {/* METADATA LAYER */}
-            <div className="tpe-news-source">
+            <div className="tpe-news-source tpe-flex-row">
                 {source && <span>{source}</span>}
+                {source && photo && <span style={{ opacity: 0.3, margin: '0 6px' }}>|</span>}
                 {photo && <span>{photo}</span>}
             </div>
         </div>

@@ -59,11 +59,11 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                     <TPEVectorLogo scale={0.9} showWordmark={false} />
                 </div>
 
-                {/* 2. STEP ID */}
+                {/* 2. STEP ID (CLEANED FOR MOBILE) */}
                 <div className="tpe-step-cluster" style={{ minInlineSize: 'auto' }}>
-                    <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
+                    <span className="tpe-step-number tpe-desktop-only">{step.toString().padStart(2, '0')}</span>
                     <div className="tpe-flex-row tpe-step-label">
-                        <span className="tpe-desktop-only">{config.label}</span>
+                        <span className="tpe-desktop-only" style={{ marginInlineEnd: '4px' }}>{config.label}</span>
                         <span className="terminal-cursor">:</span>
                     </div>
                 </div>

@@ -14,10 +14,15 @@ interface AssetLayerProps {
  * Offloads all scaling and translation math to the browser's compositor thread.
  */
 export const AssetLayer = React.memo<AssetLayerProps>(({ 
-    bgImage, zoom, posX, posY, mode 
+    bgImage, zoom = 100, posX = 50, posY = 50, mode 
 }) => {
-    if (!bgImage) return null;
+    if (!bgImage) return <div style={{ position: 'absolute', inset: 0, background: '#050505' }} />;
     
+    // 🏛️ Harden values against NaN/undefined
+    const z = Math.max(0.1, (zoom || 100) / 100);
+    const x = posX ?? 50;
+    const y = posY ?? 50;
+
     return (
         <img 
             src={bgImage} 
@@ -32,16 +37,16 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
                 blockSize: '100%',
                 // 2027 Pattern: Inject raw percentages into CSS variables
                 // @ts-ignore
-                '--zoom': `${zoom / 100}`,
-                '--pos-x': `${posX}%`,
-                '--pos-y': `${posY}%`,
+                '--zoom': `${z}`,
+                '--pos-x': `${x}%`,
+                '--pos-y': `${y}%`,
                 // Native Scaling: Math is now handled by the browser engine
                 objectFit: mode === 'grid' ? 'cover' : (mode === 'width' ? 'contain' : 'cover'),
                 objectPosition: 'var(--pos-x) var(--pos-y)',
                 transform: 'scale(var(--zoom))',
                 transformOrigin: 'var(--pos-x) var(--pos-y)',
                 zIndex: 5,
-                viewTransitionName: 'main-asset', // Enable native morphing
+                viewTransitionName: 'main-asset',
                 transition: 'none'
             } as any} 
         />

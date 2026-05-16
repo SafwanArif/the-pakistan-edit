@@ -7,6 +7,7 @@ import { useNewsCardState } from "../../../../app/admin/hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
 import { TPEVectorLogo } from "../TPEVectorLogo";
+import { OMNI_CONFIG } from "../../../../config/omnichannel";
 
 interface NewsCardProps {
     draft: Draft;
@@ -20,9 +21,18 @@ interface NewsCardProps {
  */
 export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, platform = 'instagram' }) => {
     const { heading, content, source, photo, asset, type } = useNewsCardState(draft, step);
+    const dimensions = OMNI_CONFIG[platform];
 
     return (
-        <div className="tpe-news-card" data-slide-type={type} data-platform={platform}>
+        <div 
+            className="tpe-news-card" 
+            data-slide-type={type} 
+            data-platform={platform}
+            style={{ 
+                '--card-w': `${dimensions.width}px`, 
+                '--card-h': `${dimensions.height}px` 
+            } as any}
+        >
             {/* BACKGROUND LAYER */}
             <div className="tpe-news-bg tpe-full-absolute">
                 <AssetLayer 

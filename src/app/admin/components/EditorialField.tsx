@@ -8,18 +8,19 @@ interface EditorialFieldProps {
     draft: Draft;
     onChange: (d: Draft) => void;
     placeholder?: string;
-    tools?: ('emoji' | 'source' | 'credit')[];
     isMain?: boolean;
     isCategory?: boolean;
+    onFocus?: () => void;
+    onBlur?: () => void;
 }
 
 /**
  * 2027 Institutional Standard: EditorialField
- * Atomic component that encapsulates all field-specific behaviors, 
- * tools, and data-resolution logic.
+ * Atomic component that encapsulates all field-specific behaviors.
+ * Refined for Elastic Ribbon: Zero internal tools for maximum horizontal space.
  */
 export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({ 
-    fieldId, draft, onChange, placeholder, tools = [], isMain, isCategory 
+    fieldId, draft, onChange, placeholder, isMain, isCategory, onFocus, onBlur
 }) => {
     const val = DraftResolver.get(fieldId, draft);
     const inputId = `input-${fieldId}`;
@@ -44,6 +45,8 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                     placeholder={placeholder}
                     value={val}
                     onChange={(e) => handleChange(e.target.value)}
+                    onFocus={onFocus}
+                    onBlur={onBlur}
                 />
             ) : (
                 <textarea 
@@ -52,33 +55,11 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                     placeholder={placeholder}
                     value={val}
                     onChange={(e) => handleChange(e.target.value)}
-                    style={{ paddingInlineEnd: tools.length > 1 ? '80px' : (tools.length > 0 ? '40px' : '10px') }}
+                    onFocus={onFocus}
+                    onBlur={onBlur}
+                    style={{ paddingInlineEnd: '10px' }}
                 />
             )}
-
-            <div className="tpe-field-tools" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px' }}>
-                {tools.includes('emoji') && (
-                    <EmojiToolbar 
-                        fieldId={fieldId} 
-                        value={val} 
-                        onUpdate={handleChange} 
-                    />
-                )}
-                {tools.includes('source') && (
-                    <SourcePrefixToolbar 
-                        fieldId={fieldId} 
-                        value={val} 
-                        onUpdate={handleChange} 
-                    />
-                )}
-                {tools.includes('credit') && (
-                    <ImageCreditToolbar 
-                        fieldId={fieldId} 
-                        value={val} 
-                        onUpdate={handleChange} 
-                    />
-                )}
-            </div>
         </div>
     );
 });

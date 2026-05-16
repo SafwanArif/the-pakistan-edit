@@ -24,6 +24,7 @@ interface DraftFormProps {
  */
 export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit, step, setStep, onReset }) => {
     const { resolving, ingestFile, clearAsset } = useAssetManager(draft, onChange);
+    const [focusedField, setFocusedField] = React.useState<string | null>(null);
     
     // 1. Resolve Schema for current step
     const config = useMemo(() => {
@@ -53,55 +54,73 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
             <div className="tpe-header-row">
+                {/* 1. LOGO */}
                 <div onClick={() => { if (window.confirm("Reset draft?")) onReset?.(); }} className="tpe-logo-wrapper">
-                    <TPEVectorLogo scale={1.0} showWordmark={false} />
+                    <TPEVectorLogo scale={0.9} showWordmark={false} />
                 </div>
 
+                {/* 2. STEP ID */}
+                <div className="tpe-step-cluster" style={{ minInlineSize: 'auto' }}>
+                    <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
+                    <div className="tpe-flex-row tpe-step-label">
+                        <span className="tpe-desktop-only">{config.label}</span>
+                        <span className="terminal-cursor">:</span>
+                    </div>
+                </div>
+
+                {/* 3 & 4. ELASTIC INPUTS */}
                 <div className="tpe-header-main">
-                    <div className="tpe-step-cluster">
-                        <span className="tpe-step-number">{step.toString().padStart(2, '0')}</span>
-                        <div className="tpe-flex-row tpe-step-label">
-                            <span>{config.label}</span><span className="terminal-cursor">:</span>
-                        </div>
-                    </div>
-
                     <div className="tpe-header-tools">
-                        {config.fields.map(f => (
-                            <React.Fragment key={f}>
-                                <EditorialField 
-                                    fieldId={f} 
-                                    draft={draft} 
-                                    onChange={onChange} 
-                                    placeholder={f.includes('heading') || f === 'category' ? "CATEGORY / HEADING" : "CONTENT..."}
-                                    isMain={f === 'headline' || f.includes('content')}
-                                    isCategory={f === 'category' || f.includes('heading')}
-                                    tools={config.tools as any}
-                                />
-                                {f === 'category' && <span className="tpe-separator-pipe">|</span>}
-                            </React.Fragment>
-                        ))}
-
-                        <UnifiedAssetToolbar 
-                            step={step}
-                            draft={draft}
-                            onChange={onChange}
-                            onUpload={(file) => ingestFile(file, step)}
-                            onClear={() => clearAsset(step)}
-                        />
+                        {config.fields.map((f, i) => {
+                            const isFocused = focusedField === f;
+                            const hasOtherFocused = focusedField && focusedField !== f;
+                            
+                            return (
+                                <React.Fragment key={f}>
+                                    <div 
+                                        className={`tpe-elastic-field-wrapper ${isFocused ? 'tpe-field-expanded' : (hasOtherFocused ? 'tpe-field-shrunk' : '')}`}
+                                        style={{ flex: isFocused ? 3 : (hasOtherFocused ? 0.5 : 1) }}
+                                    >
+                                        <EditorialField 
+                                            fieldId={f} 
+                                            draft={draft} 
+                                            onChange={onChange} 
+                                            placeholder={f.includes('heading') || f === 'category' ? "CATEGORY" : "CONTENT..."}
+                                            isMain={f === 'headline' || f.includes('content')}
+                                            isCategory={f === 'category' || f.includes('heading')}
+                                            tools={config.tools as any}
+                                            onFocus={() => setFocusedField(f)}
+                                            onBlur={() => setFocusedField(null)}
+                                        />
+                                    </div>
+                                    {i === 0 && config.fields.length > 1 && !focusedField && <span className="tpe-separator-pipe">|</span>}
+                                </React.Fragment>
+                            );
+                        })}
                     </div>
+                </div>
 
-                    <div className="tpe-nav-cluster">
-                        {step > 1 && (
-                            <button onClick={() => setStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">BACK</button>
-                        )}
-                        <button 
-                            onClick={() => canProceed && (isLastStep ? onSubmit(draft) : setStep(step + 1))} 
-                            disabled={!canProceed || resolving} 
-                            className={`tpe-nav-btn ${isLastStep ? "tpe-btn-primary" : "tpe-btn-gold"}`}
-                        >
-                            {resolving ? "RESOLVING..." : (isLastStep ? "EXPORT BATCH" : "NEXT STEP")}
-                        </button>
-                    </div>
+                {/* 5. ASSET BUTTON (CONTAINS SOURCE/CREDIT) */}
+                <UnifiedAssetToolbar 
+                    step={step}
+                    draft={draft}
+                    onChange={onChange}
+                    onUpload={(file) => ingestFile(file, step)}
+                    onClear={() => clearAsset(step)}
+                />
+
+                {/* NAVIGATION */}
+                <div className="tpe-nav-cluster">
+                    {step > 1 && (
+                        <button onClick={() => setStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">BACK</button>
+                    )}
+                    <button 
+                        onClick={() => canProceed && (isLastStep ? onSubmit(draft) : setStep(step + 1))} 
+                        disabled={!canProceed || resolving} 
+                        className={`tpe-nav-btn ${isLastStep ? "tpe-btn-primary" : "tpe-btn-gold"}`}
+                    >
+                        {resolving ? "..." : (isLastStep ? "EXPORT" : "NEXT")}
+                    </button>
                 </div>
             </div>
         </div>

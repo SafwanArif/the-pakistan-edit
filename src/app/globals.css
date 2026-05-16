@@ -471,17 +471,17 @@
   overflow: hidden;
   contain: layout paint;
 
-  /* 🏛️ Safe-Zone Registry */
+  /* 🏛️ 2027 Safety Registry: Deep Offsets */
   --safe-top: 100px;
-  --safe-bottom: 180px;
-  --safe-right: 60px;
-  --news-padding: 60px;
+  --safe-bottom: 220px; 
+  --safe-right: 80px;
+  --news-padding: 80px;
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
-    --safe-bottom: 240px;
-    --safe-right: 140px; /* 🏛️ TikTok Right Safe-Zone */
-    --news-padding: 80px;
+    --safe-bottom: 300px; /* 🏛️ Clears TikTok heart/comment stack */
+    --safe-right: 180px; /* 🏛️ TikTok Right Safe-Zone */
+    --news-padding: 100px;
   }
 }
 
@@ -508,8 +508,8 @@
 
 .tpe-branding-mini {
   position: absolute;
-  inset-block-start: 40px;
-  inset-inline: 40px;
+  inset-block-start: var(--safe-top); /* 🏛️ Synced */
+  inset-inline-start: var(--news-padding);
   gap: 12px;
   align-items: center;
   z-index: 10;
@@ -563,7 +563,7 @@
 .tpe-news-h1 {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 88px;
-  font-weight: 700; /* 🏛️ Reduced from 800 */
+  font-weight: 600; /* 🏛️ Refined Semi-Bold */
   line-height: 1.0;
   text-transform: uppercase;
   color: var(--ui-text);
@@ -585,22 +585,23 @@
 .tpe-news-h3 {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 32px;
-  font-weight: 700; /* 🏛️ Reduced from 900 */
+  font-weight: 600; /* 🏛️ Refined Semi-Bold */
   text-transform: uppercase;
 }
 
 .tpe-news-content {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 42px;
-  font-weight: 500; /* 🏛️ Reduced from 600 */
+  font-weight: 400; /* 🏛️ Classic Regular weight */
   line-height: 1.2;
   color: var(--ui-text);
 }
 
 /* --- FOOTER REGISTRY --- */
 .tpe-news-footer {
-  inset-block-end: 60px; /* 🏛️ Restored Baseline */
-  inset-inline: var(--news-padding);
+  inset-block-end: 80px; /* 🏛️ Lifted for clarity */
+  inset-inline-start: var(--news-padding);
+  inset-inline-end: var(--safe-right);
   justify-content: space-between;
   align-items: flex-end;
   blockSize: auto;

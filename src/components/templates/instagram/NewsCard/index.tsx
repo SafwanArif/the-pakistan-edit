@@ -22,6 +22,7 @@ interface NewsCardProps {
 export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, platform = 'instagram' }) => {
     const { heading, content, source, photo, asset, type } = useNewsCardState(draft, step);
     const dimensions = OMNI_CONFIG[platform];
+    const totalSteps = 2 + (draft.extraSlides?.length || 0);
 
     return (
         <div 
@@ -33,7 +34,7 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                 '--card-h': `${dimensions.height}px` 
             } as any}
         >
-            {/* BACKGROUND LAYER */}
+            {/* 🏛️ 1. BACKGROUND LAYER ( scrimmed ) */}
             <div className="tpe-news-bg tpe-full-absolute">
                 <AssetLayer 
                     bgImage={asset.image || ""} 
@@ -42,47 +43,59 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                     posY={asset.imagePosY || 50} 
                     mode={asset.snapMode || 'height'} 
                 />
-                {asset.scrim ? (
-                    <div style={{ position: 'absolute', inset: 0, background: `rgba(0,0,0,${asset.scrim / 100})`, zIndex: 6 }} />
-                ) : (
-                    <div className="tpe-news-scrim" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.95) 100%)', zIndex: 6 }} />
-                )}
+                <div className="tpe-news-scrim tpe-full-absolute" />
             </div>
 
-            {/* INSTITUTIONAL LOGO LAYER */}
-            <div className="tpe-news-logo-overlay">
-                <TPEVectorLogo scale={platform === 'square' ? 0.8 : 1.2} />
-            </div>
+            {/* 🏛️ 2. BRANDING LAYER ( Zidane Standard ) */}
+            {type === 'bulletin' ? (
+                <div className="tpe-branding-overlay tpe-flex-row">
+                    <div className="tpe-brand-left">
+                        <TPEVectorLogo scale={1.8} showWordmark={true} />
+                    </div>
+                    <div className="tpe-brand-right tpe-flex-col">
+                        <div className="tpe-category-tag">
+                            <span className="tpe-slash">//</span> {draft.category || "NEWS"}
+                        </div>
+                        <div className="tpe-watermark">@thePakistanEdit</div>
+                    </div>
+                </div>
+            ) : (
+                <div className="tpe-branding-mini tpe-flex-row">
+                     <TPEVectorLogo scale={0.8} showWordmark={false} />
+                     <div className="tpe-category-pill">
+                        <span className="tpe-slash">//</span> {draft.category || "STORY"}
+                     </div>
+                </div>
+            )}
 
-            {/* CONTENT LAYER */}
+            {/* 🏛️ 3. CONTENT LAYER */}
             <div className="tpe-news-inner tpe-flex-col tpe-full-absolute">
                 {type === 'bulletin' ? (
-                    <>
-                        <div className="tpe-news-cat-container">
-                            <span className="tpe-news-cat">{draft.category || "NEWS"}</span>
-                        </div>
-                        <div className="tpe-news-h1">
-                            <HighlightedText text={heading} />
-                        </div>
-                    </>
+                    <div className="tpe-news-h1">
+                        <HighlightedText text={heading} />
+                    </div>
                 ) : (
-                    <>
+                    <div className="tpe-narrative-group">
                         <div className="tpe-news-h3-container tpe-flex-row">
                             <div className="tpe-news-h3-bar" />
                             <h3 className="tpe-news-h3">{heading}</h3>
                         </div>
-                        <div className="tpe-news-narrative tpe-news-slide2">
+                        <div className="tpe-news-content">
                             <HighlightedText text={content} />
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
-            {/* METADATA LAYER */}
-            <div className="tpe-news-source tpe-flex-row">
-                {source && <span>{source}</span>}
-                {source && photo && <span style={{ opacity: 0.3, margin: '0 6px' }}>|</span>}
-                {photo && <span>{photo}</span>}
+            {/* 🏛️ 4. FOOTER LAYER ( Pagination + Metadata ) */}
+            <div className="tpe-news-footer tpe-flex-row tpe-full-absolute">
+                <div className="tpe-pagination">
+                    {step.toString().padStart(2, '0')} <span className="tpe-slash-dim">/</span> {totalSteps.toString().padStart(2, '0')}
+                </div>
+                <div className="tpe-metadata-cluster tpe-flex-row">
+                    {source && <span className="tpe-meta-item">{source}</span>}
+                    {photo && <span className="tpe-meta-item">{photo}</span>}
+                </div>
             </div>
         </div>
     );

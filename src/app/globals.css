@@ -561,7 +561,7 @@
 .tpe-news-h1 {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 88px;
-  font-weight: 800;
+  font-weight: 700; /* 🏛️ Reduced from 800 */
   line-height: 1.0;
   text-transform: uppercase;
   color: var(--ui-text);
@@ -582,14 +582,14 @@
 .tpe-news-h3 {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 32px;
-  font-weight: 900;
+  font-weight: 700; /* 🏛️ Reduced from 900 */
   text-transform: uppercase;
 }
 
 .tpe-news-content {
   font-family: var(--tpe-font-playfair); /* 🏛️ Editorial Serif */
   font-size: 42px;
-  font-weight: 600;
+  font-weight: 500; /* 🏛️ Reduced from 600 */
   line-height: 1.2;
   color: var(--ui-text);
 }

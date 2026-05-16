@@ -471,17 +471,15 @@
   overflow: hidden;
   contain: layout paint;
 
-  /* 🏛️ 2027 Safety Registry: Deep Offsets */
-  --safe-top: 100px;
-  --safe-bottom: 220px; 
-  --safe-right: 80px;
-  --news-padding: 80px;
+  /* 🏛️ 2027 Safety Registry: Sleek & Spacious */
+  --safe-top: 120px;
+  --safe-bottom: 140px; /* 🏛️ Unified Bottom Baseline */
+  --safe-right: 100px;
+  --news-padding: 100px; /* 🏛️ Luxury Padding */
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
-    --safe-bottom: 300px; /* 🏛️ Clears TikTok heart/comment stack */
-    --safe-right: 180px; /* 🏛️ TikTok Right Safe-Zone */
-    --news-padding: 100px;
+    --safe-right: 180px; /* 🏛️ TikTok Right Protection */
   }
 }
 
@@ -599,7 +597,7 @@
 
 /* --- FOOTER REGISTRY --- */
 .tpe-news-footer {
-  inset-block-end: 80px; /* 🏛️ Lifted for clarity */
+  inset-block-end: 60px; /* 🏛️ Sleek Baseline */
   inset-inline-start: var(--news-padding);
   inset-inline-end: var(--safe-right);
   justify-content: space-between;
@@ -620,11 +618,16 @@
 }
 
 .tpe-metadata-cluster {
-  gap: 12px;
+  gap: 16px;
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
-  color: oklch(from var(--ui-text) l c h / 0.4);
+  color: oklch(from var(--ui-text) l c h / 0.6);
+}
+
+.tpe-meta-label {
+  opacity: 0.4;
+  margin-inline-end: 4px;
 }
 
 /* --- MOBILE ADAPTATION --- */

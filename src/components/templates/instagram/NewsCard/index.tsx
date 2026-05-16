@@ -93,8 +93,16 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                     {step.toString().padStart(2, '0')} <span className="tpe-slash-dim">/</span> {totalSteps.toString().padStart(2, '0')}
                 </div>
                 <div className="tpe-metadata-cluster tpe-flex-row">
-                    {source && <span className="tpe-meta-item">{source}</span>}
-                    {photo && <span className="tpe-meta-item">{photo}</span>}
+                    {source && (
+                        <span className="tpe-meta-item">
+                            <span className="tpe-meta-label">SOURCE:</span> {source}
+                        </span>
+                    )}
+                    {photo && (
+                        <span className="tpe-meta-item">
+                            <span className="tpe-meta-label">PHOTO:</span> {photo}
+                        </span>
+                    )}
                 </div>
             </div>
         </div>

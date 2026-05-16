@@ -52,13 +52,27 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                     placeholder={placeholder}
                     value={val}
                     onChange={(e) => handleChange(e.target.value)}
-                    style={{ paddingInlineEnd: tools.length > 0 ? '40px' : '10px' }}
+                    style={{ paddingInlineEnd: tools.length > 1 ? '80px' : (tools.length > 0 ? '40px' : '10px') }}
                 />
             )}
 
             <div className="tpe-field-tools" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px' }}>
                 {tools.includes('emoji') && (
                     <EmojiToolbar 
+                        fieldId={fieldId} 
+                        value={val} 
+                        onUpdate={handleChange} 
+                    />
+                )}
+                {tools.includes('source') && (
+                    <SourcePrefixToolbar 
+                        fieldId={fieldId} 
+                        value={val} 
+                        onUpdate={handleChange} 
+                    />
+                )}
+                {tools.includes('credit') && (
+                    <ImageCreditToolbar 
                         fieldId={fieldId} 
                         value={val} 
                         onUpdate={handleChange} 

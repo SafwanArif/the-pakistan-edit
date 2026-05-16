@@ -521,7 +521,7 @@
 
 .tpe-category-tag {
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 700; /* 🏛️ Reduced from 900 */
   text-transform: uppercase;
   color: var(--ui-text); /* 🏛️ Reset to White */
   letter-spacing: 0.05em;
@@ -529,7 +529,7 @@
 
 .tpe-category-pill {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 700; /* 🏛️ Reduced from 900 */
   text-transform: uppercase;
   color: var(--ui-text); /* 🏛️ Reset to White */
   letter-spacing: 0.1em;

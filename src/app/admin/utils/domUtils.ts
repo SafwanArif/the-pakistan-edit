@@ -4,9 +4,9 @@
  */
 export const insertTextAtCursor = (fieldId: string, value: string, textToInsert: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement;
-    if (el && el.selectionStart !== null) {
+    if (el && typeof el.selectionStart === 'number') {
         const start = el.selectionStart;
-        const end = el.selectionEnd || start;
+        const end = el.selectionEnd ?? start;
         const newVal = value.substring(0, start) + textToInsert + value.substring(end);
         onUpdate(newVal);
         
@@ -30,7 +30,7 @@ export const insertTextAtCursor = (fieldId: string, value: string, textToInsert:
  */
 export const wrapSelectionWithSyntax = (fieldId: string, value: string, syntax: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement;
-    if (el && el.selectionStart !== null) {
+    if (el && typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number') {
         const start = el.selectionStart;
         const end = el.selectionEnd;
         const selection = value.substring(start, end);

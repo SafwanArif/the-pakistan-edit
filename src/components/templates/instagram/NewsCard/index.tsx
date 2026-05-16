@@ -2,14 +2,15 @@
 
 import React from "react";
 import { Draft } from "../../../../types/news";
-import { useNewsCardState } from "../../../hooks/useNewsCardState";
+import { Platform } from "../../../../config/omnichannel";
+import { useNewsCardState } from "../../../../app/admin/hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
 
 interface NewsCardProps {
     draft: Draft;
     step?: number;
-    platform?: 'instagram' | 'facebook' | 'tiktok' | 'x';
+    platform?: Platform;
 }
 
 /**

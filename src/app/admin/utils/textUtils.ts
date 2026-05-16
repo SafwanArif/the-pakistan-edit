@@ -31,7 +31,7 @@ export const getGoldKeywords = (text: string): string[] => {
  */
 export const getAnchorKeyword = (headline: string): string => {
     const gold = getGoldKeywords(headline);
-    if (gold.length > 0) return gold[0];
+    if (gold.length > 0 && gold[0]) return gold[0];
     
     const words = headline.split(' ').slice(0, 3).join('-');
     return sanitize(words) || "news";

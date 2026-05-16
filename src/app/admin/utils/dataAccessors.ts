@@ -21,7 +21,7 @@ export const DraftResolver = {
         // 2. Extra Slides (Angles)
         if (path.startsWith('extra-')) {
             const parts = path.split('-'); // extra-heading-0, extra-content-0, extra-source-0
-            const index = parseInt(parts[2], 10);
+            const index = parseInt(parts[2] || "0", 10);
             const field = parts[1];
             if (field === 'heading') return draft.extraSlides?.[index]?.heading || "";
             if (field === 'content') return draft.extraSlides?.[index]?.content || "";
@@ -32,10 +32,11 @@ export const DraftResolver = {
         // 3. Slide Assets (Focal/Metatada)
         if (path.startsWith('slide-')) {
             const parts = path.split('-'); // slide-1-image, slide-2-imageCredit
-            const slideNum = parseInt(parts[1], 10);
+            const slideNum = parseInt(parts[1] || "1", 10);
             const field = parts[2];
             
-            // Step 1 uses root properties
+            if (!field) return "";
+
             if (slideNum === 1) {
                 if (field === 'image') return draft.image;
                 if (field === 'imageCredit') return draft.imageCredit;
@@ -64,7 +65,7 @@ export const DraftResolver = {
         // 2. Extra Slides
         if (path.startsWith('extra-')) {
             const parts = path.split('-');
-            const index = parseInt(parts[2], 10);
+            const index = parseInt(parts[2] || "0", 10);
             const field = parts[1];
             if (!d.extraSlides) d.extraSlides = [];
             if (!d.extraSlides[index]) d.extraSlides[index] = { heading: '', content: '' };
@@ -79,8 +80,9 @@ export const DraftResolver = {
         // 3. Slide Assets
         if (path.startsWith('slide-')) {
             const parts = path.split('-');
-            const slideNum = parseInt(parts[1], 10);
+            const slideNum = parseInt(parts[1] || "1", 10);
             const field = parts[2];
+            if (!field) return d;
 
             if (slideNum === 1) {
                 (d as any)[field === 'image' ? 'image' : field] = value;

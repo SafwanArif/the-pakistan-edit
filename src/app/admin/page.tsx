@@ -40,7 +40,7 @@ export default function AdminDashboard() {
         <div className="dashboard-container">
             <header className="command-ribbon">
                 <div className="tpe-flex-row" style={{ flex: 1 }}>
-                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} />
+                    <DraftForm draft={activeDraft} onChange={updateDraft} onSubmit={handleExportBatch} step={currentStep} setStep={setCurrentStep} onReset={resetState} />
                 </div>
             </header>
 

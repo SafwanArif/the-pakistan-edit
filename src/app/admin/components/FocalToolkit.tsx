@@ -130,10 +130,10 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                 <div className="tpe-flex-col tpe-glass-panel tpe-hud-container" style={{ pointerEvents: 'auto' }}>
                     <div className="tpe-hud-grid">
                         {[
-                            { id: "zoom", label: "ZOOM", min: 10, max: 800, value: asset.imageZoom, field: "imageZoom" },
-                            { id: "posX", label: "PAN X", min: 0, max: 100, value: asset.imagePosX, field: "imagePosX" },
-                            { id: "posY", label: "PAN Y", min: 0, max: 100, value: asset.imagePosY, field: "imagePosY" },
-                            { id: "posY_sq", label: "PAN Y (FB)", min: 0, max: 100, value: asset.imagePosY_Square ?? asset.imagePosY, field: "imagePosY_Square" }
+                            { id: "zoom", label: "ZOOM", min: 10, max: 800, value: asset.imageZoom ?? 100, field: "imageZoom" },
+                            { id: "posX", label: "PAN X", min: 0, max: 100, value: asset.imagePosX ?? 50, field: "imagePosX" },
+                            { id: "posY", label: "PAN Y", min: 0, max: 100, value: asset.imagePosY ?? 50, field: "imagePosY" },
+                            { id: "posY_sq", label: "PAN Y (FB)", min: 0, max: 100, value: asset.imagePosY_Square ?? asset.imagePosY ?? 50, field: "imagePosY_Square" }
                         ].map(s => (
                             <FocalSlider key={s.id} {...s} onChange={handleSliderChange} onDrag={setDraggingSlider} isDragging={draggingSlider === s.id} />
                         ))}
@@ -142,7 +142,8 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                             <button
                                 onClick={() => {
                                     const modes: ('height' | 'width' | 'grid')[] = ['height', 'width', 'grid'];
-                                    const next = modes[(modes.indexOf(asset.snapMode) + 1) % 3];
+                                    const currentMode = asset.snapMode || 'height';
+                                    const next = modes[(modes.indexOf(currentMode) + 1) % 3];
                                     let d = DraftResolver.set(`slide-${currentStep}-snapMode`, next, activeDraft);
                                     ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'].forEach(f => d = DraftResolver.set(`slide-${currentStep}-${f}`, f === 'imageZoom' ? 100 : 50, d));
                                     updateDraft(d);

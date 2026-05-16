@@ -79,7 +79,11 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                                 <React.Fragment key={f}>
                                     <div 
                                         className={`tpe-elastic-field-wrapper ${isFocused ? 'tpe-field-expanded' : (hasOtherFocused ? 'tpe-field-shrunk' : '')}`}
-                                        style={{ flex: isFocused ? 3 : (hasOtherFocused ? 0.5 : 1) }}
+                                        style={{ 
+                                            flex: isFocused ? 1 : (hasOtherFocused ? 0 : (f === 'category' || f.includes('heading') ? 0.3 : 1)),
+                                            opacity: hasOtherFocused ? 0 : 1,
+                                            pointerEvents: hasOtherFocused ? 'none' : 'auto'
+                                        }}
                                     >
                                         <EditorialField 
                                             fieldId={f} 

@@ -556,6 +556,8 @@
   padding-block-end: var(--safe-bottom);
   justify-content: flex-end;
   z-index: 8;
+  display: flex;
+  flex-direction: column;
 }
 
 .tpe-news-h1 {
@@ -566,6 +568,7 @@
   text-transform: uppercase;
   color: var(--ui-text);
   max-inline-size: 100%;
+  margin-block-start: auto; /* 🏛️ Bottom-Up Anchor */
 }
 
 .tpe-news-h3-container {
@@ -596,7 +599,7 @@
 
 /* --- FOOTER REGISTRY --- */
 .tpe-news-footer {
-  inset-block-end: 40px;
+  inset-block-end: 60px; /* 🏛️ Restored Baseline */
   inset-inline: var(--news-padding);
   justify-content: space-between;
   align-items: flex-end;
@@ -606,7 +609,7 @@
 
 .tpe-pagination {
   font-family: monospace;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
   color: var(--ui-text);
 }

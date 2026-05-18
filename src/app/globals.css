@@ -480,6 +480,7 @@
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
+    --safe-bottom: 220px; /* 🏛️ Lift content to clear TikTok footer */
     --safe-right: 180px; /* 🏛️ TikTok Right Protection */
     --footer-bottom: 140px; /* 🏛️ Lift footer for TikTok bottom UI */
   }

@@ -476,12 +476,12 @@
   --safe-bottom: 140px; /* 🏛️ Unified Bottom Baseline */
   --safe-right: 100px;
   --news-padding: 100px; /* 🏛️ Luxury Padding */
-  --footer-bottom: 50px;
+  --footer-bottom: 80px; /* 🏛️ Safe Footer Baseline */
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
     --safe-right: 180px; /* 🏛️ TikTok Right Protection */
-    --footer-bottom: 90px; /* 🏛️ Lift footer for TikTok bottom UI */
+    --footer-bottom: 140px; /* 🏛️ Lift footer for TikTok bottom UI */
   }
 }
 

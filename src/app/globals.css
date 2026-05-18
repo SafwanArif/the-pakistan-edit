@@ -523,28 +523,28 @@
 
 .tpe-category-tag {
   font-size: 24px;
-  font-weight: 700; /* 🏛️ Reduced from 900 */
+  font-weight: 500; /* 🏛️ Refined Medium Weight */
   text-transform: uppercase;
-  color: var(--ui-text); /* 🏛️ Reset to White */
+  color: var(--ui-text);
   letter-spacing: 0.05em;
 }
 
 .tpe-category-pill {
   font-size: 14px;
-  font-weight: 700; /* 🏛️ Reduced from 900 */
+  font-weight: 500; /* 🏛️ Refined Medium Weight */
   text-transform: uppercase;
-  color: var(--ui-text); /* 🏛️ Reset to White */
+  color: var(--ui-text);
   letter-spacing: 0.1em;
 }
 
 .tpe-slash { 
-  color: oklch(from var(--ui-text) l c h / 0.5); /* 🏛️ Reset to Grey */
+  color: oklch(from var(--ui-text) l c h / 0.5); 
   margin-inline-end: 4px; 
 }
 
 .tpe-watermark {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 500; /* 🏛️ Refined Medium Weight */
   color: oklch(from var(--ui-text) l c h / 0.5);
   letter-spacing: 0.05em;
 }

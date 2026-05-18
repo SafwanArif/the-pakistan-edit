@@ -88,7 +88,7 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
             </div>
 
             {/* 🏛️ 4. FOOTER LAYER ( Pagination + Metadata ) */}
-            <div className="tpe-news-footer tpe-flex-row tpe-full-absolute">
+            <div className="tpe-news-footer tpe-flex-row">
                 <div className="tpe-pagination">
                     {step.toString().padStart(2, '0')} <span className="tpe-slash-dim">/</span> {totalSteps.toString().padStart(2, '0')}
                 </div>

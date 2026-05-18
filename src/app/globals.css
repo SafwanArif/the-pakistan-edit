@@ -476,10 +476,12 @@
   --safe-bottom: 140px; /* 🏛️ Unified Bottom Baseline */
   --safe-right: 100px;
   --news-padding: 100px; /* 🏛️ Luxury Padding */
+  --footer-bottom: 50px;
 
   &[data-platform="tiktok"] {
     --safe-top: 140px;
     --safe-right: 180px; /* 🏛️ TikTok Right Protection */
+    --footer-bottom: 90px; /* 🏛️ Lift footer for TikTok bottom UI */
   }
 }
 
@@ -577,7 +579,7 @@
 .tpe-news-h3-bar {
   inline-size: 6px;
   block-size: 32px;
-  background: var(--ui-accent);
+  background: var(--ui-indicator); /* 🏛️ Green bar */
 }
 
 .tpe-news-h3 {
@@ -585,6 +587,13 @@
   font-size: 32px;
   font-weight: 600; /* 🏛️ Refined Semi-Bold */
   text-transform: uppercase;
+  color: var(--ui-indicator); /* 🏛️ Green text */
+}
+
+.tpe-narrative-group {
+  margin-block: auto; /* 🏛️ Center the narrative group vertically */
+  display: flex;
+  flex-direction: column;
 }
 
 .tpe-news-content {
@@ -593,12 +602,13 @@
   font-weight: 400; /* 🏛️ Classic Regular weight */
   line-height: 1.2;
   color: var(--ui-text);
+  white-space: pre-wrap; /* 🏛️ Enable line breaks */
 }
 
 /* --- FOOTER REGISTRY (Anchor to Bottom) --- */
 .tpe-news-footer {
   position: absolute;
-  inset-block-end: 50px; /* 🏛️ Constant Bottom Anchor */
+  inset-block-end: var(--footer-bottom, 50px); /* 🏛️ Platform Aware Footer Anchor */
   inset-inline-start: var(--news-padding);
   inset-inline-end: var(--safe-right);
   justify-content: space-between;

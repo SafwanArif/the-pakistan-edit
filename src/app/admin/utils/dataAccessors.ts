@@ -131,7 +131,11 @@ export const getEffectiveSlideAsset = (step: number, draft: Draft): SlideAsset =
         asset.imageHeight = draft.imageHeight;
     }
 
-    // 2. Focal & Opacity Inheritance (Only fallback if not explicitly set on this slide)
+    // 2. Metadata Inheritance
+    asset.imageCredit = asset.imageCredit ?? draft.imageCredit;
+    asset.creditPrefix = asset.creditPrefix ?? draft.creditPrefix;
+
+    // 3. Focal & Opacity Inheritance (Only fallback if not explicitly set on this slide)
     asset.imageZoom = asset.imageZoom ?? draft.imageZoom;
     asset.imagePosX = asset.imagePosX ?? draft.imagePosX;
     asset.imagePosY = asset.imagePosY ?? draft.imagePosY;

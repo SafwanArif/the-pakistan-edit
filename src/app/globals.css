@@ -261,6 +261,34 @@
     svg { width: 14px; height: 14px; fill: currentColor; }
   }
 
+  /* --- FOCAL TOOLKIT HUD --- */
+  .tpe-hud-container {
+    padding: 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-border);
+    margin-block-start: 8px;
+    inline-size: 280px;
+    box-shadow: 0 10px 30px oklch(from black l c h / 0.5);
+  }
+
+  .tpe-glass-panel {
+    background: oklch(from var(--ui-bg) l c h / 0.85);
+    backdrop-filter: blur(var(--blur-md, 16px));
+  }
+
+  .tpe-hud-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .focal-slider-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--ui-text-dim);
+    letter-spacing: 0.1em;
+  }
+
   /* --- ASSET TOOLBAR --- */
   .tpe-asset-btn {
     inline-size: 32px;

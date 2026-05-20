@@ -124,18 +124,20 @@ export const updateSlideAsset = (slide: number, field: string, value: any, draft
 export const getEffectiveSlideAsset = (step: number, draft: Draft): SlideAsset => {
     const asset: SlideAsset = { ...draft.slideAssets?.[step] };
     
-    // Inheritance logic: If current step has no image, try to fall back to root image (Slide 1)
+    // 1. Core Image Inheritance
     if (!asset.image) {
         asset.image = draft.image;
         asset.imageWidth = draft.imageWidth;
         asset.imageHeight = draft.imageHeight;
-        asset.imageZoom = draft.imageZoom;
-        asset.imagePosX = draft.imagePosX;
-        asset.imagePosY = draft.imagePosY;
-        asset.imagePosY_Square = draft.imagePosY_Square;
-        asset.snapMode = draft.snapMode;
-        asset.scrim = draft.scrim;
     }
+
+    // 2. Focal & Opacity Inheritance (Only fallback if not explicitly set on this slide)
+    asset.imageZoom = asset.imageZoom ?? draft.imageZoom;
+    asset.imagePosX = asset.imagePosX ?? draft.imagePosX;
+    asset.imagePosY = asset.imagePosY ?? draft.imagePosY;
+    asset.imagePosY_Square = asset.imagePosY_Square ?? draft.imagePosY_Square;
+    asset.snapMode = asset.snapMode ?? draft.snapMode;
+    asset.scrim = asset.scrim ?? draft.scrim;
 
     return asset;
 };

@@ -43,17 +43,6 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                     posY={asset.imagePosY || 50} 
                     mode={asset.snapMode || 'height'} 
                 />
-                {/* 🏛️ User-Controlled Global Dim Layer */}
-                <div 
-                    className="tpe-full-absolute" 
-                    style={{ 
-                        background: '#000', 
-                        opacity: (asset.scrim || 0) / 100,
-                        zIndex: 5,
-                        pointerEvents: 'none'
-                    }} 
-                />
-                {/* 🏛️ Base Gradient Scrim for Legibility */}
                 <div className="tpe-news-scrim tpe-full-absolute" />
             </div>
 

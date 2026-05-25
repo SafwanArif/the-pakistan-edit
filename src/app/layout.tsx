@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
-import { Inter_Tight, Playfair_Display } from "next/font/google";
+import { Inter_Tight, Playfair_Display, Geist } from "next/font/google";
 import "./globals.css";
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+});
 
 const interTight = Inter_Tight({
   subsets: ["latin"],
@@ -47,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${interTight.variable} ${playfairDisplay.variable}`}>
+    <html lang="en" className={`${interTight.variable} ${playfairDisplay.variable} ${geistSans.variable}`}>
       <body className={`${interTight.className} antialiased`}>
         {children}
       </body>

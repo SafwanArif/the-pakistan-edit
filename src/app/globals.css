@@ -22,6 +22,7 @@
 
   --tpe-font-inter: var(--font-inter-tight), sans-serif;
   --tpe-font-playfair: var(--font-playfair-display), serif;
+  --tpe-font-geist: var(--font-geist-sans), sans-serif;
 
   --space-xs: clamp(4px, 0.5vw, 8px);
   --space-sm: clamp(8px, 1vw, 12px);
@@ -548,7 +549,7 @@
   align-items: flex-end;
   text-align: right;
   gap: 0px; /* 🏛️ Tightened gap */
-  font-family: var(--tpe-font-inter);
+  font-family: var(--tpe-font-geist);
 }
 
 .tpe-category-tag {
@@ -557,7 +558,7 @@
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.05em;
-  font-family: var(--tpe-font-inter);
+  font-family: var(--tpe-font-geist);
 }
 
 .tpe-category-pill {
@@ -566,7 +567,7 @@
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.1em;
-  font-family: var(--tpe-font-inter);
+  font-family: var(--tpe-font-geist);
 }
 
 .tpe-slash { 
@@ -579,7 +580,7 @@
   font-weight: 500; /* 🏛️ Restored Medium Weight */
   color: oklch(from var(--ui-text) l c h / 0.5);
   letter-spacing: 0.05em;
-  font-family: var(--tpe-font-inter);
+  font-family: var(--tpe-font-geist);
 }
 
 /* --- CONTENT LAYER --- */

@@ -548,22 +548,25 @@
   align-items: flex-end;
   text-align: right;
   gap: 0px; /* 🏛️ Tightened gap */
+  font-family: var(--tpe-font-inter);
 }
 
 .tpe-category-tag {
   font-size: 24px;
-  font-weight: 400; /* 🏛️ Refined Regular Weight */
+  font-weight: 500; /* 🏛️ Restored Medium Weight for sans-serif */
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.05em;
+  font-family: var(--tpe-font-inter);
 }
 
 .tpe-category-pill {
   font-size: 14px;
-  font-weight: 400; /* 🏛️ Refined Regular Weight */
+  font-weight: 500; /* 🏛️ Restored Medium Weight */
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.1em;
+  font-family: var(--tpe-font-inter);
 }
 
 .tpe-slash { 
@@ -573,9 +576,10 @@
 
 .tpe-watermark {
   font-size: 12px;
-  font-weight: 400; /* 🏛️ Refined Regular Weight */
+  font-weight: 500; /* 🏛️ Restored Medium Weight */
   color: oklch(from var(--ui-text) l c h / 0.5);
   letter-spacing: 0.05em;
+  font-family: var(--tpe-font-inter);
 }
 
 /* --- CONTENT LAYER --- */

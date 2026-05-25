@@ -547,12 +547,12 @@
 .tpe-brand-right {
   align-items: flex-end;
   text-align: right;
-  gap: 4px;
+  gap: 0px; /* 🏛️ Tightened gap */
 }
 
 .tpe-category-tag {
   font-size: 24px;
-  font-weight: 500; /* 🏛️ Refined Medium Weight */
+  font-weight: 400; /* 🏛️ Refined Regular Weight */
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.05em;
@@ -560,7 +560,7 @@
 
 .tpe-category-pill {
   font-size: 14px;
-  font-weight: 500; /* 🏛️ Refined Medium Weight */
+  font-weight: 400; /* 🏛️ Refined Regular Weight */
   text-transform: uppercase;
   color: var(--ui-text);
   letter-spacing: 0.1em;
@@ -573,7 +573,7 @@
 
 .tpe-watermark {
   font-size: 12px;
-  font-weight: 500; /* 🏛️ Refined Medium Weight */
+  font-weight: 400; /* 🏛️ Refined Regular Weight */
   color: oklch(from var(--ui-text) l c h / 0.5);
   letter-spacing: 0.05em;
 }

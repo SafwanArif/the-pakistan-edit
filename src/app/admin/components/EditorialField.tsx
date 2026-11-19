@@ -1,7 +1,7 @@
 import React from "react";
 import { Draft } from "../../../types/news";
 import { DraftResolver } from "../utils/dataAccessors";
-import { EmojiToolbar, SourcePrefixToolbar, ImageCreditToolbar } from "./EditorialTools";
+import { EmojiToolbar } from "./EditorialTools";
 
 interface EditorialFieldProps {
     fieldId: string;
@@ -17,12 +17,12 @@ interface EditorialFieldProps {
 /**
  * 2027 Institutional Standard: EditorialField
  * Atomic component that encapsulates all field-specific behaviors.
- * Refined for Elastic Ribbon: Zero internal tools for maximum horizontal space.
+ * Refined for Elastic Ribbon: Restored Emoji Toolbar.
  */
 export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({ 
     fieldId, draft, onChange, placeholder, isMain, isCategory, onFocus, onBlur
 }) => {
-    const val = DraftResolver.get(fieldId, draft);
+    const val = (DraftResolver.get(fieldId, draft) as string) || "";
     const inputId = `input-${fieldId}`;
 
     const handleChange = (newVal: string) => {
@@ -31,6 +31,7 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
 
     const inputClasses = [
         "tpe-input-field",
+        !isCategory ? "tpe-textarea" : "",
         isMain ? "tpe-input-main" : "",
         isCategory ? "tpe-category-input" : "",
         "tpe-uppercase"
@@ -41,24 +42,33 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
             {isCategory ? (
                 <input 
                     id={inputId}
+                    aria-label={placeholder || fieldId}
+                    spellCheck={false}
+                    autoComplete="off"
                     className={inputClasses}
                     placeholder={placeholder}
                     value={val}
-                    onChange={(e) => handleChange(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange(e.target.value)}
                     onFocus={onFocus}
                     onBlur={onBlur}
                 />
             ) : (
-                <textarea 
-                    id={inputId}
-                    className={inputClasses}
-                    placeholder={placeholder}
-                    value={val}
-                    onChange={(e) => handleChange(e.target.value)}
-                    onFocus={onFocus}
-                    onBlur={onBlur}
-                    style={{ paddingInlineEnd: '10px' }}
-                />
+                <>
+                    <textarea 
+                        id={inputId}
+                        aria-label={placeholder || fieldId}
+                        className={inputClasses}
+                        placeholder={placeholder}
+                        value={val}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange(e.target.value)}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                        style={{ paddingInlineEnd: '40px' }}
+                    />
+                    <div className="tpe-field-tools" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 }}>
+                        <EmojiToolbar fieldId={fieldId} value={val} onUpdate={handleChange} popDirection="down" />
+                    </div>
+                </>
             )}
         </div>
     );

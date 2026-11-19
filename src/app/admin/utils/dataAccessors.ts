@@ -1,147 +1,192 @@
-import { Draft, SlideAsset } from "../../../types/news";
+import { Draft, SlideAsset, VideoDraft, getActiveSceneAtTime } from "../../../types/news";
+
+export type CoreField = 'headline' | 'category' | 'summary' | 'image' | 'imageCredit' | 'sourceName' | 'sourcePrefix' | 'creditPrefix';
+export type ExtraSlideField = 'heading' | 'content' | 'source' | 'sourcePrefix';
+export type SlideAssetField = keyof SlideAsset;
+
+const CORE_FIELDS = new Set<string>(['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix']);
+
+export type DraftPath = 
+    | CoreField 
+    | `extra-${ExtraSlideField}-${number}` 
+    | `slide-${number}-${SlideAssetField}` 
+    | string;
 
 /**
- * 2027 Institutional Standard: DraftResolver
- * Centralized logic for structured path resolution within the Draft model.
- * Replaces iterative string-splitting and regex with deterministic field mapping.
+ * Resolves and immutably updates structured paths within the Carousel Draft model.
  */
 export const DraftResolver = {
-    /**
-     * Resolves a field value based on its semantic path.
-     * Paths: 'headline', 'category', 'summary', 'slide-X-image', 'extra-X-heading', etc.
-     */
-    get: (path: string, draft: Draft): any => {
+    get: (path: DraftPath, draft: Draft): string | number | undefined => {
         if (!path) return "";
         
-        // 1. Direct Properties
-        if (['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix'].includes(path)) {
-            return (draft as any)[path];
+        if (CORE_FIELDS.has(path)) {
+            return (draft[path as keyof Draft] as string | number | undefined) ?? "";
         }
 
-        // 2. Extra Slides (Angles)
-        if (path.startsWith('extra-')) {
-            const parts = path.split('-'); // extra-heading-0, extra-content-0, extra-source-0
-            const index = parseInt(parts[2] || "0", 10);
-            const field = parts[1];
-            if (field === 'heading') return draft.extraSlides?.[index]?.heading || "";
-            if (field === 'content') return draft.extraSlides?.[index]?.content || "";
-            if (field === 'source') return draft.extraSlides?.[index]?.sourceName || "";
-            if (field === 'sourcePrefix') return draft.extraSlides?.[index]?.sourcePrefix || "SOURCE:";
+        const extraMatch = (path as string).match(/^extra-([a-zA-Z]+)-(\d+)$/);
+        if (extraMatch) {
+            const field = extraMatch[1]! as ExtraSlideField;
+            const index = parseInt(extraMatch[2]!, 10);
+            const slide = draft.extraSlides?.[index];
+            if (!slide) return "";
+            if (field === 'heading') return slide.heading ?? "";
+            if (field === 'content') return slide.content ?? "";
+            if (field === 'source') return slide.sourceName ?? "";
+            if (field === 'sourcePrefix') return slide.sourcePrefix || "SOURCE:";
         }
 
-        // 3. Slide Assets (Focal/Metatada)
-        if (path.startsWith('slide-')) {
-            const parts = path.split('-'); // slide-1-image, slide-2-imageCredit
-            const slideNum = parseInt(parts[1] || "1", 10);
-            const field = parts[2];
+        const slideMatch = (path as string).match(/^slide-(\d+)-([a-zA-Z_]+)$/);
+        if (slideMatch) {
+            const slideNum = parseInt(slideMatch[1]!, 10);
+            const field = slideMatch[2]! as SlideAssetField;
             
-            if (!field) return "";
-
             if (slideNum === 1) {
-                if (field === 'image') return draft.image;
-                if (field === 'imageCredit') return draft.imageCredit;
-                if (field === 'creditPrefix') return draft.creditPrefix;
-                return (draft as any)[field];
+                if (field === 'image') return draft.image ?? "";
+                if (field === 'imageCredit') return draft.imageCredit ?? "";
+                if (field === 'creditPrefix') return draft.creditPrefix ?? "";
+                return (draft[field as keyof Draft] as string | number | undefined) ?? "";
             }
 
-            return (draft.slideAssets?.[slideNum] as any)?.[field] || "";
+            return (draft.slideAssets?.[slideNum]?.[field] as string | number | undefined) ?? "";
         }
 
-        return (draft as any)[path] || "";
+        return ((draft as unknown as Record<string, unknown>)[path as string] as string | number | undefined) ?? "";
     },
 
-    /**
-     * Updates a draft with a new value for a given path.
-     */
-    set: (path: string, value: any, draft: Draft): Draft => {
-        const d = { ...draft };
-
-        // 1. Direct Properties
-        if (['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix'].includes(path)) {
-            (d as any)[path] = value;
-            return d;
+    set: (path: DraftPath, value: string | number, draft: Draft): Draft => {
+        if (CORE_FIELDS.has(path)) {
+            return { ...draft, [path]: value };
         }
 
-        // 2. Extra Slides
-        if (path.startsWith('extra-')) {
-            const parts = path.split('-');
-            const index = parseInt(parts[2] || "0", 10);
-            const field = parts[1];
-            if (!d.extraSlides) d.extraSlides = [];
-            if (!d.extraSlides[index]) d.extraSlides[index] = { heading: '', content: '' };
-            
-            if (field === 'heading') d.extraSlides[index].heading = value;
-            if (field === 'content') d.extraSlides[index].content = value;
-            if (field === 'source') d.extraSlides[index].sourceName = value;
-            if (field === 'sourcePrefix') d.extraSlides[index].sourcePrefix = value;
-            return d;
+        const extraMatch = (path as string).match(/^extra-([a-zA-Z]+)-(\d+)$/);
+        if (extraMatch) {
+            const field = extraMatch[1]! as ExtraSlideField;
+            const index = parseInt(extraMatch[2]!, 10);
+            const extraSlides = [...(draft.extraSlides || [])];
+            const prev = extraSlides[index] || { heading: '', content: '' };
+            const nextSlide = { ...prev };
+            if (field === 'heading') nextSlide.heading = value as string;
+            else if (field === 'content') nextSlide.content = value as string;
+            else if (field === 'source') nextSlide.sourceName = value as string;
+            else if (field === 'sourcePrefix') nextSlide.sourcePrefix = value as string;
+            extraSlides[index] = nextSlide;
+            return { ...draft, extraSlides };
         }
 
-        // 3. Slide Assets
-        if (path.startsWith('slide-')) {
-            const parts = path.split('-');
-            const slideNum = parseInt(parts[1] || "1", 10);
-            const field = parts[2];
-            if (!field) return d;
+        const slideMatch = (path as string).match(/^slide-(\d+)-([a-zA-Z_]+)$/);
+        if (slideMatch) {
+            const slideNum = parseInt(slideMatch[1]!, 10);
+            const field = slideMatch[2]! as SlideAssetField;
 
             if (slideNum === 1) {
-                (d as any)[field === 'image' ? 'image' : field] = value;
-                return d;
+                return { ...draft, [field]: value };
             }
 
-            if (!d.slideAssets) d.slideAssets = {};
-            if (!d.slideAssets[slideNum]) d.slideAssets[slideNum] = {};
-            (d.slideAssets[slideNum] as any)[field] = value;
-            return d;
+            return {
+                ...draft,
+                slideAssets: {
+                    ...(draft.slideAssets || {}),
+                    [slideNum]: {
+                        ...(draft.slideAssets?.[slideNum] || {}),
+                        [field]: value,
+                    },
+                },
+            };
         }
 
-        (d as any)[path] = value;
-        return d;
+        return { ...draft, [path]: value } as Draft;
     }
 };
 
 /**
- * Legacy Adapters (For compatibility during refactor)
- */
-export const getDraftValue = DraftResolver.get;
-export const updateDraftValue = DraftResolver.set;
-
-export const updateDraftPrefix = (field: string, prefix: string, draft: Draft): Draft => {
-    const isCredit = field.includes('credit') || field.includes('Credit');
-    const path = isCredit ? (field.includes('-') ? field.replace('imageCredit', 'creditPrefix') : 'creditPrefix') 
-                          : (field.includes('-') ? field.replace('source', 'sourcePrefix').replace('Name', 'Prefix') : 'sourcePrefix');
-    return DraftResolver.set(path, prefix, draft);
-};
-
-export const updateSlideAsset = (slide: number, field: string, value: any, draft: Draft): Draft => {
-    return DraftResolver.set(`slide-${slide}-${field}`, value, draft);
-};
-
-/**
- * 2027 Institutional Resolver: getEffectiveSlideAsset
- * Handles inheritance chain for assets across slides.
+ * Resolves effective per-slide asset and focal properties with Slide 1 fallback inheritance.
  */
 export const getEffectiveSlideAsset = (step: number, draft: Draft): SlideAsset => {
     const asset: SlideAsset = { ...draft.slideAssets?.[step] };
     
-    // 1. Core Image Inheritance
     if (!asset.image) {
         asset.image = draft.image;
         asset.imageWidth = draft.imageWidth;
         asset.imageHeight = draft.imageHeight;
     }
 
-    // 2. Metadata Inheritance
     asset.imageCredit = asset.imageCredit ?? draft.imageCredit;
     asset.creditPrefix = asset.creditPrefix ?? draft.creditPrefix;
 
-    // 3. Focal & Opacity Inheritance (Only fallback if not explicitly set on this slide)
     asset.imageZoom = asset.imageZoom ?? draft.imageZoom;
     asset.imagePosX = asset.imagePosX ?? draft.imagePosX;
     asset.imagePosY = asset.imagePosY ?? draft.imagePosY;
     asset.imagePosY_Square = asset.imagePosY_Square ?? draft.imagePosY_Square;
     asset.snapMode = asset.snapMode ?? draft.snapMode;
-    asset.scrim = asset.scrim ?? draft.scrim;
 
     return asset;
+};
+
+/**
+ * Resolves and immutably updates scene-aware fields within the VideoDraft model.
+ */
+export const VideoDraftResolver = {
+    get: (path: string, draft: VideoDraft, currentTime: number = 0): string => {
+        if (!path) return "";
+        const cleanPath = path.replace(/^video-/, '');
+        const { scene, isOutro } = getActiveSceneAtTime(draft, currentTime);
+        const textScene = (scene?.id.startsWith('rehook-') && scene.shareHookText !== false && draft.scenes?.[0]) ? draft.scenes[0]! : scene;
+
+        if (cleanPath === 'category') {
+            return draft.category ?? "";
+        }
+        if (cleanPath === 'headline') {
+            if (isOutro) return draft.outroCta ?? "";
+            return textScene ? textScene.title : (draft.headline ?? "");
+        }
+        if (cleanPath === 'subtitle') {
+            if (isOutro) return "";
+            return textScene ? (textScene.subtitle ?? "") : (draft.subtitle ?? "");
+        }
+        if (cleanPath === 'sourceName') {
+            return (scene && scene.sourceName) ? scene.sourceName : (draft.sourceName ?? "");
+        }
+        if (cleanPath === 'creditName') {
+            return (scene && scene.creditName) ? scene.creditName : (draft.creditName ?? "");
+        }
+
+        return ((draft as unknown as Record<string, unknown>)[cleanPath] as string) ?? "";
+    },
+
+    set: (path: string, value: string, draft: VideoDraft, currentTime: number = 0): VideoDraft => {
+        const cleanPath = path.replace(/^video-/, '');
+        const { sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
+
+        if (cleanPath === 'category') return { ...draft, category: value };
+
+        if (cleanPath === 'headline') {
+            if (isOutro) return { ...draft, outroCta: value };
+            const scenes = [...(draft.scenes || [])];
+            const targetIdx = (scenes[sceneIndex]?.id.startsWith('rehook-') && scenes[sceneIndex]?.shareHookText !== false) ? 0 : sceneIndex;
+            if (scenes[targetIdx]) scenes[targetIdx] = { ...scenes[targetIdx]!, title: value };
+            return { ...draft, scenes, ...(targetIdx === 0 ? { headline: value } : {}) };
+        }
+
+        if (cleanPath === 'subtitle') {
+            if (isOutro) return draft;
+            const scenes = [...(draft.scenes || [])];
+            const targetIdx = (scenes[sceneIndex]?.id.startsWith('rehook-') && scenes[sceneIndex]?.shareHookText !== false) ? 0 : sceneIndex;
+            if (scenes[targetIdx]) scenes[targetIdx] = { ...scenes[targetIdx]!, subtitle: value };
+            return { ...draft, scenes, ...(targetIdx === 0 ? { subtitle: value } : {}) };
+        }
+
+        if (cleanPath === 'sourceName') {
+            const scenes = [...(draft.scenes || [])];
+            if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, sourceName: value };
+            return { ...draft, scenes, ...(sceneIndex === 0 ? { sourceName: value } : {}) };
+        }
+
+        if (cleanPath === 'creditName') {
+            const scenes = [...(draft.scenes || [])];
+            if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, creditName: value };
+            return { ...draft, scenes, ...(sceneIndex === 0 ? { creditName: value } : {}) };
+        }
+
+        return { ...draft, [cleanPath]: value } as VideoDraft;
+    }
 };

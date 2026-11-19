@@ -50,7 +50,7 @@ export const OmniPreviewGrid: React.FC<{ draft: Draft; currentStep: number }> = 
 
     const displayDraft = useMemo(() => ({
         ...deferredDraft,
-        headline: deferredDraft.headline || "^THE STATE BANK^ ANNOUNCES NEW DIGITAL TRADE POLICY FOR 2027",
+        headline: deferredDraft.headline || "==THE STATE BANK== ANNOUNCES NEW DIGITAL TRADE POLICY FOR 2027",
         category: deferredDraft.category || "ECONOMY",
         summary: deferredDraft.summary || "In a sweeping move to modernize the economy, officials have fully greenlit the national blockchain infrastructure, paving the way for frictionless global exports and deep tech integration.",
         image: deferredDraft.image || "https://images.unsplash.com/photo-1590409279774-7221bfad3dd9?q=80&w=1200&auto=format&fit=crop",

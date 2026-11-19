@@ -16,14 +16,14 @@ interface DraftFormProps {
     step: number;
     setStep: (s: number) => void;
     onReset?: () => void;
+    modeSwitcher?: React.ReactNode;
 }
 
 /**
- * 2027 Institutional Standard: DraftForm (Simplified)
- * High-performance, schema-driven orchestrator for the editorial workflow.
+ * Schema-driven form ribbon for Carousel slide editing and batch export.
  */
-export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit, step, setStep, onReset }) => {
-    const { resolving, ingestFile, clearAsset } = useAssetManager(draft, onChange);
+export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit, step, setStep, onReset, modeSwitcher }) => {
+    const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
     const [focusedField, setFocusedField] = React.useState<string | null>(null);
     
     // 1. Resolve Schema for current step
@@ -46,7 +46,8 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
     // 2. Declarative Validation
     const canProceed = config.required.every(f => {
         if (f === 'image') return !!draft.image;
-        return !!DraftResolver.get(f, draft)?.trim();
+        const val = DraftResolver.get(f, draft);
+        return !!(typeof val === 'string' ? val.trim() : val);
     });
 
     const isLastStep = step >= 2 + (draft.extraSlides?.length || 0);
@@ -55,9 +56,17 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
         <div className="tpe-flex-col tpe-draft-form-container">
             <div className="tpe-header-row">
                 {/* 1. LOGO */}
-                <div onClick={() => { if (window.confirm("Reset draft?")) onReset?.(); }} className="tpe-logo-wrapper">
+                <button
+                    type="button"
+                    aria-label="Reset draft"
+                    onClick={() => { if (window.confirm("Reset draft?")) onReset?.(); }}
+                    className="tpe-logo-wrapper"
+                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                >
                     <TPEVectorLogo scale={0.9} showWordmark={false} />
-                </div>
+                </button>
+
+                {modeSwitcher}
 
                 {/* 2. STEP ID (CLEANED FOR MOBILE) */}
                 <div className="tpe-step-cluster" style={{ minInlineSize: 'auto' }}>
@@ -89,7 +98,7 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                                             fieldId={f} 
                                             draft={draft} 
                                             onChange={onChange} 
-                                            placeholder={f.includes('heading') || f === 'category' ? "CATEGORY" : "CONTENT..."}
+                                            placeholder={f === 'category' ? "CATEGORY" : f.includes('heading') ? "HEADING" : "CONTENT..."}
                                             isMain={f === 'headline' || f.includes('content')}
                                             isCategory={f === 'category' || f.includes('heading')}
                                             onFocus={() => setFocusedField(f)}
@@ -109,15 +118,17 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                     draft={draft}
                     onChange={onChange}
                     onUpload={(file) => ingestFile(file, step)}
+                    onLink={(url) => resolve(url, step)}
                     onClear={() => clearAsset(step)}
                 />
 
                 {/* NAVIGATION */}
                 <div className="tpe-nav-cluster">
                     {step > 1 && (
-                        <button onClick={() => setStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">BACK</button>
+                        <button type="button" onClick={() => setStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">BACK</button>
                     )}
                     <button 
+                        type="button"
                         onClick={() => canProceed && (isLastStep ? onSubmit(draft) : setStep(step + 1))} 
                         disabled={!canProceed || resolving} 
                         className={`tpe-nav-btn ${isLastStep ? "tpe-btn-primary" : "tpe-btn-gold"}`}

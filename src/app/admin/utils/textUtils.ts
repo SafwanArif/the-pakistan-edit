@@ -1,12 +1,8 @@
 /**
- * 2027 Institutional Standard: TextUtils
- * Centralized logic for text sanitization, keyword extraction, and SEO formatting.
+ * Text sanitisation and keyword extraction helpers for export filenames and SEO metadata.
  */
 
-/**
- * Sanitizes text for use in file names and IDs.
- * Lowercase, hyphenated, alphanumeric only.
- */
+/** Sanitises text into lowercase, hyphenated alphanumeric slugs. */
 export const sanitize = (text: string): string => {
     if (!text) return "";
     return text
@@ -15,24 +11,18 @@ export const sanitize = (text: string): string => {
         .replace(/^-+|-+$/g, '');
 };
 
-/**
- * Extracts "Gold" keywords (wrapped in ^...^) from text.
- * Used for SEO anchors and highlight logic.
- */
-export const getGoldKeywords = (text: string): string[] => {
+/** Extracts highlighted keywords wrapped in ==...== (or legacy <gold>...</gold>). */
+const getGoldKeywords = (text: string): string[] => {
     if (!text) return [];
-    const matches = text.match(/\^([^/^]+)\^/g) || [];
-    return [...new Set(matches.map(m => sanitize(m.replace(/\^/g, ''))))].filter(Boolean);
+    const matches = text.match(/==(.*?)==|<gold>(.*?)<\/gold>/g) || [];
+    return [...new Set(matches.map(m => sanitize(m.replace(/^==|==$|<\/?gold>/g, ''))))].filter(Boolean);
 };
 
-/**
- * Resolves a deterministic anchor keyword for a draft.
- * Prioritizes Gold keywords from the headline, falling back to the first 3 words.
- */
+/** Resolves a deterministic anchor keyword from highlighted headline terms or the first three words. */
 export const getAnchorKeyword = (headline: string): string => {
     const gold = getGoldKeywords(headline);
     if (gold.length > 0 && gold[0]) return gold[0];
-    
+
     const words = headline.split(' ').slice(0, 3).join('-');
     return sanitize(words) || "news";
 };

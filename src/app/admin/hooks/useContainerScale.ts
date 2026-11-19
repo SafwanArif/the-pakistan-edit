@@ -8,7 +8,9 @@ export function useContainerScale(targetWidth: number) {
         if (!ref.current) return;
         const observer = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                setScale(entry.contentRect.width / targetWidth);
+                if (entry.contentRect.width > 0) {
+                    setScale(entry.contentRect.width / targetWidth);
+                }
             }
         });
         observer.observe(ref.current);

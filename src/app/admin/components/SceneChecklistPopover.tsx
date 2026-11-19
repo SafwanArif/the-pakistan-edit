@@ -1,0 +1,229 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFadeDurations, isSharedReHookScene } from "../../../types/news";
+import { PowerIcon } from "../../../components/icons/TPEIcons";
+import { detectFaceInHookWindow } from "../utils/autoTrackSubject";
+
+interface FadePresetControlProps {
+    fadeInEnabled: boolean;
+    fadeInPreset: FadePresetMode;
+    fadeInDuration: number;
+    fadeOutEnabled: boolean;
+    fadeOutPreset: FadePresetMode;
+    fadeOutDuration: number;
+    defaultSide?: 'in' | 'out';
+    inHint?: string;
+    outHint?: string;
+    isCardActive?: boolean;
+    onUpdate: (patch: Partial<TimelineScene>) => void;
+}
+
+const FADE_PRESETS: { id: FadePresetMode; label: string; title: string }[] = [
+    { id: 'auto', label: 'AUTO', title: 'Boundary-aware 2026–2027 default (Micro-Dip on Anchored Hook, Editorial Dip on Setup/Angles)' },
+    { id: 'micro', label: 'MICRO', title: '4–5 frame subliminal B-roll / pattern-interrupt dip (0.06s / 0.08s)' },
+    { id: 'editorial', label: 'EDIT', title: 'Asymmetric 0.30s editorial act-break dip (0.12s / 0.18s)' },
+];
+
+export function FadePresetControl({
+    fadeInEnabled, fadeInPreset, fadeInDuration, fadeOutEnabled, fadeOutPreset, fadeOutDuration, defaultSide = 'out', inHint, outHint, isCardActive = false, onUpdate
+}: FadePresetControlProps) {
+    const [side, setSide] = useState<'in' | 'out'>(defaultSide);
+    const isIn = side === 'in';
+    const enabled = isIn ? fadeInEnabled : fadeOutEnabled;
+    const activePreset = isIn ? fadeInPreset : fadeOutPreset;
+    const duration = isIn ? fadeInDuration : fadeOutDuration;
+    const activeHint = isIn ? inHint : outHint;
+
+    return (
+        <div
+            onClick={(e) => e.stopPropagation()}
+            title="2026–2027 Fade Presets (or OFF for 0.00s hard cut)"
+            style={{
+                padding: '8px 10px',
+                borderRadius: '8px',
+                background: enabled ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.02)',
+                borderWidth: '1px',
+                borderStyle: isCardActive ? 'solid' : 'dashed',
+                borderColor: enabled ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.14)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: '6px',
+                minWidth: 0,
+            }}
+        >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--ui-accent)', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+                        🌑 FADE
+                    </span>
+                    <div className="tpe-mode-cluster" role="group" aria-label="Fade side" style={{ padding: '1px', gap: '2px' }}>
+                        <button type="button" aria-pressed={isIn} onClick={() => setSide('in')} className="tpe-mode-btn" data-active={isIn} style={{ padding: '1px 6px', fontSize: '8px' }} title="Fade In from black">IN</button>
+                        <button type="button" aria-pressed={!isIn} onClick={() => setSide('out')} className="tpe-mode-btn" data-active={!isIn} style={{ padding: '1px 6px', fontSize: '8px' }} title="Fade Out to black">OUT</button>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    aria-pressed={enabled}
+                    aria-label={enabled ? "Fade Active (click to Hard Cut 0.00s)" : "Hard Cut 0.00s (click to enable Fade)"}
+                    className="tpe-asset-btn"
+                    data-active={enabled}
+                    onClick={() => onUpdate(isIn ? { fadeIn: !fadeInEnabled } : { fadeOut: !fadeOutEnabled })}
+                    style={{ width: '18px', height: '18px', padding: 0, lineHeight: 1 }}
+                    title={enabled ? "Fade Active (click to Hard Cut 0.00s)" : "Hard Cut 0.00s (click to enable Fade)"}
+                >
+                    <PowerIcon />
+                </button>
+            </div>
+            {enabled ? (
+                <div className="tpe-mode-cluster" style={{ padding: '2px', gap: '2px', width: '100%', justifyContent: 'space-between' }}>
+                    {FADE_PRESETS.map(p => (
+                        <button
+                            key={p.id}
+                            type="button"
+                            aria-pressed={activePreset === p.id}
+                            onClick={() => onUpdate(isIn ? { fadeInPreset: p.id } : { fadeOutPreset: p.id })}
+                            className="tpe-mode-btn"
+                            data-active={activePreset === p.id}
+                            style={{ flex: 1, justifyContent: 'center', padding: '2px 4px', fontSize: '8px' }}
+                            title={p.title}
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <span style={{ fontSize: '8.5px', color: 'var(--ui-text-dim)', fontStyle: 'italic' }}>Hard cut (0.00s)</span>
+            )}
+            <div style={{ fontSize: '9px', color: 'var(--ui-text-dim)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {activeHint ? <span>{activeHint}:</span> : <span>Duration:</span>}
+                <strong style={{ color: 'var(--ui-text)' }}>{enabled ? `${duration.toFixed(2)}s` : '0.00s'}</strong>
+            </div>
+        </div>
+    );
+};
+
+interface SceneChecklistPopoverProps {
+    sceneMode: 'hook' | 'rehook' | 'setup';
+    scene: TimelineScene;
+    draft: VideoDraft;
+    sceneBounds?: { start: number; end: number };
+    onUpdateScene: (patch: Partial<TimelineScene>) => void;
+}
+
+interface CheckItem {
+    ok: boolean;
+    label: string;
+    fix?: () => void;
+    fixLabel?: string;
+}
+
+/** Card-specific social retention checklist popover for 01 The Hook, 02 Re-Hook, and The Setup. */
+export function SceneChecklistPopover({
+    sceneMode, scene, draft, sceneBounds, onUpdateScene
+}: SceneChecklistPopoverProps) {
+    const [faceScan, setFaceScan] = useState<{ key: string; detected: boolean } | null>(null);
+    const hookSrc = scene.mediaUrl || draft.videoUrl || '';
+    const hookStart = scene.clipStartOffset ?? 0;
+    const scanKey = `${hookSrc}@${hookStart}`;
+
+    useEffect(() => {
+        if (sceneMode !== 'hook' || !hookSrc) return;
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            void detectFaceInHookWindow(hookSrc, hookStart).then((detected) => {
+                if (!cancelled) setFaceScan({ key: scanKey, detected });
+            });
+        }, 350);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [sceneMode, hookSrc, hookStart, scanKey]);
+
+    const titleWords = (scene.title || '').trim().split(/\s+/).filter(Boolean).length;
+    const subWords = (scene.subtitle || '').trim().split(/\s+/).filter(Boolean).length;
+
+    const checks: CheckItem[] = sceneMode === 'hook' ? (() => {
+        const hasAnchorReHook = isSharedReHookScene(draft.scenes, 1);
+        const hasMotionOrCut = hasAnchorReHook || (draft.keyframes || []).some(k => k.time <= 5) || (draft.zoom ?? 0) !== (draft.aspectRatio === '4:5' ? 0 : 100);
+        const faceDone = faceScan?.key === scanKey;
+        const titleStr = (scene.title || '').trim();
+        const subStr = (scene.subtitle || '').trim();
+        const hasOpenLoop = /\?|:|—|"|'|%|£|\$|\d|\b(why|how|never|only|first|secret|truth|actually|would|could|unless|before)\b/i.test(titleStr);
+        const titleLead = titleStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
+        const subLead = subStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
+        const nonRedundant = Boolean(titleLead && subLead && titleLead !== subLead);
+        const resolvedHookFade = resolveSceneFadeDurations(draft.scenes || [], 0);
+        const hasSubs = Boolean(draft.subtitles?.length);
+        const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > hookStart && s.start <= hookStart + 0.65);
+        const highlightTokens = (titleStr.match(/==|\^\^|&&/g) || []).length / 2;
+        const cleanEmphasis = highlightTokens >= 1 && highlightTokens <= 3;
+
+        return [
+            { ok: scene.duration >= 3 && scene.duration <= 5, label: `3–5s scroll-stop gate (${scene.duration}s)`, fix: () => onUpdateScene({ duration: 4 }), fixLabel: 'Set 4s' },
+            { ok: faceDone ? faceScan.detected : false, label: !hookSrc ? '0.5s face / eye-contact trigger (no video)' : (faceDone ? (faceScan.detected ? '0.5s face / eye-contact trigger detected' : 'No face in first 0.5s (higher scroll-past risk)') : 'Scanning first 0.5s for face...') },
+            { ok: hasSubs ? instantSpeech : Boolean(scene.clipStartOffset && scene.clipStartOffset > 0), label: hasSubs ? (instantSpeech ? 'Zero dead air: speech starts < 0.6s' : 'Dead air at Hook start (> 0.6s silence)') : 'Juicy clip in-point trimmed (no dead air)' },
+            { ok: titleWords > 0 && titleWords <= 8, label: `2-second visual read (${titleWords}/8 words)` },
+            { ok: hasOpenLoop, label: 'Open curiosity loop / stakes trigger (? " : — or #)' },
+            { ok: subWords > 0 && subWords <= 14, label: `Deck adds context without clutter (${subWords}/14 words)` },
+            { ok: nonRedundant, label: 'Headline (hook) & deck (context) are non-redundant' },
+            { ok: cleanEmphasis, label: highlightTokens > 3 ? `Over-highlighted (${Math.floor(highlightTokens)} spans — keep ≤ 3)` : 'Selective focal emphasis (1–3 highlighted spans)' },
+            { ok: hasMotionOrCut, label: 'Pattern interrupt in 5s (Re-Hook cut or camera beat)' },
+            { ok: !draft.isMuted && (draft.volume ?? 1) > 0, label: 'Native voice / room audio active (> 0%)' },
+            { ok: scene.fadeOut !== false && (hasAnchorReHook ? resolvedHookFade.outMode === 'micro' : resolvedHookFade.outMode === 'editorial'), label: hasAnchorReHook ? `Micro-dip exit (${resolvedHookFade.outDur.toFixed(2)}s — Anchored Hook)` : `Editorial exit dip (${resolvedHookFade.outDur.toFixed(2)}s)`, fix: () => onUpdateScene({ fadeOut: true, fadeOutPreset: 'auto' }), fixLabel: 'Set Auto' },
+            { ok: draft.aspectRatio !== '9:16' || (draft.headlinePreset || 'bottom') !== 'center', label: draft.aspectRatio === '9:16' && draft.headlinePreset === 'center' ? 'Optical Center: verify headline clears speaker eyes' : 'Headline placement clears TikTok native UI' },
+        ];
+    })() : sceneMode === 'rehook' ? (() => {
+        const isAnchored = scene.shareHookText !== false;
+        const hook1Offset = draft.scenes?.[0]?.clipStartOffset ?? 0;
+        const hasVisualShift = Boolean(scene.mediaUrl) || (scene.clipStartOffset !== undefined && scene.clipStartOffset !== hook1Offset);
+        const resolved = resolveSceneFadeDurations(draft.scenes || [], 1);
+        const hasSubs = Boolean(draft.subtitles?.length);
+        const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > hookStart && s.start <= hookStart + 0.65);
+
+        return [
+            { ok: scene.duration >= 2 && scene.duration <= 5, label: `2–5s pattern-interrupt beat (${scene.duration}s)`, fix: () => onUpdateScene({ duration: 4 }), fixLabel: 'Set 4s' },
+            { ok: hasVisualShift, label: hasVisualShift ? 'Visual cut / angle shift from Hook 01' : 'Set Re-Hook in-point or custom clip (mirrors Hook 01)' },
+            { ok: hasSubs ? instantSpeech : Boolean(scene.clipStartOffset && scene.clipStartOffset > 0), label: hasSubs ? (instantSpeech ? 'Zero dead air: speech starts < 0.6s' : 'Dead air at Re-Hook start (> 0.6s silence)') : 'Juicy Re-Hook in-point trimmed' },
+            { ok: isAnchored || (titleWords > 0 && titleWords <= 8), label: isAnchored ? 'Anchor Hook locked (zero headline flash)' : `Un-anchored headline concise (${titleWords}/8 words)`, fix: isAnchored ? undefined : () => onUpdateScene({ shareHookText: true }), fixLabel: 'Lock' },
+            { ok: scene.fadeIn !== false && (isAnchored ? resolved.inMode === 'micro' : resolved.inMode === 'editorial'), label: isAnchored ? `Micro-dip entry (${resolved.inDur.toFixed(2)}s — Anchored)` : `Editorial entry dip (${resolved.inDur.toFixed(2)}s)`, fix: () => onUpdateScene({ fadeIn: true, fadeInPreset: 'auto' }), fixLabel: 'Set Auto' },
+            { ok: scene.fadeOut !== false && resolved.outMode === 'editorial', label: `Editorial exit to Story (${resolved.outDur.toFixed(2)}s)`, fix: () => onUpdateScene({ fadeOut: true, fadeOutPreset: 'auto' }), fixLabel: 'Set Auto' },
+        ];
+    })() : (() => {
+        const hasStoryBeat = Boolean(scene.mediaUrl) || Boolean(sceneBounds && (draft.keyframes || []).some(k => k.time > sceneBounds.start && k.time < sceneBounds.end));
+        return [
+            { ok: titleWords > 0 && titleWords <= 10, label: `Concise Story headline (${titleWords}/10 words)` },
+            { ok: subWords >= 8 && subWords <= 24, label: `Context subheading depth (${subWords}/8–24 words)` },
+            { ok: scene.duration >= 12 && scene.duration <= 30, label: `Golden attention pacing (${scene.duration}s / 12–30s)`, fix: () => onUpdateScene({ duration: 24 }), fixLabel: 'Set 24s' },
+            { ok: scene.fadeIn !== false, label: 'Story fade-in from Hook enabled', fix: () => onUpdateScene({ fadeIn: true }), fixLabel: 'Enable' },
+            { ok: Boolean((scene.clipStartOffset !== undefined && scene.clipStartOffset > 0) || scene.mediaUrl), label: 'Story clip start trimmed / custom media' },
+            { ok: hasStoryBeat, label: 'Visual refresh / camera beat inside Story' },
+        ];
+    })();
+
+    const checklistTitle = sceneMode === 'hook'
+        ? '01. THE HOOK RETENTION CHECKLIST'
+        : sceneMode === 'rehook'
+            ? '02. RE-HOOK RETENTION CHECKLIST'
+            : '03. THE STORY RETENTION CHECKLIST';
+
+    return (
+        <div role="dialog" aria-label={checklistTitle} onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 0, top: '26px', width: '320px', maxHeight: '320px', overflowY: 'auto', padding: '10px', borderRadius: '8px', background: 'var(--ui-bg-popover)', border: '1px solid var(--ui-accent)', boxShadow: '0 14px 36px rgba(0,0,0,0.85)', zIndex: 40, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-accent)', borderBlockEnd: '1px solid var(--ui-border)', paddingBlockEnd: '4px' }}>
+                {checklistTitle} ({checks.filter(c => c.ok).length}/{checks.length})
+            </div>
+            {checks.map((c) => (
+                <div key={c.label} className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '9.5px', color: c.ok ? 'var(--ui-indicator)' : 'var(--ui-text)' }}>
+                    <span>{c.ok ? '✓' : '○'} {c.label}</span>
+                    {!c.ok && c.fix && (
+                        <button type="button" onClick={c.fix} className="tpe-asset-btn" style={{ padding: '1px 6px', height: '18px', fontSize: '8.5px', color: 'var(--ui-accent)', borderColor: 'var(--ui-accent)' }}>
+                            {c.fixLabel}
+                        </button>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};

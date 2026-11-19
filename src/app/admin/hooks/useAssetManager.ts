@@ -2,24 +2,20 @@ import { useState, useRef, useCallback } from 'react';
 import { Draft } from '../../../types/news';
 import { DraftResolver } from '../utils/dataAccessors';
 
-// 🏛️ 2027 INSTITUTIONAL CACHE
+// Session cache for proxied remote image dimensions
 const ASSET_CACHE: Record<string, { image: string, w: number, h: number }> = {};
 
 /**
- * 2027 Institutional Engine: useAssetManager
- * Centralized logic for all asset ingestion (Upload, Link, Proxy, Cache).
+ * Manages Carousel slide asset ingestion, remote proxy dimension resolution, and clearing.
  */
 export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
     const [resolving, setResolving] = useState(false);
     const activeRequests = useRef<Set<string>>(new Set());
 
-    /**
-     * Resolves metadata for a URL (Proxy + Dimensions)
-     */
+    /** Proxies a remote image URL and records its natural dimensions. */
     const resolve = useCallback((url: string, slideNum: number) => {
         if (!url || !url.startsWith('http') || url.startsWith('/api/proxy') || activeRequests.current.has(url)) return;
 
-        // 1. Check Institutional Cache
         if (ASSET_CACHE[url]) {
             const cached = ASSET_CACHE[url];
             const data = { image: cached.image, imageWidth: cached.w, imageHeight: cached.h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
@@ -55,31 +51,54 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         img.src = proxied;
     }, [draft, onChange]);
 
-    /**
-     * Handles local file uploads
-     */
+    /** Reads a local image upload losslessly via Object URL and records natural dimensions. */
     const ingestFile = useCallback((file: File, slideNum: number) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const img = new Image();
-            img.onload = () => {
-                const data = { image: reader.result as string, imageWidth: img.width, imageHeight: img.height, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-                let d = draft;
-                Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-                onChange(d);
-            };
-            img.src = reader.result as string;
+        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draft);
+        if (typeof prevUrl === 'string' && prevUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(prevUrl);
+        }
+        const objectUrl = URL.createObjectURL(file);
+        const applyImage = (w: number, h: number) => {
+            const data = { image: objectUrl, imageWidth: w, imageHeight: h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
+            let d = draft;
+            Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
+            onChange(d);
         };
-        reader.readAsDataURL(file);
+
+        if (typeof createImageBitmap === 'function') {
+            void createImageBitmap(file).then((bitmap) => {
+                try {
+                    applyImage(bitmap.width, bitmap.height);
+                } finally {
+                    bitmap.close();
+                }
+            }).catch(() => {
+                const img = new Image();
+                img.onload = () => applyImage(img.naturalWidth || img.width, img.naturalHeight || img.height);
+                img.src = objectUrl;
+            });
+            return;
+        }
+        const img = new Image();
+        img.onload = () => applyImage(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        img.src = objectUrl;
     }, [draft, onChange]);
 
-    /**
-     * Clears an asset from a slide
-     */
+    /** Resets image and focal framing fields on a slide to defaults. */
     const clearAsset = useCallback((slideNum: number) => {
-        const fields = ['image', 'imageWidth', 'imageHeight', 'imageZoom', 'imagePosX', 'imagePosY', 'snapMode', 'scrim'];
+        const defaults: Record<string, string | number> = {
+            image: '',
+            imageWidth: 0,
+            imageHeight: 0,
+            imageZoom: 100,
+            imagePosX: 50,
+            imagePosY: 50,
+            snapMode: 'height',
+        };
         let d = draft;
-        fields.forEach(f => d = DraftResolver.set(`slide-${slideNum}-${f}`, undefined, d));
+        Object.entries(defaults).forEach(([field, val]) => {
+            d = DraftResolver.set(`slide-${slideNum}-${field}`, val, d);
+        });
         onChange(d);
     }, [draft, onChange]);
 

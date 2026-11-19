@@ -7,11 +7,15 @@ interface ExportOverlayProps {
 }
 
 export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose }) => {
-    const isError = status.includes("ERROR:");
-    const isComplete = status.includes("Complete!");
+    const isError = /error/i.test(status);
+    const isComplete = /complete|success/i.test(status);
 
     return (
-        <div style={{ 
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Export progress"
+            style={{ 
             position: 'fixed', 
             inset: 0, 
             background: isError ? 'oklch(from var(--ui-danger) l c h / 0.15)' : 'oklch(from black l c h / 0.85)', 
@@ -24,6 +28,8 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose })
             <div style={{ display: 'grid', placeItems: 'center', gap: '20px', textAlign: 'center', maxWidth: '400px' }}>
                 <TPEVectorLogo scale={1.8} showWordmark={false} />
                 <div 
+                    role="status"
+                    aria-live="polite"
                     className={isError ? "" : "tpe-glow-text"} 
                     style={{ 
                         fontSize: '11px', 
@@ -39,6 +45,7 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose })
                 
                 {isError && onClose && (
                     <button 
+                        type="button"
                         onClick={onClose}
                         className="tpe-nav-btn tpe-btn-danger"
                         style={{ marginTop: '20px', inlineSize: '120px' }}

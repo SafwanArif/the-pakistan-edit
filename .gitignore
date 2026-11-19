@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# local whisper.cpp binaries & 487MB model (keep tools/fonts/*.ttf tracked)
+/tools/whisper/

@@ -1,16 +1,19 @@
-import React, { useState, useMemo } from "react";
-import { EMOJIS, SOCIAL_ICONS } from "../../../config/editorial";
+import React, { useState } from "react";
+import { SOCIAL_ICONS } from "../../../config/editorial";
 import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
+import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
 
 /**
  * 2027 Institutional Primitive: FormatButton
  */
-export const FormatButton: React.FC<{ label: string, syntax: string, fieldId: string, value: string, onUpdate: (v: string) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntax, fieldId, value, onUpdate, color, effectStyle }) => (
+export const FormatButton: React.FC<{ label: string, syntaxOpen: string, syntaxClose: string, fieldId: string, value: string, onUpdate: (v: string) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntaxOpen, syntaxClose, fieldId, value, onUpdate, color, effectStyle }) => (
     <button 
+        type="button"
+        aria-label={`Format ${label}`}
         onMouseDown={(e) => { 
             e.preventDefault(); 
-            wrapSelectionWithSyntax(fieldId, value, syntax, onUpdate);
+            wrapSelectionWithSyntax(fieldId, value, syntaxOpen, syntaxClose, onUpdate);
         }} 
         className="tpe-format-btn"
         style={{ color: color, ...effectStyle }}
@@ -18,34 +21,41 @@ export const FormatButton: React.FC<{ label: string, syntax: string, fieldId: st
         {label}
     </button>
 );
+FormatButton.displayName = "FormatButton";
 
 /**
- * 2027 Institutional Primitive: EmojiToolbar
+ * 2027 Institutional Primitive: EmojiToolbar (Powered by EmojiPickerReact)
  */
 export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down' }>(({ fieldId, value, onUpdate, popDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const filtered = useMemo(() => EMOJIS.filter(e => e.label.toLowerCase().includes(search.toLowerCase())), [search]);
 
     return (
         <div style={{ position: 'relative' }}>
-            <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
-            <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="240px">
-                <input autoFocus placeholder="Search emojis..." value={search} onChange={(e) => setSearch(e.target.value)} className="tpe-popover-input" />
-                <div className="tpe-emoji-picker-grid">
-                    {filtered.map(emoji => (
-                        <button key={emoji.label} onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value, emoji.icon, onUpdate); setOpen(false); }} className="tpe-emoji-btn">{emoji.icon}</button>
-                    ))}
-                </div>
+            <button type="button" aria-label="Insert emoji" aria-expanded={open} aria-haspopup="dialog" onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
+            <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="auto">
+                <EmojiPicker 
+                    onEmojiClick={(emojiData) => {
+                        insertTextAtCursor(fieldId, value, emojiData.emoji, onUpdate);
+                        setOpen(false);
+                    }}
+                    theme={Theme.DARK}
+                    emojiStyle={EmojiStyle.APPLE}
+                    searchPlaceHolder="Search emojis..."
+                    lazyLoadEmojis={true}
+                    skinTonesDisabled={true}
+                    width={320}
+                    height={400}
+                />
             </EditorialPopover>
         </div>
     );
 });
+EmojiToolbar.displayName = "EmojiToolbar";
 
 /**
  * 2027 Institutional Primitive: PrefixToolbar
  */
-export const PrefixToolbar = React.memo<{ 
+const PrefixToolbar = React.memo<{ 
     value: string, 
     prefix: string, 
     onPrefixChange: (p: string) => void, 
@@ -55,20 +65,39 @@ export const PrefixToolbar = React.memo<{
     showSocial?: boolean
 }>(({ value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial }) => {
     const [open, setOpen] = useState(false);
-    const text = useMemo(() => value.startsWith(prefix) ? value.slice(prefix.length).trim() : value, [value, prefix]);
+    
+    // We no longer slice the prefix out of the value because they are decoupled!
+    // The value strictly holds only the text. The prefix strictly holds the prefix.
     
     return (
         <div style={{ position: 'relative' }}>
-            <button onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
+            <button type="button" aria-label={`Change prefix (${prefix})`} aria-expanded={open} aria-haspopup="menu" onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
             <EditorialPopover open={open} onClose={() => setOpen(false)} direction="down" width="200px" right="auto">
                 {options.map(opt => (
-                    <button key={opt} onClick={(e) => { e.preventDefault(); onPrefixChange(opt); onUpdate(`${opt} ${text}`.trim()); setOpen(false); }} className="tpe-prefix-btn">{opt}</button>
+                    <button key={opt} type="button" onClick={(e) => { 
+                        e.preventDefault(); 
+                        onPrefixChange(opt); 
+                        // FIX: We no longer mutate the text field with the prefix!
+                        setOpen(false); 
+                    }} className="tpe-prefix-btn">{opt}</button>
                 ))}
-                <input placeholder="Custom..." onKeyDown={(e) => { if (e.key === 'Enter') { const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ":"; onPrefixChange(custom); onUpdate(`${custom} ${text}`.trim()); setOpen(false); } }} className="tpe-popover-input" style={{ marginTop: '4px' }} />
+                <input 
+                    aria-label="Custom prefix"
+                    placeholder="Custom..." 
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { 
+                        if (e.key === 'Enter') { 
+                            const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ":"; 
+                            onPrefixChange(custom); 
+                            setOpen(false); 
+                        } 
+                    }} 
+                    className="tpe-popover-input" 
+                    style={{ marginTop: '4px' }} 
+                />
                 {showSocial && fieldId && (
                     <div className="tpe-social-grid">
                         {SOCIAL_ICONS.map(soc => (
-                            <button key={soc.label} onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value, soc.icon, onUpdate); setOpen(false); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
+                            <button key={soc.label} type="button" aria-label={`Insert ${soc.label} icon`} onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value, soc.icon, onUpdate); setOpen(false); }} className="tpe-social-btn" onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }} onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>{soc.logo}</button>
                         ))}
                     </div>
                 )}
@@ -76,6 +105,19 @@ export const PrefixToolbar = React.memo<{
         </div>
     );
 });
+PrefixToolbar.displayName = "PrefixToolbar";
 
-export const SourcePrefixToolbar: React.FC<any> = (props) => <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />;
-export const ImageCreditToolbar: React.FC<any> = (props) => <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />;
+export const SourcePrefixToolbar: React.FC<{
+    value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
+}> = (props) => <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />;
+SourcePrefixToolbar.displayName = "SourcePrefixToolbar";
+
+export const ImageCreditToolbar: React.FC<{
+    value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
+}> = (props) => <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />;
+ImageCreditToolbar.displayName = "ImageCreditToolbar";
+
+export const VideoCreditToolbar: React.FC<{
+    value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
+}> = (props) => <PrefixToolbar {...props} options={["FOOTAGE:", "CLIP:", "VIA:", "COURTESY:"]} showSocial={true} />;
+VideoCreditToolbar.displayName = "VideoCreditToolbar";

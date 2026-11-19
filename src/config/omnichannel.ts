@@ -1,54 +1,46 @@
 export type Platform = "instagram" | "tiktok" | "square";
 
-export const PLATFORM_DEFAULTS = {
+export const aspectRatioToPlatform = (ratio: '9:16' | '4:5' | '1:1'): Platform =>
+    ratio === '9:16' ? 'tiktok' : (ratio === '1:1' ? 'square' : 'instagram');
+
+const PLATFORM_DEFAULTS = {
     tiktok: {
         width: 1080,
         height: 1350,
-        padding: { top: 140, right: 160, bottom: 60, left: 60 },
-        offsets: { top: 350, bottom: 150 },
-        logoScale: 2.0,
-        catFontSize: '20px',
-        handleFontSize: '14px',
-        typography: {
-            h1: "86px",
-            slide2: "50px",
-            slide3Heading: "27px",
-            slide3: "41px",
-            prompt: "27px"
-        }
     },
     instagram: {
         width: 1080,
         height: 1350,
-        padding: { top: 70, right: 50, bottom: 150, left: 50 },
-        offsets: { top: 320, bottom: 206 },
-        logoScale: 2.0,
-        catFontSize: '20px',
-        handleFontSize: '14px',
-        typography: {
-            h1: "86px",
-            slide2: "50px",
-            slide3Heading: "27px",
-            slide3: "41px",
-            prompt: "27px"
-        }
     },
     square: {
         width: 1080,
         height: 1080,
-        padding: { top: 70, right: 80, bottom: 80, left: 80 },
-        offsets: { top: 160, bottom: 80 },
-        logoScale: 1.8,
-        catFontSize: '18px',
-        handleFontSize: '12px',
-        typography: {
-            h1: "76px",
-            slide2: "44px",
-            slide3Heading: "24px",
-            slide3: "36px",
-            prompt: "24px"
-        }
     }
 };
 
 export const OMNI_CONFIG = PLATFORM_DEFAULTS;
+
+export const VIDEO_PLATFORM_CONFIGS = {
+    'tiktok': {
+        id: 'tiktok' as Platform,
+        aspectRatio: '9:16' as const,
+        label: 'TikTok / Reels (9:16)',
+        width: 1080,
+        height: 1920
+    },
+    'instagram': {
+        id: 'instagram' as Platform,
+        aspectRatio: '4:5' as const,
+        label: 'Instagram Feed (4:5)',
+        width: 1080,
+        height: 1350
+    },
+    'square': {
+        id: 'square' as Platform,
+        aspectRatio: '1:1' as const,
+        label: 'X / FB (1:1)',
+        width: 1080,
+        height: 1080
+    }
+};
+

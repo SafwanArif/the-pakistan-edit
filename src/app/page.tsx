@@ -1,13 +1,8 @@
-"use client";
-
-import React from "react";
 import Link from "next/link";
 import { TPEVectorLogo } from "../components/templates/instagram/TPEVectorLogo";
 
 /**
- * 2027 Institutional Standard: Branding Landing
- * Pure Vanilla CSS implementation using Institutional Tokens.
- * ZERO TAILWIND.
+ * Institutional landing page rendered as a Server Component using design tokens.
  */
 export default function Home() {
   return (
@@ -61,43 +56,13 @@ export default function Home() {
             letterSpacing: '0.02em',
             lineHeight: '1.4'
           }}>
-            The Pakistan Edit<br />Internal Dashboard v2027.4
+            The Pakistan Edit<br />Internal Dashboard
           </p>
         </div>
 
-        <Link
-          href="/admin"
-          style={{
-            marginTop: 'var(--space-md)',
-            paddingBlock: '14px',
-            paddingInline: '40px',
-            backgroundColor: 'var(--ui-primary)',
-            color: 'black',
-            fontSize: '12px',
-            fontWeight: 900,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            borderRadius: 'var(--radius-sm)',
-            textDecoration: 'none',
-            transition: 'var(--transition-lux)',
-            boxShadow: '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            position: 'relative'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 0 60px oklch(from var(--ui-primary) l c h / 0.4)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 0 40px oklch(from var(--ui-primary) l c h / 0.2)';
-          }}
-        >
-          <span style={{ marginInlineStart: '24px' }}>Enter Dashboard</span>
-          <span style={{ fontSize: '16px', display: 'flex', alignItems: 'center' }}>&rarr;</span>
+        <Link href="/admin" className="tpe-landing-cta">
+          <span>Enter Dashboard</span>
+          <span aria-hidden="true" style={{ fontSize: '16px', display: 'flex', alignItems: 'center' }}>&rarr;</span>
         </Link>
       </main>
 

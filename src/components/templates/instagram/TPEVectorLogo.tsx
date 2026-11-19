@@ -1,17 +1,56 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useId, useRef, useState } from "react";
 
 /**
  * 2027 Professional Quality Vector Logo (Unified SVG Standard)
  * Features a geometrically authentic representation of the Pakistan Crescent and Star
- * and a locked-in wordmark for absolute centering and vector stability.
+ * and a locked-in wordmark revealed via SVG clipPath for zero horizontal jitter.
  */
-export const TPEVectorLogo: React.FC<{ 
-    scale?: number, 
-    showWordmark?: boolean 
-}> = ({ 
+const easeOutQuart = (t: number): number => 1 - Math.pow(1 - t, 4);
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+
+export function TPEVectorLogo({
     scale = 1,
-    showWordmark = true
-}) => {
+    showWordmark = true,
+    animateWordmark = false,
+    wordmarkStartTime = 0
+}: {
+    scale?: number;
+    showWordmark?: boolean;
+    animateWordmark?: boolean;
+    wordmarkStartTime?: number;
+}) {
+    const uid = useId();
+    const [rafTime, setRafTime] = useState<number | null>(null);
+    const startTimeRef = useRef(wordmarkStartTime);
+
+    useEffect(() => {
+        startTimeRef.current = wordmarkStartTime;
+    }, [wordmarkStartTime]);
+
+    useEffect(() => {
+        if (!animateWordmark) return;
+        const originMs = performance.now();
+        const baseOffset = startTimeRef.current;
+        let rafId = 0;
+
+        const tick = (now: number) => {
+            const elapsed = baseOffset + (now - originMs) / 1000;
+            setRafTime(elapsed);
+            if (elapsed < 0.65) {
+                rafId = requestAnimationFrame(tick);
+            }
+        };
+
+        rafId = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(rafId);
+    }, [animateWordmark]);
+
+    const wordmarkTime = animateWordmark ? (rafTime ?? wordmarkStartTime) : undefined;
+    const isWiping = wordmarkTime !== undefined && wordmarkTime < 0.62;
+    const line1Pct = isWiping ? easeOutQuart(clamp01((wordmarkTime - 0.18) / 0.30)) : 1;
+    const line2Pct = isWiping ? easeOutQuart(clamp01((wordmarkTime - 0.32) / 0.30)) : 1;
 
 
     // Unified SVG Dimensions
@@ -23,14 +62,16 @@ export const TPEVectorLogo: React.FC<{
 
     return (
         <svg 
+            role="img"
+            aria-label="The Pakistan Edit"
             width={width * scale} 
             height={height * scale} 
             viewBox={viewBox} 
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
             style={{ 
-                display: 'inline-block', 
-                verticalAlign: 'middle',
+                display: 'block', 
+                verticalAlign: 'top',
                 overflow: 'visible'
             }}
         >
@@ -47,11 +88,22 @@ export const TPEVectorLogo: React.FC<{
             {/* Wordmark Group */}
             {showWordmark && (
                 <g transform={`translate(${centerX}, 55)`}>
+                    {isWiping && (
+                        <defs>
+                            <clipPath id={`${uid}-l1`}>
+                                <rect x="-36" y="-15" width={72 * line1Pct} height="22" />
+                            </clipPath>
+                            <clipPath id={`${uid}-l2`}>
+                                <rect x="-36" y="0" width={72 * line2Pct} height="18" />
+                            </clipPath>
+                        </defs>
+                    )}
                     <text
                         x="0"
-                        y="0"
+                        y={isWiping ? (1 - line1Pct) * 2.5 : 0}
                         textAnchor="middle"
                         fill="var(--ui-accent)"
+                        clipPath={isWiping ? `url(#${uid}-l1)` : undefined}
                         style={{
                             fontFamily: 'var(--tpe-font-playfair)',
                             fontSize: '13px',
@@ -64,14 +116,15 @@ export const TPEVectorLogo: React.FC<{
                     </text>
                     <text
                         x="0"
-                        y="10"
+                        y={10 + (isWiping ? (1 - line2Pct) * 2.5 : 0)}
                         textAnchor="middle"
                         fill="var(--ui-text)"
+                        clipPath={isWiping ? `url(#${uid}-l2)` : undefined}
                         style={{
                             fontFamily: 'var(--tpe-font-inter)',
                             fontSize: '8px',
                             fontWeight: 800,
-                            letterSpacing: '0.35em',
+                            letterSpacing: isWiping ? `${(0.35 + (1 - line2Pct) * 0.07).toFixed(4)}em` : '0.35em',
                             textTransform: 'uppercase'
                         }}
                     >

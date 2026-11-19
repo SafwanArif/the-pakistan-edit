@@ -1,10 +1,10 @@
 import JSZip from "jszip";
 import { toBlob } from "html-to-image";
-import { Draft, getSlideCount } from "../../../types/news";
+import { Draft, getSlideCount, downloadBlob } from "../../../types/news";
 import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import React from "react";
 import { NewsCard } from "../../../components/templates/instagram/NewsCard/index";
-import { sanitize, getGoldKeywords, getAnchorKeyword } from "./textUtils";
+import { sanitize, getAnchorKeyword } from "./textUtils";
 
 /**
  * Institutional Export Engine: Deterministic Asset Generation Pipeline
@@ -30,73 +30,100 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         const total = platforms.length * totalSlides;
         const { createRoot } = await import("react-dom/client");
 
-        // 🏛️ 2027 Optimized: Single render root per export batch
+        // Single render root per export batch
         const temp = document.createElement("div");
-        temp.style.position = "absolute";
-        temp.style.insetInlineStart = "-5000px";
+        temp.style.position = "fixed";
+        temp.style.top = "0";
+        temp.style.left = "0";
+        temp.style.zIndex = "-9999";
         container.appendChild(temp);
         const root = createRoot(temp);
 
-        for (const p of platforms) {
-            for (let s = 1; s <= totalSlides; s++) {
-                count++;
-                onStatus(`[${count}/${total}] Rendering ${p} S${s}...`);
-                
-                temp.style.width = `${OMNI_CONFIG[p].width}px`;
-                temp.style.height = `${OMNI_CONFIG[p].height}px`;
+        try {
+            for (const p of platforms) {
+                for (let s = 1; s <= totalSlides; s++) {
+                    count++;
+                    onStatus(`[${count}/${total}] Rendering ${p} S${s}...`);
+                    
+                    temp.style.width = `${OMNI_CONFIG[p].width}px`;
+                    temp.style.height = `${OMNI_CONFIG[p].height}px`;
 
-                // 🏛️ Fixed: NewsCard props mapping
-                root.render(<NewsCard draft={draft} step={s} platform={p} />);
-                
-                await new Promise(r => setTimeout(r, 200)); 
-                await document.fonts.ready;
-                
-                // Wait for all images in the card to load
-                const images = Array.from(temp.querySelectorAll('img'));
-                await Promise.all(images.map(img => {
-                    if (img.complete) return Promise.resolve();
-                    return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
-                }));
+                    root.render(
+                        <div id="export-freeze-frame">
+                            <style>{`* { transition: none !important; animation: none !important; }`}</style>
+                            <NewsCard draft={draft} step={s} platform={p} />
+                        </div>
+                    );
+                    
+                    await document.fonts.ready;
+                    
+                    // Wait for all images in the card to fully load deterministically (with 8s safety timeout)
+                    await new Promise<void>((resolve) => {
+                        requestAnimationFrame(() => {
+                            const images = Array.from(temp.querySelectorAll('img'));
+                            if (images.length === 0) {
+                                resolve();
+                                return;
+                            }
+                            let settled = false;
+                            let loaded = 0;
+                            const finish = () => {
+                                if (settled) return;
+                                settled = true;
+                                clearTimeout(timer);
+                                resolve();
+                            };
+                            const timer = setTimeout(finish, 8000);
+                            const check = () => {
+                                loaded++;
+                                if (loaded >= images.length) finish();
+                            };
+                            images.forEach(img => {
+                                if (img.complete) check();
+                                else {
+                                    img.onload = check;
+                                    img.onerror = check;
+                                }
+                            });
+                        });
+                    });
 
-                await new Promise(r => requestAnimationFrame(r));
-                
-                const blob = await toBlob(temp, { 
-                    width: OMNI_CONFIG[p].width, 
-                    height: OMNI_CONFIG[p].height, 
-                    pixelRatio: 1, 
-                    backgroundColor: '#050505',
-                    style: { transform: 'none', transition: 'none' }
-                });
+                    // Final frame paint flush
+                    await new Promise(r => requestAnimationFrame(r));
+                    
+                    const blob = await toBlob(temp, { 
+                        width: OMNI_CONFIG[p].width, 
+                        height: OMNI_CONFIG[p].height, 
+                        pixelRatio: 2, 
+                        backgroundColor: '#050505',
+                        style: { transform: 'none', transition: 'none' }
+                    });
 
-                if (!blob || blob.size < 1000) {
-                    throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
+                    if (!blob || blob.size < 1000) {
+                        throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
+                    }
+
+                    const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
+                    const slideAnchor = s === 1 ? anchorKW : (s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s-3]?.heading || "angle"));
+                    const fileName = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}.png`.substring(0, 150);
+
+                    zip.file(fileName, blob);
                 }
-
-                // 🏛️ Deterministic Naming
-                const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
-                const slideAnchor = s === 1 ? anchorKW : (s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s-3]?.heading || "angle"));
-                const fileName = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}.png`.substring(0, 150);
-
-                zip.file(fileName, blob);
             }
+        } finally {
+            root.unmount();
+            temp.remove();
         }
 
         onStatus("Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(content);
-        link.href = url;
-        link.download = `TPE-${sanitize(draft.headline.split(' ').slice(0, 5).join('-'))}.zip`;
-        link.click();
-        URL.revokeObjectURL(url);
-        
-        root.unmount();
-        container.removeChild(temp);
+        downloadBlob(content, `TPE-${sanitize(draft.headline.split(' ').slice(0, 5).join('-'))}.zip`);
         
         onStatus("Complete! 🎉");
         setTimeout(() => onStatus(null), 3000);
-    } catch (e: any) {
-        onStatus(`ERROR: ${e.message || "Export Failed"}`);
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Export Failed";
+        onStatus(`ERROR: ${msg}`);
         throw e;
     }
 };

@@ -31,6 +31,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     onSeek,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
+    const dragRectRef = useRef<DOMRect | null>(null);
     const [isHovering, setIsHovering] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -42,13 +43,12 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const fadeOutPct = duration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / duration) * 100, 3, 18) : 0;
 
     const scrubAtClientX = (clientX: number) => {
-        const el = trackRef.current;
-        if (!el || duration <= 0) return;
-        const rect = el.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+        const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
+        if (!rect || duration <= 0) return;
+        const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
         const maxT = Math.max(start, end - 0.05);
         const raw = start + ratio * duration;
-        const snapped = Math.round(Math.min(maxT, Math.max(start, raw)) * 20) / 20;
+        const snapped = Math.round(clamp(raw, start, maxT) * 20) / 20;
         onSeek(snapped);
     };
 
@@ -117,6 +117,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 onPointerDown={(e) => {
                     e.stopPropagation();
                     e.currentTarget.setPointerCapture(e.pointerId);
+                    dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     setIsDragging(true);
                     scrubAtClientX(e.clientX);
                 }}
@@ -128,8 +129,12 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     if (!isDragging) return;
                     e.currentTarget.releasePointerCapture(e.pointerId);
                     setIsDragging(false);
+                    dragRectRef.current = null;
                 }}
-                onPointerCancel={() => setIsDragging(false)}
+                onPointerCancel={() => {
+                    setIsDragging(false);
+                    dragRectRef.current = null;
+                }}
                 title={`Scrub inside ${sceneLabel} (${formatTimecode(start)} – ${formatTimecode(end)})`}
                 style={{
                     position: "relative",

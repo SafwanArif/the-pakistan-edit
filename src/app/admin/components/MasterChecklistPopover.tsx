@@ -9,6 +9,8 @@ import {
     getTotalVideoDuration,
     autoPadToMonetisationThreshold,
     resolveSceneFadeDurations,
+    getTimelineStructure,
+    clamp,
 } from "../../../types/news";
 
 type MasterChecklistTab = "seo" | "rewards" | "psychology";
@@ -33,10 +35,11 @@ const TAB_META: { id: MasterChecklistTab; label: string }[] = [
 export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
     const scenes = draft.scenes || [];
     const totalSec = getTotalVideoDuration(draft);
+    const { hasReHook } = getTimelineStructure(scenes);
     const hook = scenes[0];
-    const rehook = scenes[1];
+    const rehook = hasReHook ? scenes[1] : undefined;
     const hookFades = scenes.length > 0 ? resolveSceneFadeDurations(scenes, 0) : { inDur: 0, outDur: 0 };
-    const rehookFades = scenes.length > 1 ? resolveSceneFadeDurations(scenes, 1) : { inDur: 0, outDur: 0 };
+    const rehookFades = hasReHook ? resolveSceneFadeDurations(scenes, 1) : { inDur: 0, outDur: 0 };
 
     const targetCcSize = getDefaultSubtitleFontSize(draft.aspectRatio);
     const activeCcSize = draft.subtitleFontSize ?? targetCcSize;
@@ -212,8 +215,8 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = ({
         const rect = parent.getBoundingClientRect();
         const width = 360;
         const maxLeft = Math.max(12, window.innerWidth - width - 12);
-        el.style.left = `${Math.max(12, Math.min(rect.left, maxLeft))}px`;
-        el.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - 400))}px`;
+        el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
+        el.style.top = `${clamp(rect.bottom + 6, 12, window.innerHeight - 400)}px`;
     }, []);
 
     return (

@@ -124,6 +124,11 @@ export const useVideoDraftState = () => {
 
     const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const ingestAbortRef = useRef<AbortController | null>(null);
+    const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
+
+    useEffect(() => {
+        sceneBoundsRef.current = getSceneBoundaries(videoDraft.scenes);
+    }, [videoDraft.scenes]);
 
     useEffect(() => {
         return () => ingestAbortRef.current?.abort();
@@ -280,7 +285,7 @@ export const useVideoDraftState = () => {
                 setCurrentTime((prev: number) => {
                     const next = prev + delta;
                     if (playbackModeRef.current === 'loop-angle') {
-                        const active = getSceneBoundaries(videoDraftRef.current.scenes).find(b => prev >= b.start && prev < b.end);
+                        const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
                         if (active && next >= active.end) return active.start;
                     }
                     if (totalDuration > 0 && next >= totalDuration) return 0;
@@ -318,7 +323,7 @@ export const useVideoDraftState = () => {
     const syncTimeFromVideo = useCallback((mediaTime: number, mediaDuration?: number) => {
         if (playbackModeRef.current === 'loop-angle') {
             const prev = currentTimeRef.current;
-            const active = getSceneBoundaries(videoDraftRef.current.scenes).find(b => prev >= b.start && prev < b.end);
+            const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
             if (active && mediaTime >= active.end - 0.04) {
                 seekTo(active.start);
                 return;

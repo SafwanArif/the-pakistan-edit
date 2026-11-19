@@ -39,8 +39,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
     const sceneBoundaries = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
     const { hasReHook, storyIdx: setupIdx } = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
     const sceneSubtitlesList = useMemo(
-        () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles(draft, b.start, b.end) : [])),
-        [draft, sceneBoundaries]
+        () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles({ ...draft, scenes: draft.scenes, subtitles: draft.subtitles, videoDuration: draft.videoDuration }, b.start, b.end) : [])),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [draft.subtitles, draft.scenes, draft.videoDuration, sceneBoundaries]
     );
     const sceneFadesList = useMemo(
         () => (draft.scenes || []).map((_, idx) => resolveSceneFadeDurations(draft.scenes || [], idx)),

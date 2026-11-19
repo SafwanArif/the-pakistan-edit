@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Draft, PostMode, getTotalVideoDuration, getActiveSceneAtTime } from "../../types/news";
 import { useEditorialState } from "./hooks/useEditorialState";
 import { useVideoDraftState } from "./hooks/useVideoDraftState";
@@ -101,11 +101,11 @@ export default function AdminDashboard() {
         }
     }, []);
 
-    if (!isCarouselMounted || !isVideoMounted) return null;
+    const handleTogglePlaybackMode = useCallback(() => {
+        setPlaybackMode(m => (m === 'play-all' ? 'loop-angle' : 'play-all'));
+    }, [setPlaybackMode]);
 
-    const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
-
-    const modeSwitcher = (
+    const modeSwitcher = useMemo(() => (
         <div className="tpe-mode-cluster" role="tablist" aria-label="Post mode">
             <button
                 type="button"
@@ -132,7 +132,16 @@ export default function AdminDashboard() {
                 <span>VIDEO ENGINE</span>
             </button>
         </div>
+    ), [postMode, handleSetPostMode]);
+
+    const activeVideoScene = useMemo(
+        () => getActiveSceneAtTime(videoDraft, currentTime),
+        [videoDraft, currentTime]
     );
+
+    if (!isCarouselMounted || !isVideoMounted) return null;
+
+    const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
 
     return (
         <div className="dashboard-container">
@@ -159,8 +168,8 @@ export default function AdminDashboard() {
                             isOptimisingVideo={isOptimisingVideo}
                             isExporting={!!exporting}
                             modeSwitcher={modeSwitcher}
-                            activeSceneIndex={getActiveSceneAtTime(videoDraft, currentTime).sceneIndex}
-                            isOutro={getActiveSceneAtTime(videoDraft, currentTime).isOutro}
+                            activeSceneIndex={activeVideoScene.sceneIndex}
+                            isOutro={activeVideoScene.isOutro}
                         />
                     )}
                 </div>
@@ -221,7 +230,7 @@ export default function AdminDashboard() {
                             currentTime={currentTime}
                             seekTo={seekTo}
                             playbackMode={playbackMode}
-                            onTogglePlaybackMode={() => setPlaybackMode(m => m === 'play-all' ? 'loop-angle' : 'play-all')}
+                            onTogglePlaybackMode={handleTogglePlaybackMode}
                         />
 
                         {/* 🏛️ RIGHT PANE: Focused Program Monitor with Platform Switcher & Docked Transport */}

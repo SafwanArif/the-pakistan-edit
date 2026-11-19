@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { VideoKeyframe, formatTimecode } from "../../../types/news";
+import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 
 interface TimelineKeyframeDiamondProps {
     kf: VideoKeyframe;
@@ -68,7 +68,7 @@ const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = ({
                 borderRadius: "1.5px",
                 background,
                 border: `1.5px solid ${isAtPlayhead ? (variant === 'pre' ? "var(--ui-pre)" : "var(--ui-accent)") : "#0a0d0c"}`,
-                boxShadow: isAtPlayhead ? `0 0 8px ${variant === 'pre' ? "#38bdf8" : "var(--ui-accent)"}` : "0 0 4px oklch(from var(--ui-accent) l c h / 0.55)",
+                boxShadow: isAtPlayhead ? `0 0 8px ${variant === 'pre' ? "var(--ui-pre)" : "var(--ui-accent)"}` : "0 0 4px oklch(from var(--ui-accent) l c h / 0.55)",
                 opacity: dimmed ? 0.42 : 1,
                 cursor: "pointer",
                 transition: "transform 0.12s ease, opacity 0.15s ease, background-color 0.12s ease",
@@ -100,7 +100,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
 }) => {
     const safeDur = Math.max(0.1, rangeDuration);
     const rangeEnd = rangeStart + safeDur;
-    const toPct = (t: number) => Math.max(0, Math.min(100, ((t - rangeStart) / safeDur) * 100));
+    const toPct = (t: number) => clamp(((t - rangeStart) / safeDur) * 100, 0, 100);
 
     const getEarliestTime = (kf: VideoKeyframe) =>
         kf.easing === 'snap' && kf.pre?.time !== undefined ? Math.min(kf.time, kf.pre.time) : kf.time;
@@ -136,7 +136,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
                                     top: "50%",
                                     height: "2px",
                                     transform: "translateY(-50%)",
-                                    background: "linear-gradient(90deg, #38bdf8, var(--ui-accent))",
+                                    background: "linear-gradient(90deg, var(--ui-pre), var(--ui-accent))",
                                     boxShadow: "0 0 6px oklch(from var(--ui-accent) l c h / 0.55)",
                                     pointerEvents: "none",
                                     zIndex,

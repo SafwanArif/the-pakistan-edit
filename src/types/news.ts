@@ -215,7 +215,7 @@ export const createDefaultVideoDraft = (): VideoDraft => {
 export const getSceneRoleColor = (idx: number, isReHook: boolean, isSetup: boolean): string => {
     if (idx === 0) return 'var(--ui-accent)';
     if (isReHook) return 'var(--ui-indicator)';
-    if (isSetup) return '#38bdf8';
+    if (isSetup) return 'var(--ui-pre)';
     return '#a78bfa';
 };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { VideoKeyframe, formatTimecode } from "../../../types/news";
+import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
 
@@ -67,32 +67,32 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
     onJumpToTime,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
+    const dragRectRef = useRef<DOMRect | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
     const [hoverInfo, setHoverInfo] = useState<{ pct: number; time: number } | null>(null);
 
     const safeDuration = Math.max(duration, 0.1);
-    const pct = Math.max(0, Math.min(100, (currentTime / safeDuration) * 100));
+    const pct = clamp((currentTime / safeDuration) * 100, 0, 100);
     const outroPct = enableOutro && duration > 0 ? Math.min(25, (outroDuration / safeDuration) * 100) : 0;
 
     const preSetupDur = hookDuration + rehookDuration;
     const hookMax = Math.max(0, clipDuration - hookDuration);
     const hookTimelinePos = preSetupDur + Math.max(0, hookOffset - setupOffset);
-    const hookLeftPct = safeDuration > 0 ? Math.min(100, Math.max(0, (hookTimelinePos / safeDuration) * 100)) : 0;
+    const hookLeftPct = safeDuration > 0 ? clamp((hookTimelinePos / safeDuration) * 100, 0, 100) : 0;
     const hookWidthPct = safeDuration > 0 ? Math.min(100 - hookLeftPct, (hookDuration / safeDuration) * 100) : 0;
 
     const rehookMax = Math.max(0, clipDuration - rehookDuration);
     const rehookTimelinePos = preSetupDur + Math.max(0, rehookOffset - setupOffset);
-    const rehookLeftPct = safeDuration > 0 ? Math.min(100, Math.max(0, (rehookTimelinePos / safeDuration) * 100)) : 0;
+    const rehookLeftPct = safeDuration > 0 ? clamp((rehookTimelinePos / safeDuration) * 100, 0, 100) : 0;
     const rehookWidthPct = safeDuration > 0 ? Math.min(100 - rehookLeftPct, (rehookDuration / safeDuration) * 100) : 0;
 
     const timeAtClientX = (clientX: number, maxSec = safeDuration) => {
-        const el = trackRef.current;
-        if (!el) return { pct: 0, time: 0 };
-        const rect = el.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+        const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
+        if (!rect) return { pct: 0, time: 0 };
+        const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
         const snapped = Math.round(ratio * maxSec * 20) / 20;
-        return { pct: ratio * 100, time: Math.min(maxSec, Math.max(0, snapped)) };
+        return { pct: ratio * 100, time: clamp(snapped, 0, maxSec) };
     };
 
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
@@ -100,16 +100,16 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
         e.currentTarget.setPointerCapture(e.pointerId);
         setDragTarget(target);
         const startX = e.clientX;
+        const trackWidth = Math.max(1, trackRef.current?.getBoundingClientRect().width ?? 1);
         const startOffset = target === "hook" ? hookOffset : rehookOffset;
         const maxOff = target === "hook" ? hookMax : rehookMax;
         let moved = false;
 
         const onMove = (ev: PointerEvent) => {
-            const el = trackRef.current;
-            if (!el || clipDuration <= 0) return;
+            if (clipDuration <= 0) return;
             if (Math.abs(ev.clientX - startX) > 2) moved = true;
-            const deltaRatio = (ev.clientX - startX) / Math.max(1, el.getBoundingClientRect().width);
-            const next = Math.max(0, Math.min(maxOff, Math.round((startOffset + deltaRatio * safeDuration) * 10) / 10));
+            const deltaRatio = (ev.clientX - startX) / trackWidth;
+            const next = clamp(Math.round((startOffset + deltaRatio * safeDuration) * 10) / 10, 0, maxOff);
             if (target === "hook") onChangeHookOffset?.(next);
             else onChangeRehookOffset?.(next);
             const nextTimelinePos = preSetupDur + Math.max(0, next - setupOffset);
@@ -166,6 +166,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                 }}
                 onPointerDown={(e) => {
                     e.currentTarget.setPointerCapture(e.pointerId);
+                    dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     setIsDragging(true);
                     onScrubStart();
                     const next = timeAtClientX(e.clientX);
@@ -183,11 +184,13 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                     e.currentTarget.releasePointerCapture(e.pointerId);
                     setIsDragging(false);
                     const next = timeAtClientX(e.clientX);
+                    dragRectRef.current = null;
                     onScrubEnd(next.time);
                 }}
                 onPointerCancel={() => {
                     if (!isDragging) return;
                     setIsDragging(false);
+                    dragRectRef.current = null;
                     onScrubEnd(currentTime);
                 }}
                 onMouseLeave={() => { if (!isDragging && !dragTarget) setHoverInfo(null); }}

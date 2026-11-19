@@ -1,4 +1,4 @@
-import { getTopBoxOffsetY, interpolateKeyframe, resolveSceneFadeDurations, type TimelineScene, type VideoDraft } from "../../types/news";
+import { clamp, getTopBoxOffsetY, interpolateKeyframe, isSharedReHookScene, resolveSceneFadeDurations, type TimelineScene, type VideoDraft } from "../../types/news";
 import { AudioBoundaryFadeMode, buildAudioFadeFilters, buildPosXNormExpr, buildZoomFactorExpr } from "./ffmpegFilters";
 
 interface SceneFilterContext {
@@ -99,7 +99,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
     const vFaded = fadeParts.length ? `v_fad_${i}` : vLabel;
     if (fadeParts.length) filters.push(`[${vLabel}]${fadeParts.join(",")}[${vFaded}]`);
 
-    const isSharedReHook = Boolean(s.id.startsWith("rehook-") && s.shareHookText !== false);
+    const isSharedReHook = isSharedReHookScene(scenes, i);
     if (draft.enableMotion !== false && i === 0 && !isSharedReHook) {
         filters.push(`[${ovIdx}:v]scale=${W}:${H}:flags=lanczos,format=rgba,fade=t=in:st=0:d=0.22:alpha=1[ov_anim_${i}]`);
         filters.push(`[${vFaded}][ov_anim_${i}]overlay=0:0:format=auto,format=yuv420p,setsar=1[v_sc_${i}]`);
@@ -110,7 +110,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
 
     const aLabel = `a_sc_${i}`;
     const aInputPad = customLoopAudioSource ? `[${customLoopAudioSource}]` : `[${mediaIdx}:a]`;
-    const vol = draft.isMuted ? 0 : Math.max(0, Math.min(1, draft.volume ?? 1));
+    const vol = draft.isMuted ? 0 : clamp(draft.volume ?? 1, 0, 1);
     if (isImage || !srcHasAudio || vol === 0) {
         filters.push(`anullsrc=r=48000:cl=stereo:d=${dur.toFixed(3)}[${aLabel}]`);
     } else {

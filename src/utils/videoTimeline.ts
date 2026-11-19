@@ -75,8 +75,7 @@ export const calculatePsychologyPacedScenes = (
     existingScenes?: TimelineScene[]
 ): TimelineScene[] => {
     const base = ensureUniqueSceneIds(existingScenes?.length ? [...existingScenes] : createDefaultTimelineScenes());
-    const hasReHook = Boolean(base[1]?.id.startsWith('rehook-'));
-    const storyIdx = hasReHook ? Math.min(2, base.length - 1) : Math.min(1, base.length - 1);
+    const { storyIdx } = getTimelineStructure(base);
     const story = base[storyIdx]!;
     const storyDur = Math.max(4, Math.round((totalClipDuration - (story.clipStartOffset || 0)) * 10) / 10);
     base[storyIdx] = { ...story, duration: storyDur };
@@ -85,7 +84,7 @@ export const calculatePsychologyPacedScenes = (
 
 export const autoPadToMonetisationThreshold = (draft: VideoDraft, targetSeconds: number = 61.5): VideoDraft => {
     const scenes = draft.scenes?.length ? [...draft.scenes] : createDefaultTimelineScenes();
-    const storyIdx = scenes[1]?.id.startsWith('rehook-') ? Math.min(2, scenes.length - 1) : Math.min(1, scenes.length - 1);
+    const { storyIdx } = getTimelineStructure(scenes);
     const outroTime = draft.enableOutro ? (draft.outroDuration || 5) : 0;
     const otherScenesTime = scenes.reduce((sum, s, i) => (i === storyIdx ? sum : sum + (s.duration || 0)), 0);
     const neededStoryDur = Math.max(4, Math.round((targetSeconds - outroTime - otherScenesTime) * 10) / 10);
@@ -210,7 +209,7 @@ export const getActiveSceneAtTime = (draft: VideoDraft, currentTime: number): { 
 
 /** Resolves effective scene fade durations from preset ('auto' | 'micro' | 'editorial'). */
 export const resolveSceneFadeDurations = (scenes: TimelineScene[], idx: number) => {
-    const anchored = Boolean(scenes[1]?.id.startsWith('rehook-') && scenes[1]?.shareHookText !== false);
+    const anchored = isSharedReHookScene(scenes, 1);
     const s = scenes[idx];
     const inPreset = s?.fadeInPreset || 'auto';
     const outPreset = s?.fadeOutPreset || 'auto';
@@ -250,7 +249,7 @@ export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): n
 
 /** Computes soft -12dB J-cut breath-bridge audio gain (0.25..1.0), or full 0.0 dip at outer/silent edges. */
 export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = false): number => {
-    const f = Math.max(0, Math.min(1, fadeIntensity));
+    const f = clamp(fadeIntensity, 0, 1);
     return allowFullZero ? (1 - Math.pow(f, 2)) : (0.25 + 0.75 * (1 - Math.pow(f, 2)));
 };
 

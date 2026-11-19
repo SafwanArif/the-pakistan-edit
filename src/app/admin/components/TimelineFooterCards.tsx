@@ -14,7 +14,7 @@ interface TimelineFooterCardsProps {
 }
 
 /** Storyboard footer controls (+ Add Angle and branded Outro preview card). */
-export const TimelineFooterCards: React.FC<TimelineFooterCardsProps> = ({
+export const TimelineFooterCards: React.FC<TimelineFooterCardsProps> = React.memo(({
     sceneCount,
     enableOutro,
     outroDuration = 5,
@@ -91,4 +91,6 @@ export const TimelineFooterCards: React.FC<TimelineFooterCardsProps> = ({
             );
         })()}
     </>
-);
+));
+
+TimelineFooterCards.displayName = "TimelineFooterCards";

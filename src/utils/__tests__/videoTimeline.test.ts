@@ -12,10 +12,12 @@ import {
     wrapMediaTime,
 } from "../videoTimeline";
 import {
+    buildSrtContent,
     findSubtitleAtMediaTime,
     getActiveSubtitleTimelineTimes,
 } from "../subtitleTimeline";
 import { getKeyframeTelemetryTint } from "../../app/admin/utils/keyframeTelemetry";
+import { resolveStudioShortcutSeek } from "../../app/admin/hooks/useStudioShortcuts";
 
 const makeDraft = (overrides: Partial<VideoDraft> = {}): VideoDraft => ({
     ...createDefaultVideoDraft(),
@@ -307,5 +309,18 @@ describe("findSubtitleAtMediaTime, getSceneRoleLabel, isSharedReHookScene & getK
         expect(getKeyframeTelemetryTint(kfs, 3, "post", -1).color).toBe("var(--ui-pre)");
         expect(getKeyframeTelemetryTint(kfs, 7, "post", -1).color).toBe("color-mix(in oklch, var(--ui-accent) 50%, var(--ui-pre))");
         expect(getKeyframeTelemetryTint(kfs, 15, "post", -1).color).toBe("var(--ui-accent)");
+    });
+
+    it("formats SRT content and resolves numeric/arrow studio shortcuts", () => {
+        const srt = buildSrtContent([{ id: "1", start: 1.25, end: 3.5, text: "Hello world" }]);
+        expect(srt).toBe("1\n00:00:01,250 --> 00:00:03,500\nHello world\n");
+
+        const ctx = { sceneStarts: [0, 4, 10], outroStart: 60, enableOutro: true, activeDisplayTime: 12, duration: 65 };
+        expect(resolveStudioShortcutSeek("1", false, ctx)).toBe(0);
+        expect(resolveStudioShortcutSeek("3", false, ctx)).toBe(10);
+        expect(resolveStudioShortcutSeek("4", false, ctx)).toBe(60);
+        expect(resolveStudioShortcutSeek("0", false, ctx)).toBe(60);
+        expect(resolveStudioShortcutSeek("ArrowRight", true, ctx)).toBe(17);
+        expect(resolveStudioShortcutSeek("ArrowLeft", false, ctx)).toBe(11);
     });
 });

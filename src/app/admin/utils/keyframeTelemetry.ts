@@ -1,4 +1,4 @@
-import type { VideoKeyframe } from "../../../types/news";
+import { clamp, type VideoKeyframe } from "../../../types/news";
 
 interface TelemetryTint {
     color: string;
@@ -25,10 +25,11 @@ export function getKeyframeTelemetryTint(
     keyframes: VideoKeyframe[] | undefined,
     time: number,
     editSide: "pre" | "post",
-    parkedIndex: number
+    parkedIndex: number,
+    preSorted = false
 ): TelemetryTint {
     if (!keyframes?.length) return NEUTRAL;
-    const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+    const sorted = preSorted ? keyframes : [...keyframes].sort((a, b) => a.time - b.time);
 
     if (parkedIndex >= 0 && keyframes[parkedIndex]?.easing === "snap" && editSide === "pre") {
         return makeTint(PRE_COLOR);
@@ -54,7 +55,7 @@ export function getKeyframeTelemetryTint(
             }
             if (prev.easing === "snap") {
                 const span = Math.max(0.001, next.time - prev.time);
-                const pct = Math.round(Math.min(1, Math.max(0, (time - prev.time) / span)) * 100);
+                const pct = Math.round(clamp((time - prev.time) / span, 0, 1) * 100);
                 return makeTint(`color-mix(in oklch, var(--ui-accent) ${pct}%, ${PRE_COLOR})`);
             }
             return makeTint("var(--ui-accent)");

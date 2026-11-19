@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo, useState, useRef, useCallback } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoKeyframe, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel } from "../../../types/news";
+import { VideoDraft, VideoKeyframe, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, clamp } from "../../../types/news";
 import { VideoCard } from "../../../components/templates/instagram/VideoCard/index";
 import { Platform, VIDEO_PLATFORM_CONFIGS, OMNI_CONFIG, aspectRatioToPlatform } from "../../../config/omnichannel";
 import { PlayIcon, PauseIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
 import { useFitScale } from "../hooks/useFitScale";
+import { useStudioShortcuts } from "../hooks/useStudioShortcuts";
 import { StudioFramingControls } from "./StudioFramingControls";
 import { MainTimelineScrubber } from "./MainTimelineScrubber";
 import { getKeyframeTelemetryTint } from "../utils/keyframeTelemetry";
@@ -104,7 +105,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const handleUpdateKeyframeTime = (nextRawTime: number, side?: 'pre' | 'post') => {
         if (existingKeyframeIndex < 0 || !draft.keyframes) return;
         const maxT = duration > 0 ? duration : Math.max(nextRawTime, 60);
-        const clamped = Math.max(0, Math.min(maxT, Math.round(nextRawTime * 20) / 20));
+        const clamped = clamp(Math.round(nextRawTime * 20) / 20, 0, maxT);
         const keyframes = [...draft.keyframes];
         const curr = keyframes[existingKeyframeIndex]!;
         if (curr.easing === 'snap' && (side ?? effectiveEditSide) === 'pre') {
@@ -210,22 +211,12 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
     const isCurrentlyMuted = draft.isMuted ?? isMuted;
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.code !== 'Space') return;
-            const target = e.target as HTMLElement | null;
-            if (target?.closest('input, textarea, select, button, [contenteditable="true"]')) return;
-            e.preventDefault();
-            togglePlay();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [togglePlay]);
-
     const timelineStruct = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
+    const sceneBounds = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
+    const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
 
     const sceneMarkers = useMemo(
-        () => getSceneBoundaries(draft.scenes).map((b, idx) => {
+        () => sceneBounds.map((b, idx) => {
             const isReHook = timelineStruct.hasReHook && idx === 1;
             const isSetup = idx === timelineStruct.storyIdx;
             return {
@@ -237,8 +228,29 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 color: getSceneRoleColor(idx, isReHook, isSetup),
             };
         }),
-        [draft.scenes, duration, timelineStruct.hasReHook, timelineStruct.storyIdx]
+        [sceneBounds, draft.scenes, duration, timelineStruct.hasReHook, timelineStruct.storyIdx]
     );
+
+    const handleToggleToolTab = useCallback((tab: 'keyframes' | 'subtitles') => {
+        setActiveToolTab(p => (p === tab ? null : tab));
+    }, []);
+
+    const sortedKeyframes = useMemo(
+        () => (draft.keyframes?.length ? [...draft.keyframes].sort((a, b) => a.time - b.time) : undefined),
+        [draft.keyframes]
+    );
+    const sceneStarts = useMemo(() => sceneBounds.map(b => b.start), [sceneBounds]);
+
+    useStudioShortcuts({
+        togglePlay,
+        seekTo,
+        onToggleToolTab: handleToggleToolTab,
+        sceneStarts,
+        outroStart,
+        enableOutro: Boolean(draft.enableOutro),
+        activeDisplayTime,
+        duration,
+    });
 
     const updateSceneOffset = (i: number, nextOffset: number) => {
         const updated = [...draft.scenes];
@@ -246,7 +258,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         updateDraft({ ...draft, scenes: updated });
     };
 
-    const telemetryTint = getKeyframeTelemetryTint(draft.keyframes, activeDisplayTime, effectiveEditSide, existingKeyframeIndex);
+    const telemetryTint = getKeyframeTelemetryTint(sortedKeyframes, activeDisplayTime, effectiveEditSide, existingKeyframeIndex, true);
 
     return (
         <section aria-label="Video Monitor" className="tpe-flex-col" style={{ flex: 1, height: '100%', overflow: 'hidden', background: '#040404', position: 'relative' }}>
@@ -366,7 +378,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     draft={draft} activePlatform={activePlatform} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
                     activeFraming={activeFraming} zoomMin={zoomMin} zoomMax={zoomMax}
                     existingKeyframeIndex={existingKeyframeIndex} activePreTime={activeKf?.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : undefined} activePostTime={activeKf?.time} activeKeyframeEasing={activeKf?.easing}
-                    kfEditSide={effectiveEditSide} activeToolTab={activeToolTab} onToggleToolTab={(tab) => setActiveToolTab(p => (p === tab ? null : tab))} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}
+                    kfEditSide={effectiveEditSide} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}
                     onJumpKeyframe={handleJumpKeyframe} onJumpSubtitle={handleJumpSubtitle} activeSubtitleCount={activeSubtitleTimes.length} onAddOrUpdateKeyframe={handleAddOrUpdateKeyframe}
                     onRemoveKeyframe={handleRemoveKeyframe} onUpdateKeyframeTime={handleUpdateKeyframeTime}
                     onSetKfEditSide={(s) => { setKfEditSide(s); if (activeKf) seekTo(s === 'pre' && activeKf.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : activeKf.time); }}

@@ -1,4 +1,4 @@
-import { Draft, SlideAsset, VideoDraft, getActiveSceneAtTime } from "../../../types/news";
+import { Draft, SlideAsset, VideoDraft, getActiveSceneAtTime, isSharedReHookScene } from "../../../types/news";
 
 export type CoreField = 'headline' | 'category' | 'summary' | 'image' | 'imageCredit' | 'sourceName' | 'sourcePrefix' | 'creditPrefix';
 export type ExtraSlideField = 'heading' | 'content' | 'source' | 'sourcePrefix';
@@ -129,8 +129,8 @@ export const VideoDraftResolver = {
     get: (path: string, draft: VideoDraft, currentTime: number = 0): string => {
         if (!path) return "";
         const cleanPath = path.replace(/^video-/, '');
-        const { scene, isOutro } = getActiveSceneAtTime(draft, currentTime);
-        const textScene = (scene?.id.startsWith('rehook-') && scene.shareHookText !== false && draft.scenes?.[0]) ? draft.scenes[0]! : scene;
+        const { scene, sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
+        const textScene = isSharedReHookScene(draft.scenes, sceneIndex) ? draft.scenes![0]! : scene;
 
         if (cleanPath === 'category') {
             return draft.category ?? "";
@@ -162,7 +162,7 @@ export const VideoDraftResolver = {
         if (cleanPath === 'headline') {
             if (isOutro) return { ...draft, outroCta: value };
             const scenes = [...(draft.scenes || [])];
-            const targetIdx = (scenes[sceneIndex]?.id.startsWith('rehook-') && scenes[sceneIndex]?.shareHookText !== false) ? 0 : sceneIndex;
+            const targetIdx = isSharedReHookScene(scenes, sceneIndex) ? 0 : sceneIndex;
             if (scenes[targetIdx]) scenes[targetIdx] = { ...scenes[targetIdx]!, title: value };
             return { ...draft, scenes, ...(targetIdx === 0 ? { headline: value } : {}) };
         }
@@ -170,7 +170,7 @@ export const VideoDraftResolver = {
         if (cleanPath === 'subtitle') {
             if (isOutro) return draft;
             const scenes = [...(draft.scenes || [])];
-            const targetIdx = (scenes[sceneIndex]?.id.startsWith('rehook-') && scenes[sceneIndex]?.shareHookText !== false) ? 0 : sceneIndex;
+            const targetIdx = isSharedReHookScene(scenes, sceneIndex) ? 0 : sceneIndex;
             if (scenes[targetIdx]) scenes[targetIdx] = { ...scenes[targetIdx]!, subtitle: value };
             return { ...draft, scenes, ...(targetIdx === 0 ? { subtitle: value } : {}) };
         }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { Draft } from "../../../types/news";
+import { Draft, clamp } from "../../../types/news";
 import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
 import { useClickOutside } from "../hooks/useClickOutside";
@@ -16,8 +16,6 @@ interface FocalToolkitProps {
     canUndo?: boolean;
     canRedo?: boolean;
 }
-
-const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
 /**
  * Floating HUD for per-slide focal pan/zoom, snap mode, slide steps, and undo/redo.

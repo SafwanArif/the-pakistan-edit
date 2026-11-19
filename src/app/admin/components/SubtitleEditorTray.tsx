@@ -74,7 +74,7 @@ interface SubtitleEditorTrayProps {
 }
 
 /** Inline speech-to-text subtitle generator and live per-line editor. */
-export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = ({
+export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(({
     draft, onChange, seekTo
 }) => {
     const [isTranscribing, setIsTranscribing] = useState(false);
@@ -249,4 +249,6 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = ({
             )}
         </div>
     );
-};
+});
+
+SubtitleEditorTray.displayName = "SubtitleEditorTray";

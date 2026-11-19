@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
+import { clamp } from "../../../types/news";
 
 /**
  * 2027 Professional Quality Vector Logo (Unified SVG Standard)
@@ -8,7 +9,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
  * and a locked-in wordmark revealed via SVG clipPath for zero horizontal jitter.
  */
 const easeOutQuart = (t: number): number => 1 - Math.pow(1 - t, 4);
-const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+const clamp01 = (v: number): number => clamp(v, 0, 1);
 
 export function TPEVectorLogo({
     scale = 1,

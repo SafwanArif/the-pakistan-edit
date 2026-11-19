@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-
-const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+import { clamp } from "../../../types/news";
 
 interface FocalSliderProps {
     id: string;

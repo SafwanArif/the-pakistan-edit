@@ -179,186 +179,186 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                 <VideoOutroCard outroCta={draft.outroCta} is916={is916} enableMotion={!overlayOnly && draft.enableMotion !== false} />
             )}
             <div className="tpe-full-absolute tpe-flex-col" style={{ background: '#080808', visibility: isOutro ? 'hidden' : 'visible', pointerEvents: isOutro ? 'none' : undefined }}>
-                    {!overlayOnly && hasMedia && (
-                        <>
-                            {is45 && (
-                                <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 1 }}>
-                                    {isImage ? (
-                                        <Image
-                                            src={videoSrc}
-                                            alt=""
-                                            width={dimensions.width}
-                                            height={dimensions.height}
-                                            unoptimized
-                                            loading="eager"
-                                            style={{ ...topBoxMediaStyle, filter: bgBlurFilter, transform: bgTransform }}
-                                        />
-                                    ) : (
-                                        <>
-                                            {topOffsetY > 2 && (
-                                                <AmbientBlurStack direction="top" topPx={0} heightPx={topOffsetY + 2} farRef={topAmbientCanvasRef} midRef={topMidEdgeCanvasRef} nearRef={topNearEdgeCanvasRef} />
-                                            )}
-                                            {topOffsetY + containerHeightPx < dimensions.height - 2 && (
-                                                <AmbientBlurStack direction="bottom" topPx={Math.max(0, topOffsetY + containerHeightPx - 2)} farRef={ambientCanvasRef} midRef={midEdgeCanvasRef} nearRef={nearEdgeCanvasRef} />
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
-
-                            <div style={is45 ? {
-                                position: 'absolute', top: `${topOffsetY}px`, left: 0, right: 0, height: `${containerHeightPx}px`,
-                                background: 'transparent', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                zIndex: 2
-                            } : {
-                                position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#050505', zIndex: 2
-                            }}>
+                {!overlayOnly && hasMedia && (
+                    <>
+                        {is45 && (
+                            <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 1 }}>
                                 {isImage ? (
                                     <Image
                                         src={videoSrc}
-                                        alt={headlineText || "Scene visual"}
+                                        alt=""
                                         width={dimensions.width}
                                         height={dimensions.height}
                                         unoptimized
                                         loading="eager"
-                                        onLoad={(e) => { if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) setMediaNaturalAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight); }}
-                                        style={is45
-                                            ? { ...topBoxMediaStyle, transform: `translate3d(${panXShift}px, 0, 0) scale(${effectiveScale})` }
-                                            : { ...fullBleedMediaStyle, transform: `scale(${kenBurnsScale})`, transition: 'none' }}
+                                        style={{ ...topBoxMediaStyle, filter: bgBlurFilter, transform: bgTransform }}
                                     />
                                 ) : (
-                                    <video
-                                        ref={videoRef}
-                                        src={videoSrc}
-                                        aria-label={draft.headline || "Video preview"}
-                                        playsInline
-                                        muted={effectiveMuted}
-                                        preload="auto"
-                                        disablePictureInPicture
-                                        disableRemotePlayback
-                                        onLoadedMetadata={handleLoadedMetadata}
-                                        onLoadedData={refreshAmbientGlow}
-                                        onSeeked={refreshAmbientGlow}
-                                        onTimeUpdate={handleTimeUpdate}
-                                        onEnded={handleEnded}
-                                        style={is45
-                                            ? { ...topBoxMediaStyle, transform: `translate3d(${panXShift}px, 0, 0) scale(${effectiveScale}) translateZ(0)`, willChange: 'transform' }
-                                            : { ...fullBleedMediaStyle, transform: `scale(${zoomScale}) translateZ(0)`, transition: 'none', willChange: 'transform' }}
-                                    />
+                                    <>
+                                        {topOffsetY > 2 && (
+                                            <AmbientBlurStack direction="top" topPx={0} heightPx={topOffsetY + 2} farRef={topAmbientCanvasRef} midRef={topMidEdgeCanvasRef} nearRef={topNearEdgeCanvasRef} />
+                                        )}
+                                        {topOffsetY + containerHeightPx < dimensions.height - 2 && (
+                                            <AmbientBlurStack direction="bottom" topPx={Math.max(0, topOffsetY + containerHeightPx - 2)} farRef={ambientCanvasRef} midRef={midEdgeCanvasRef} nearRef={nearEdgeCanvasRef} />
+                                        )}
+                                    </>
                                 )}
+                            </div>
+                        )}
 
-                                {!overlayOnly && (
-                                    <div style={{ position: 'absolute', inset: 0, backgroundColor: is45 ? '#080808' : '#050505', opacity: hookFade, visibility: hookFade > 0.005 ? 'visible' : 'hidden', pointerEvents: 'none', zIndex: 5 }} />
-                                )}
+                        <div style={is45 ? {
+                            position: 'absolute', top: `${topOffsetY}px`, left: 0, right: 0, height: `${containerHeightPx}px`,
+                            background: 'transparent', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 2
+                        } : {
+                            position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#050505', zIndex: 2
+                        }}>
+                            {isImage ? (
+                                <Image
+                                    src={videoSrc}
+                                    alt={headlineText || "Scene visual"}
+                                    width={dimensions.width}
+                                    height={dimensions.height}
+                                    unoptimized
+                                    loading="eager"
+                                    onLoad={(e) => { if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) setMediaNaturalAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight); }}
+                                    style={is45
+                                        ? { ...topBoxMediaStyle, transform: `translate3d(${panXShift}px, 0, 0) scale(${effectiveScale})` }
+                                        : { ...fullBleedMediaStyle, transform: `scale(${kenBurnsScale})`, transition: 'none' }}
+                                />
+                            ) : (
+                                <video
+                                    ref={videoRef}
+                                    src={videoSrc}
+                                    aria-label={draft.headline || "Video preview"}
+                                    playsInline
+                                    muted={effectiveMuted}
+                                    preload="auto"
+                                    disablePictureInPicture
+                                    disableRemotePlayback
+                                    onLoadedMetadata={handleLoadedMetadata}
+                                    onLoadedData={refreshAmbientGlow}
+                                    onSeeked={refreshAmbientGlow}
+                                    onTimeUpdate={handleTimeUpdate}
+                                    onEnded={handleEnded}
+                                    style={is45
+                                        ? { ...topBoxMediaStyle, transform: `translate3d(${panXShift}px, 0, 0) scale(${effectiveScale}) translateZ(0)`, willChange: 'transform' }
+                                        : { ...fullBleedMediaStyle, transform: `scale(${zoomScale}) translateZ(0)`, transition: 'none', willChange: 'transform' }}
+                                />
+                            )}
 
-                                {!isPlaying && (
-                                    <div style={{
-                                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 15, pointerEvents: 'none',
-                                        background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.15)',
-                                        borderRadius: '50%', width: is45 ? '68px' : '80px', height: is45 ? '68px' : '80px',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)'
-                                    }}>
-                                        <PlayIcon width={is45 ? 30 : 32} height={is45 ? 30 : 32} fill="var(--ui-accent)" />
-                                    </div>
-                                )}
+                            {!overlayOnly && (
+                                <div style={{ position: 'absolute', inset: 0, backgroundColor: is45 ? '#080808' : '#050505', opacity: hookFade, visibility: hookFade > 0.005 ? 'visible' : 'hidden', pointerEvents: 'none', zIndex: 5 }} />
+                            )}
+
+                            {!isPlaying && (
+                                <div style={{
+                                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 15, pointerEvents: 'none',
+                                    background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.15)',
+                                    borderRadius: '50%', width: is45 ? '68px' : '80px', height: is45 ? '68px' : '80px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)'
+                                }}>
+                                    <PlayIcon width={is45 ? 30 : 32} height={is45 ? 30 : 32} fill="var(--ui-accent)" />
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+
+                {!overlayOnly && !hasMedia && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingInline: '60px', color: isLoadingStream ? 'var(--ui-accent)' : 'var(--ui-text-dim)', fontSize: '20px', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', pointerEvents: 'none', zIndex: 2 }}>
+                        {isLoadingStream ? `⚡ ${ingestStatus || 'LOADING & SYNCING STREAM...'}` : 'NO VIDEO LOADED'}
+                    </div>
+                )}
+
+                {/* Subtle Top Safe-Zone Scrim for Brand Legibility (skipped when 4:5 top ambient blur is active) */}
+                {!(is45 && topOffsetY > 2) && (
+                    <div style={{ position: 'absolute', insetBlockStart: 0, insetInline: 0, height: is916 ? '18%' : '15%', background: 'linear-gradient(to bottom, oklch(0% 0 0 / 0.26) 0%, transparent 100%)', pointerEvents: 'none', zIndex: 6 }} />
+                )}
+
+                {/* Branding Overlay (44px top in 4:5, 140px safe zone in 9:16; 60px left, 140px right) */}
+                <div className="tpe-branding-overlay tpe-flex-row" style={{ top: is45 ? '44px' : undefined, insetInlineStart: '60px', insetInlineEnd: '140px', zIndex: 20 }}>
+                    <div className="tpe-brand-left"><TPEVectorLogo scale={1.8} showWordmark={true} animateWordmark={animateWordmark} wordmarkStartTime={currentTime} /></div>
+                    <div className="tpe-brand-right tpe-flex-col">
+                        <div className="tpe-category-tag"><span className="tpe-slash"><span className="tpe-slash-1">/</span><span className="tpe-slash-2">/</span></span> {draft.category || "ANALYSIS"}</div>
+                        <div className="tpe-watermark">@thePakistanEdit</div>
+                    </div>
+                </div>
+
+                {/* Narrative Layer */}
+                {is45 ? (
+                    <div style={{ position: 'absolute', top: '640px', bottom: '110px', left: '60px', right: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px', pointerEvents: 'none', zIndex: 10 }}>
+                        {headlineText && (
+                            <div key={`headline-${textKey}`} className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: '64px', lineHeight: 1.08, letterSpacing: '-0.02em', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                <HighlightedText text={headlineText} />
+                            </div>
+                        )}
+                        {subtitleText && (
+                            <div key={`subtitle-${textKey}`} className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '32px', fontWeight: 500, lineHeight: 1.32, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                <HighlightedText text={subtitleText} />
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    (headlineText || subtitleText) && (
+                        <>
+                            <div style={scrimStyle} />
+                            <div className="tpe-news-inner tpe-flex-col tpe-full-absolute" style={{ pointerEvents: 'none', justifyContent: presetLayout.justify, paddingBlockStart: presetLayout.top, paddingBlockEnd: presetLayout.bottom, paddingInlineStart: '60px', paddingInlineEnd: '140px', zIndex: 10 }}>
+                                <div className="tpe-bulletin-group" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBlockStart: 0, marginBlockEnd: 0 }}>
+                                    {headlineText && (
+                                        <div key={`headline-full-${textKey}`} className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: is916 ? '76px' : (platform === 'square' ? '58px' : '64px'), lineHeight: 1.05, textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                            <HighlightedText text={headlineText} />
+                                        </div>
+                                    )}
+                                    {subtitleText && (
+                                        <div key={`subtitle-full-${textKey}`} className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: is916 ? '34px' : (platform === 'square' ? '28px' : '32px'), fontWeight: 500, lineHeight: 1.3, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                            <HighlightedText text={subtitleText} />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </>
-                    )}
+                    )
+                )}
 
-                    {!overlayOnly && !hasMedia && (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingInline: '60px', color: isLoadingStream ? 'var(--ui-accent)' : 'var(--ui-text-dim)', fontSize: '20px', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', pointerEvents: 'none', zIndex: 2 }}>
-                            {isLoadingStream ? `⚡ ${ingestStatus || 'LOADING & SYNCING STREAM...'}` : 'NO VIDEO LOADED'}
+                {/* Live Voice-Detected Caption Overlay */}
+                {activeSubtitle && (() => {
+                    const ccPos = draft.subtitlePosition || 'bottom';
+                    const ccFontSize = draft.subtitleFontSize ?? getDefaultSubtitleFontSize(draft.aspectRatio);
+                    const ccFontFamily = SUBTITLE_FONT_OPTIONS[draft.subtitleFont || 'plus-jakarta']?.cssFamily || 'var(--font-plus-jakarta), sans-serif';
+                    const ccBackdrop = draft.subtitleBackdrop || 'pill';
+                    const ccSpanStyle: React.CSSProperties = ccBackdrop === 'none'
+                        ? { padding: '4px 10px', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', textShadow: '0 1px 4px rgba(0,0,0,0.6)' }
+                        : ccBackdrop === 'shadow'
+                            ? { padding: '4px 10px', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', textShadow: '0 2px 4px rgba(0,0,0,0.95), 0 0 18px rgba(0,0,0,0.85), -1px -1px 0 rgba(0,0,0,0.75), 1px 1px 0 rgba(0,0,0,0.75)' }
+                            : ccBackdrop === 'glass'
+                                ? { padding: '10px 20px', borderRadius: '10px', background: 'rgba(8, 8, 8, 0.52)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }
+                                : { padding: '10px 20px', borderRadius: '10px', background: 'rgba(8, 8, 8, 0.86)', border: '1px solid rgba(255,255,255,0.14)', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.65)' };
+                    const ccBottom = is45
+                        ? (ccPos === 'high' ? '255px' : ccPos === 'middle' ? '185px' : '115px')
+                        : (is916
+                            ? (ccPos === 'high' ? '435px' : ccPos === 'middle' ? '340px' : '245px')
+                            : (ccPos === 'high' ? '280px' : ccPos === 'middle' ? '215px' : '150px'));
+                    return (
+                        <div style={{ position: 'absolute', bottom: ccBottom, insetInlineStart: '60px', insetInlineEnd: '140px', display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 15 }}>
+                            <span style={ccSpanStyle}>
+                                {activeSubtitle.text}
+                            </span>
                         </div>
-                    )}
+                    );
+                })()}
 
-                    {/* Subtle Top Safe-Zone Scrim for Brand Legibility (skipped when 4:5 top ambient blur is active) */}
-                    {!(is45 && topOffsetY > 2) && (
-                        <div style={{ position: 'absolute', insetBlockStart: 0, insetInline: 0, height: is916 ? '18%' : '15%', background: 'linear-gradient(to bottom, oklch(0% 0 0 / 0.26) 0%, transparent 100%)', pointerEvents: 'none', zIndex: 6 }} />
-                    )}
-
-                    {/* Branding Overlay (44px top in 4:5, 140px safe zone in 9:16; 60px left, 140px right) */}
-                    <div className="tpe-branding-overlay tpe-flex-row" style={{ top: is45 ? '44px' : undefined, insetInlineStart: '60px', insetInlineEnd: '140px', zIndex: 20 }}>
-                        <div className="tpe-brand-left"><TPEVectorLogo scale={1.8} showWordmark={true} animateWordmark={animateWordmark} wordmarkStartTime={currentTime} /></div>
-                        <div className="tpe-brand-right tpe-flex-col">
-                            <div className="tpe-category-tag"><span className="tpe-slash"><span className="tpe-slash-1">/</span><span className="tpe-slash-2">/</span></span> {draft.category || "ANALYSIS"}</div>
-                            <div className="tpe-watermark">@thePakistanEdit</div>
+                {/* Footer: Footage & Source (60px Left, 140px Right) */}
+                {(creditText || sourceText) && (
+                    <div className="tpe-news-footer tpe-flex-row" style={{ position: 'absolute', bottom: footerBottom, insetInlineStart: '60px', insetInlineEnd: '140px', width: 'auto', zIndex: 10 }}>
+                        <div className="tpe-metadata-cluster tpe-flex-row">
+                            {sourceText && <span className="tpe-meta-item"><span className="tpe-meta-label">{draft.sourcePrefix || "SOURCE:"}</span> <HighlightedText text={sourceText} /></span>}
+                        </div>
+                        <div className="tpe-metadata-cluster tpe-flex-row" style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                            {creditText && <span className="tpe-meta-item"><span className="tpe-meta-label">{draft.creditPrefix || "FOOTAGE:"}</span> <HighlightedText text={creditText} /></span>}
                         </div>
                     </div>
-
-                    {/* Narrative Layer */}
-                    {is45 ? (
-                        <div style={{ position: 'absolute', top: '640px', bottom: '110px', left: '60px', right: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px', pointerEvents: 'none', zIndex: 10 }}>
-                            {headlineText && (
-                                <div key={`headline-${textKey}`} className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: '64px', lineHeight: 1.08, letterSpacing: '-0.02em', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
-                                    <HighlightedText text={headlineText} />
-                                </div>
-                            )}
-                            {subtitleText && (
-                                <div key={`subtitle-${textKey}`} className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '32px', fontWeight: 500, lineHeight: 1.32, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
-                                    <HighlightedText text={subtitleText} />
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        (headlineText || subtitleText) && (
-                            <>
-                                <div style={scrimStyle} />
-                                <div className="tpe-news-inner tpe-flex-col tpe-full-absolute" style={{ pointerEvents: 'none', justifyContent: presetLayout.justify, paddingBlockStart: presetLayout.top, paddingBlockEnd: presetLayout.bottom, paddingInlineStart: '60px', paddingInlineEnd: '140px', zIndex: 10 }}>
-                                    <div className="tpe-bulletin-group" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBlockStart: 0, marginBlockEnd: 0 }}>
-                                        {headlineText && (
-                                            <div key={`headline-full-${textKey}`} className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: is916 ? '76px' : (platform === 'square' ? '58px' : '64px'), lineHeight: 1.05, textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
-                                                <HighlightedText text={headlineText} />
-                                            </div>
-                                        )}
-                                        {subtitleText && (
-                                            <div key={`subtitle-full-${textKey}`} className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: is916 ? '34px' : (platform === 'square' ? '28px' : '32px'), fontWeight: 500, lineHeight: 1.3, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
-                                                <HighlightedText text={subtitleText} />
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </>
-                        )
-                    )}
-
-                    {/* Live Voice-Detected Caption Overlay */}
-                    {activeSubtitle && (() => {
-                        const ccPos = draft.subtitlePosition || 'bottom';
-                        const ccFontSize = draft.subtitleFontSize ?? getDefaultSubtitleFontSize(draft.aspectRatio);
-                        const ccFontFamily = SUBTITLE_FONT_OPTIONS[draft.subtitleFont || 'plus-jakarta']?.cssFamily || 'var(--font-plus-jakarta), sans-serif';
-                        const ccBackdrop = draft.subtitleBackdrop || 'pill';
-                        const ccSpanStyle: React.CSSProperties = ccBackdrop === 'none'
-                            ? { padding: '4px 10px', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', textShadow: '0 1px 4px rgba(0,0,0,0.6)' }
-                            : ccBackdrop === 'shadow'
-                                ? { padding: '4px 10px', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', textShadow: '0 2px 4px rgba(0,0,0,0.95), 0 0 18px rgba(0,0,0,0.85), -1px -1px 0 rgba(0,0,0,0.75), 1px 1px 0 rgba(0,0,0,0.75)' }
-                                : ccBackdrop === 'glass'
-                                    ? { padding: '10px 20px', borderRadius: '10px', background: 'rgba(8, 8, 8, 0.52)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }
-                                    : { padding: '10px 20px', borderRadius: '10px', background: 'rgba(8, 8, 8, 0.86)', border: '1px solid rgba(255,255,255,0.14)', color: '#fff', fontFamily: ccFontFamily, fontSize: `${ccFontSize}px`, fontWeight: 700, lineHeight: 1.25, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.65)' };
-                        const ccBottom = is45
-                            ? (ccPos === 'high' ? '255px' : ccPos === 'middle' ? '185px' : '115px')
-                            : (is916
-                                ? (ccPos === 'high' ? '435px' : ccPos === 'middle' ? '340px' : '245px')
-                                : (ccPos === 'high' ? '280px' : ccPos === 'middle' ? '215px' : '150px'));
-                        return (
-                            <div style={{ position: 'absolute', bottom: ccBottom, insetInlineStart: '60px', insetInlineEnd: '140px', display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 15 }}>
-                                <span style={ccSpanStyle}>
-                                    {activeSubtitle.text}
-                                </span>
-                            </div>
-                        );
-                    })()}
-
-                    {/* Footer: Footage & Source (60px Left, 140px Right) */}
-                    {(creditText || sourceText) && (
-                        <div className="tpe-news-footer tpe-flex-row" style={{ position: 'absolute', bottom: footerBottom, insetInlineStart: '60px', insetInlineEnd: '140px', width: 'auto', zIndex: 10 }}>
-                            <div className="tpe-metadata-cluster tpe-flex-row">
-                                {sourceText && <span className="tpe-meta-item"><span className="tpe-meta-label">{draft.sourcePrefix || "SOURCE:"}</span> <HighlightedText text={sourceText} /></span>}
-                            </div>
-                            <div className="tpe-metadata-cluster tpe-flex-row" style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                {creditText && <span className="tpe-meta-item"><span className="tpe-meta-label">{draft.creditPrefix || "FOOTAGE:"}</span> <HighlightedText text={creditText} /></span>}
-                            </div>
-                        </div>
-                    )}
+                )}
             </div>
         </div>
     );

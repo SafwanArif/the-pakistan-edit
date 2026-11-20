@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TPEVectorLogo } from "../components/templates/instagram/TPEVectorLogo";
+import LandingLogo from "./LandingLogo";
 
 /**
  * Institutional landing page rendered as a Server Component using design tokens.
@@ -9,7 +9,7 @@ export default function Home() {
     <div className="tpe-landing-shell">
       <main className="tpe-landing-main">
         <div className="tpe-landing-logo-row">
-          <TPEVectorLogo scale={1.8} />
+          <LandingLogo />
         </div>
 
         <div className="tpe-landing-copy">

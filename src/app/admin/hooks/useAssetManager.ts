@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Draft } from '../../../types/news';
 import { DraftResolver } from '../utils/dataAccessors';
 
@@ -11,6 +11,13 @@ const ASSET_CACHE: Record<string, { image: string, w: number, h: number }> = {};
 export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
     const [resolving, setResolving] = useState(false);
     const activeRequests = useRef<Set<string>>(new Set());
+    const draftRef = useRef(draft);
+    const onChangeRef = useRef(onChange);
+
+    useEffect(() => {
+        draftRef.current = draft;
+        onChangeRef.current = onChange;
+    }, [draft, onChange]);
 
     /** Proxies a remote image URL and records its natural dimensions. */
     const resolve = useCallback((url: string, slideNum: number) => {
@@ -19,9 +26,9 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         if (ASSET_CACHE[url]) {
             const cached = ASSET_CACHE[url];
             const data = { image: cached.image, imageWidth: cached.w, imageHeight: cached.h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-            let d = draft;
+            let d = draftRef.current;
             Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChange(d);
+            onChangeRef.current(d);
             return;
         }
 
@@ -35,9 +42,9 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
             const data = { image: proxied, imageWidth: img.naturalWidth || 1080, imageHeight: img.naturalHeight || 1350, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
             ASSET_CACHE[url] = { image: proxied, w: data.imageWidth, h: data.imageHeight };
 
-            let d = draft;
+            let d = draftRef.current;
             Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChange(d);
+            onChangeRef.current(d);
             
             setResolving(false); 
             activeRequests.current.delete(url);
@@ -49,20 +56,20 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         };
         
         img.src = proxied;
-    }, [draft, onChange]);
+    }, []);
 
     /** Reads a local image upload losslessly via Object URL and records natural dimensions. */
     const ingestFile = useCallback((file: File, slideNum: number) => {
-        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draft);
+        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
         if (typeof prevUrl === 'string' && prevUrl.startsWith('blob:')) {
             URL.revokeObjectURL(prevUrl);
         }
         const objectUrl = URL.createObjectURL(file);
         const applyImage = (w: number, h: number) => {
             const data = { image: objectUrl, imageWidth: w, imageHeight: h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-            let d = draft;
+            let d = draftRef.current;
             Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChange(d);
+            onChangeRef.current(d);
         };
 
         if (typeof createImageBitmap === 'function') {
@@ -82,7 +89,7 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         const img = new Image();
         img.onload = () => applyImage(img.naturalWidth || img.width, img.naturalHeight || img.height);
         img.src = objectUrl;
-    }, [draft, onChange]);
+    }, []);
 
     /** Resets image and focal framing fields on a slide to defaults. */
     const clearAsset = useCallback((slideNum: number) => {
@@ -95,12 +102,12 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
             imagePosY: 50,
             snapMode: 'height',
         };
-        let d = draft;
+        let d = draftRef.current;
         Object.entries(defaults).forEach(([field, val]) => {
             d = DraftResolver.set(`slide-${slideNum}-${field}`, val, d);
         });
-        onChange(d);
-    }, [draft, onChange]);
+        onChangeRef.current(d);
+    }, []);
 
     return { resolving, resolve, ingestFile, clearAsset };
 };

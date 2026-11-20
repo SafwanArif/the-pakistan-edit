@@ -1,10 +1,11 @@
 import JSZip from "jszip";
-import { toBlob } from "html-to-image";
+import { getFontEmbedCSS } from "html-to-image";
 import { VideoDraft, getSceneBoundaries, isSharedReHookScene, downloadBlob } from "../../../types/news";
 import { OMNI_CONFIG, Platform, VIDEO_PLATFORM_CONFIGS, aspectRatioToPlatform } from "../../../config/omnichannel";
 import React from "react";
 import { VideoCard } from "../../../components/templates/instagram/VideoCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
+import { renderNodeToBlobWithTimeout } from "./exportEngine";
 
 /** Exports transparent PNG overlays for 9:16, 4:5, and 1:1 canvases. */
 export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
@@ -24,6 +25,7 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
         temp.style.cssText = "position:fixed;top:0;left:0;z-index:-9999;background:transparent;";
         container.appendChild(temp);
         const root = createRoot(temp);
+        let cachedFontEmbedCSS: string | undefined;
 
         try {
             for (let i = 0; i < platforms.length; i++) {
@@ -42,8 +44,25 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
 
                 await document.fonts.ready;
                 await new Promise((r) => setTimeout(r, 200));
+                if (cachedFontEmbedCSS === undefined) {
+                    cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
+                }
 
-                const blob = await toBlob(temp, { pixelRatio: 2, quality: 1, backgroundColor: 'transparent', skipAutoScale: true });
+                const blob = await renderNodeToBlobWithTimeout(
+                    temp,
+                    {
+                        width: dimensions.width,
+                        height: dimensions.height,
+                        pixelRatio: 1,
+                        quality: 1,
+                        cacheBust: false,
+                        fontEmbedCSS: cachedFontEmbedCSS || undefined,
+                        backgroundColor: 'transparent',
+                        skipAutoScale: true,
+                    },
+                    8000,
+                    `Overlay render timed out for ${p}.`
+                );
                 if (blob) zip.file(`overlay_${p}_${dimensions.width}x${dimensions.height}_${sanitize(anchorKW)}.png`, blob);
             }
         } finally {
@@ -81,11 +100,13 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
         formData.append("draft", JSON.stringify(draft));
 
         const { createRoot } = await import("react-dom/client");
+        const container = document.getElementById('export-capture-surface') ?? document.body;
         const temp = document.createElement("div");
         temp.style.cssText = `position:fixed;top:0;left:0;z-index:-9999;background:transparent;width:${width}px;height:${height}px;pointer-events:none;`;
-        document.body.appendChild(temp);
+        container.appendChild(temp);
         const root = createRoot(temp);
 
+        let cachedFontEmbedCSS: string | undefined;
         const captureOverlay = async (overrideDraft: VideoDraft, currentTime: number): Promise<Blob> => {
             root.render(
                 <div style={{ background: 'transparent' }}>
@@ -95,7 +116,23 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
             );
             await document.fonts.ready;
             await new Promise((r) => setTimeout(r, 150));
-            const blob = await toBlob(temp, { pixelRatio: 2, backgroundColor: 'transparent', skipAutoScale: true });
+            if (cachedFontEmbedCSS === undefined) {
+                cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
+            }
+            const blob = await renderNodeToBlobWithTimeout(
+                temp,
+                {
+                    width,
+                    height,
+                    pixelRatio: 1,
+                    cacheBust: false,
+                    fontEmbedCSS: cachedFontEmbedCSS || undefined,
+                    backgroundColor: 'transparent',
+                    skipAutoScale: true,
+                },
+                8000,
+                "Scene overlay render timed out after 8s."
+            );
             if (!blob) throw new Error("Scene overlay render failed — DOM fonts not loaded.");
             return blob;
         };

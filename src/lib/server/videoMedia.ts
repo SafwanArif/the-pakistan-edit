@@ -4,10 +4,69 @@ import path from "path";
 
 export const CACHE_DIR = path.join(process.cwd(), ".next", "cache", "tpe-videos");
 export const SAFE_MEDIA_ID_RE = /^media-[a-zA-Z0-9_-]+\.mp4$/;
+const STALE_EXPORT_TEMP_RE = /^(exp|subs|filter|export|audio|raw)-/;
+let lastSweepAt = 0;
+
+/** Non-blocking TTL sweeper that removes orphaned export temp files older than `ttlMs` (never touches `media-*.mp4`). */
+export const sweepStaleExportFiles = async (ttlMs = 2 * 60 * 60 * 1000): Promise<void> => {
+    const now = Date.now();
+    if (now - lastSweepAt < 15 * 60 * 1000) return;
+    lastSweepAt = now;
+    try {
+        const entries = await fs.promises.readdir(CACHE_DIR);
+        await Promise.all(entries.map(async (name) => {
+            if (!STALE_EXPORT_TEMP_RE.test(name)) return;
+            const full = path.join(CACHE_DIR, name);
+            try {
+                const st = await fs.promises.stat(full);
+                if (now - st.mtimeMs > ttlMs) await fs.promises.unlink(full);
+            } catch {}
+        }));
+    } catch {}
+};
+
+let exportQueueTail: Promise<void> = Promise.resolve();
+
+/** Serializes heavy FFmpeg master renders (concurrency = 1) while honouring AbortSignal while queued. */
+export const withExportSlot = async <T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    if (signal?.aborted) throw new Error("Export aborted before starting");
+    const prev = exportQueueTail;
+    let release!: () => void;
+    exportQueueTail = new Promise<void>((resolve) => { release = resolve; });
+    try {
+        await new Promise<void>((resolve, reject) => {
+            if (signal?.aborted) { reject(new Error("Export aborted while queued")); return; }
+            const onAbort = () => reject(new Error("Export aborted while queued"));
+            signal?.addEventListener("abort", onAbort, { once: true });
+            void prev.then(() => {
+                signal?.removeEventListener("abort", onAbort);
+                resolve();
+            });
+        });
+        return await task();
+    } finally {
+        release();
+    }
+};
+
+/** Ensures at least `minFreeBytes` (default 500MB) are available in `CACHE_DIR` before spawning FFmpeg. */
+export const assertDiskHeadroom = async (minFreeBytes = 500 * 1024 * 1024): Promise<void> => {
+    try {
+        const stats = await fs.promises.statfs(CACHE_DIR);
+        const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+        if (Number.isFinite(freeBytes) && freeBytes < minFreeBytes) {
+            const freeMb = Math.round(freeBytes / (1024 * 1024));
+            throw new Error(`Insufficient scratch disk space (${freeMb} MB free; need at least ${Math.round(minFreeBytes / (1024 * 1024))} MB).`);
+        }
+    } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Insufficient scratch disk space")) throw err;
+    }
+};
 
 interface SpawnExecOptions {
     signal?: AbortSignal;
     timeoutMs?: number;
+    onStdoutLine?: (line: string) => void;
 }
 
 /** Spawns a native media CLI (`ffmpeg`, `ffprobe`, `whisper-cli`) with timeout and AbortSignal cleanup. */
@@ -37,6 +96,10 @@ export const spawnExec = (
             settled = true;
             cleanup();
             try { child.kill("SIGTERM"); } catch {}
+            const forceKill = setTimeout(() => {
+                try { if (child.exitCode === null && !child.killed) child.kill("SIGKILL"); } catch {}
+            }, 3000);
+            forceKill.unref();
             reject(new Error(reason));
         };
 
@@ -47,7 +110,17 @@ export const spawnExec = (
             ? setTimeout(() => killChild(`${bin} timed out after ${Math.round(options.timeoutMs! / 1000)}s`), options.timeoutMs)
             : null;
 
-        child.stdout.on("data", (c: Buffer) => { stdout += c.toString("utf8"); });
+        let lineBuf = "";
+        child.stdout.on("data", (c: Buffer) => {
+            const text = c.toString("utf8");
+            stdout += text;
+            if (options.onStdoutLine) {
+                lineBuf += text;
+                const lines = lineBuf.split(/\r?\n/);
+                lineBuf = lines.pop() ?? "";
+                for (const line of lines) options.onStdoutLine(line);
+            }
+        });
         child.stderr.on("data", (c: Buffer) => { stderr = (stderr + c.toString("utf8")).slice(-4096); });
         child.on("error", (err) => {
             if (settled) return;
@@ -104,13 +177,15 @@ export const createFileWebStream = (
     return new ReadableStream<Uint8Array>({
         start(controller) {
             nodeStream = options.start !== undefined && options.end !== undefined
-                ? fs.createReadStream(filePath, { start: options.start, end: options.end })
-                : fs.createReadStream(filePath);
+                ? fs.createReadStream(filePath, { start: options.start, end: options.end, highWaterMark: 256 * 1024 })
+                : fs.createReadStream(filePath, { highWaterMark: 256 * 1024 });
 
             nodeStream.on("data", (chunk: Buffer | string) => {
                 if (closed) return;
                 try {
-                    const bytes = typeof chunk === "string" ? Buffer.from(chunk) : new Uint8Array(chunk);
+                    const bytes = typeof chunk === "string"
+                        ? Buffer.from(chunk)
+                        : new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
                     controller.enqueue(bytes);
                     if ((controller.desiredSize ?? 0) <= 0) nodeStream?.pause();
                 } catch {
@@ -142,6 +217,21 @@ export const createFileWebStream = (
             nodeStream?.destroy();
             nodeStream = null;
             cleanupFile();
+        },
+    });
+};
+
+/** Enforces a hard streaming byte ceiling even when an upstream response omits Content-Length. */
+export const createByteLimitTransform = (maxBytes: number): TransformStream<Uint8Array, Uint8Array> => {
+    let seen = 0;
+    return new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+            seen += chunk.byteLength;
+            if (seen > maxBytes) {
+                controller.error(new Error(`Asset exceeds ${Math.round(maxBytes / (1024 * 1024))}MB limit`));
+                return;
+            }
+            controller.enqueue(chunk);
         },
     });
 };

@@ -42,6 +42,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#111c19",
+  colorScheme: "dark",
 };
 
 export const metadata: Metadata = {
@@ -70,6 +71,9 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
+  other: {
+    "darkreader-lock": "",
+  },
 };
 
 export default function RootLayout({
@@ -79,7 +83,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${interTight.variable} ${playfairDisplay.variable} ${geistSans.variable} ${plusJakarta.variable} ${onest.variable} ${dmSans.variable}`} suppressHydrationWarning>
-      <body className={`${interTight.className} antialiased`} suppressHydrationWarning>
+      <body className={interTight.className} suppressHydrationWarning>
         {children}
       </body>
     </html>

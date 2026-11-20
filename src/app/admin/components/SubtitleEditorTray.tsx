@@ -1,18 +1,36 @@
 "use client";
 
 import React, { useState } from "react";
-import { SubtitleSegment, SubtitleFontId, SubtitleBackdropId, SUBTITLE_FONT_OPTIONS, SUBTITLE_BACKDROP_OPTIONS, VideoDraft, formatTimecode, downloadSrtFile, timelineTimeToMediaTime, wrapMediaTime, getDefaultSubtitleFontSize, getMediaSubtitleTimelineTime } from "../../../types/news";
+import { SubtitleSegment, SubtitleFontId, SubtitleBackdropId, SUBTITLE_FONT_OPTIONS, SUBTITLE_BACKDROP_OPTIONS, VideoDraft, formatTimecode, downloadSrtFile, timelineTimeToMediaTime, wrapMediaTime, getDefaultSubtitleFontSize, getMediaSubtitleTimelineTime, getTimelineStructure } from "../../../types/news";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 
+/** O(N) interval-overlap resolver returning subtitles whose media window intersects `[startSec, endSec)`. */
 export const getSceneSubtitles = (draft: VideoDraft, startSec: number, endSec: number): SubtitleSegment[] => {
     const subs = draft.subtitles || [];
     if (!subs.length || endSec <= startSec) return [];
+    const dur = endSec - startSec;
     const clipDur = draft.videoDuration || 0;
-    const sampleTimes: number[] = [];
-    for (let t = startSec; t < endSec; t += 0.25) {
-        sampleTimes.push(clipDur > 0 ? wrapMediaTime(draft, t, clipDur) : timelineTimeToMediaTime(draft, t));
+    const intervals: [number, number][] = [];
+
+    if (clipDur > 0) {
+        const mStart = wrapMediaTime(draft, startSec, clipDur);
+        const { preStoryDur, storyOffset } = getTimelineStructure(draft.scenes || []);
+        const loopStart = startSec >= preStoryDur && storyOffset > 0 && storyOffset < clipDur - 0.5 ? storyOffset : 0;
+        const loopSpan = Math.max(0.5, clipDur - loopStart);
+        if (dur >= loopSpan) {
+            intervals.push([loopStart, clipDur]);
+        } else if (mStart + dur <= clipDur) {
+            intervals.push([mStart, mStart + dur]);
+        } else {
+            intervals.push([mStart, clipDur]);
+            intervals.push([loopStart, loopStart + (mStart + dur - clipDur)]);
+        }
+    } else {
+        const mStart = timelineTimeToMediaTime(draft, startSec);
+        intervals.push([mStart, mStart + dur]);
     }
-    return subs.filter((seg) => sampleTimes.some((mt) => mt >= seg.start && mt <= seg.end));
+
+    return subs.filter((seg) => intervals.some(([a, b]) => seg.end > a && seg.start < b));
 };
 
 interface SubtitleRowListProps {
@@ -22,7 +40,7 @@ interface SubtitleRowListProps {
     onSeekMedia: (mediaStart: number) => void;
 }
 
-export const SubtitleRowList: React.FC<SubtitleRowListProps> = ({
+export const SubtitleRowList: React.FC<SubtitleRowListProps> = React.memo(({
     segments, draft, onChange, onSeekMedia
 }) => {
     const allSubs = draft.subtitles || [];
@@ -34,7 +52,7 @@ export const SubtitleRowList: React.FC<SubtitleRowListProps> = ({
     return (
         <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
             {segments.map((seg) => (
-                <div key={seg.id} className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)' }}>
+                <div key={seg.id} className="tpe-flex-row tpe-subtitle-row" style={{ alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)' }}>
                     <button
                         type="button"
                         onClick={() => onSeekMedia(seg.start)}
@@ -65,7 +83,8 @@ export const SubtitleRowList: React.FC<SubtitleRowListProps> = ({
             ))}
         </div>
     );
-};
+});
+SubtitleRowList.displayName = "SubtitleRowList";
 
 interface SubtitleEditorTrayProps {
     draft: VideoDraft;
@@ -121,11 +140,8 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
 
     return (
         <div
-            style={{
-                padding: '6px 10px', borderRadius: '7px',
-                background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)',
-                display: 'flex', flexDirection: 'column', gap: '6px',
-            }}
+            className="tpe-flex-col tpe-deck-surface"
+            style={{ gap: '6px' }}
         >
             {/* Compact Studio Capsule Strip matching Keyframes toolbar */}
             <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -175,7 +191,7 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             title="Caption font family"
                             value={draft.subtitleFont || 'plus-jakarta'}
                             onChange={(e) => onChange({ ...draft, subtitleFont: e.target.value as SubtitleFontId })}
-                            style={{ height: '20px', fontSize: '8.5px', fontWeight: 700, color: 'var(--ui-text)', background: 'rgba(0,0,0,0.45)', border: '1px solid var(--ui-border)', borderRadius: '5px', padding: '0 5px', cursor: 'pointer' }}
+                            className="tpe-select"
                         >
                             {(Object.entries(SUBTITLE_FONT_OPTIONS) as [SubtitleFontId, { label: string }][]).map(([id, opt]) => (
                                 <option key={id} value={id} style={{ background: '#111', color: '#fff' }}>{opt.label}</option>
@@ -187,7 +203,7 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             title="Caption backdrop style"
                             value={draft.subtitleBackdrop || 'pill'}
                             onChange={(e) => onChange({ ...draft, subtitleBackdrop: e.target.value as SubtitleBackdropId })}
-                            style={{ height: '20px', fontSize: '8.5px', fontWeight: 700, color: 'var(--ui-text)', background: 'rgba(0,0,0,0.45)', border: '1px solid var(--ui-border)', borderRadius: '5px', padding: '0 5px', cursor: 'pointer' }}
+                            className="tpe-select"
                         >
                             {(Object.entries(SUBTITLE_BACKDROP_OPTIONS) as [SubtitleBackdropId, { label: string }][]).map(([id, opt]) => (
                                 <option key={id} value={id} style={{ background: '#111', color: '#fff' }}>{opt.label}</option>

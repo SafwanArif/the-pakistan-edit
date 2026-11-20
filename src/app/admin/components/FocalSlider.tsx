@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 import { clamp } from "../../../types/news";
 
+const sliderColStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', inlineSize: '100%', alignItems: 'center', gap: '4px' };
+const sliderLabelStyle: React.CSSProperties = { fontSize: '7px', fontWeight: 800, opacity: 0.5, letterSpacing: '0.05em' };
+const sliderTrackWrapStyle: React.CSSProperties = { position: 'relative', inlineSize: '100%', blockSize: '18px', display: 'flex', alignItems: 'center' };
+const sliderValueInputStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: 'var(--ui-accent)', fontSize: '10px', fontWeight: 700, textAlign: 'center', inlineSize: '100%', padding: '0', margin: '0' };
+
 interface FocalSliderProps {
     id: string;
     label: string;
@@ -30,13 +35,14 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
     const displayValue = textInput !== null ? textInput : value.toString() + (id === 'zoom' ? '%' : '');
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', inlineSize: '100%', alignItems: 'center', gap: '4px' }}>
-            <span className="focal-slider-label" style={{ fontSize: '7px', fontWeight: 800, opacity: 0.5, letterSpacing: '0.05em' }}>{label}</span>
-            <div style={{ position: 'relative', inlineSize: '100%', blockSize: '18px', display: 'flex', alignItems: 'center' }}>
+        <div style={sliderColStyle}>
+            <span className="focal-slider-label" style={sliderLabelStyle}>{label}</span>
+            <div style={sliderTrackWrapStyle}>
                 <input 
                     className="focal-slider" 
                     type="range" 
                     aria-label={label}
+                    aria-valuetext={displayValue}
                     min={min} 
                     max={max} 
                     value={value} 
@@ -53,7 +59,7 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                 inputMode="numeric"
                 aria-label={`${label} numeric value`}
                 value={displayValue}
-                style={{ background: 'transparent', border: 'none', color: 'var(--ui-accent)', fontSize: '10px', fontWeight: 700, textAlign: 'center', inlineSize: '100%', padding: '0', margin: '0' }}
+                style={sliderValueInputStyle}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const val = e.target.value.replace(/[^0-9]/g, '');
                     setTextInput(val);

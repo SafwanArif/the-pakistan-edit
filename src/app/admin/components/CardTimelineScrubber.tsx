@@ -1,8 +1,25 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
+
+const cardScrubberShellStyle: React.CSSProperties = {
+    position: "relative",
+    padding: "4px 8px",
+    borderRadius: "6px",
+    background: "rgba(0,0,0,0.28)",
+    border: "1px solid var(--ui-border)",
+};
+
+const cardTrackRailStyle: React.CSSProperties = {
+    position: "relative",
+    width: "100%",
+    height: "5px",
+    borderRadius: "99px",
+    background: "rgba(255,255,255,0.09)",
+    overflow: "hidden",
+};
 
 interface CardTimelineScrubberProps {
     sceneLabel: string;
@@ -11,6 +28,7 @@ interface CardTimelineScrubberProps {
     duration: number;
     localTime: number;
     isSceneActive: boolean;
+    isPlaying?: boolean;
     keyframes?: VideoKeyframe[];
     fadeInDur?: number;
     fadeOutDur?: number;
@@ -25,6 +43,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     duration,
     localTime,
     isSceneActive,
+    isPlaying = false,
     keyframes = [],
     fadeInDur = 0,
     fadeOutDur = 0,
@@ -48,22 +67,21 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
         const maxT = Math.max(start, end - 0.05);
         const raw = start + ratio * duration;
-        const snapped = Math.round(clamp(raw, start, maxT) * 20) / 20;
+        const snapped = Math.round(clamp(raw, start, maxT) * 100) / 100;
         onSeek(snapped);
     };
+
+    const handleJumpKeyframe = useCallback(
+        (t: number) => onSeek(Math.min(Math.max(start, t), Math.max(start, end - 0.05))),
+        [onSeek, start, end]
+    );
 
     return (
         <div
             onClick={(e) => e.stopPropagation()}
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
-            style={{
-                position: "relative",
-                padding: "4px 8px",
-                borderRadius: "6px",
-                background: "rgba(0,0,0,0.28)",
-                border: "1px solid var(--ui-border)",
-            }}
+            style={cardScrubberShellStyle}
         >
             {showTimecode && (
                 <div
@@ -93,9 +111,12 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 className="tpe-scrubber"
                 role="slider"
                 aria-label={`${sceneLabel} timeline scrubber`}
+                aria-orientation="horizontal"
+                draggable={false}
                 aria-valuemin={start}
                 aria-valuemax={end}
                 aria-valuenow={Math.round(currentTime * 10) / 10}
+                aria-valuetext={`${formatTimecode(localTime)} of ${duration.toFixed(1)}s`}
                 tabIndex={0}
                 onKeyDown={(e) => {
                     const step = e.shiftKey ? 2 : 0.5;
@@ -135,6 +156,10 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     setIsDragging(false);
                     dragRectRef.current = null;
                 }}
+                onLostPointerCapture={() => {
+                    setIsDragging(false);
+                    dragRectRef.current = null;
+                }}
                 title={`Scrub inside ${sceneLabel} (${formatTimecode(start)} – ${formatTimecode(end)})`}
                 style={{
                     position: "relative",
@@ -147,16 +172,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 }}
             >
                 {/* Full-width track rail */}
-                <div
-                    style={{
-                        position: "relative",
-                        width: "100%",
-                        height: "5px",
-                        borderRadius: "99px",
-                        background: "rgba(255,255,255,0.09)",
-                        overflow: "hidden",
-                    }}
-                >
+                <div style={cardTrackRailStyle}>
                     {fadeInPct > 0 && (
                         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${fadeInPct}%`, background: "linear-gradient(to right, rgba(168,85,247,0.45), transparent)" }} />
                     )}
@@ -165,8 +181,11 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     )}
                     <div
                         style={{
-                            width: `${pct}%`,
+                            width: "100%",
                             height: "100%",
+                            transform: `scaleX(${pct / 100})`,
+                            transformOrigin: "left center",
+                            willChange: "transform",
                             background: isSceneActive ? "var(--ui-accent)" : "oklch(from var(--ui-accent) l c h / 0.45)",
                             borderRadius: "99px",
                         }}
@@ -179,7 +198,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     rangeStart={start}
                     rangeDuration={duration}
                     currentTime={currentTime}
-                    onJump={(t) => onSeek(Math.min(Math.max(start, t), Math.max(start, end - 0.05)))}
+                    isPlaying={isPlaying}
+                    onJump={handleJumpKeyframe}
                 />
 
                 <TimelinePlayheadNeedle

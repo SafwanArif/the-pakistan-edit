@@ -3,6 +3,10 @@ import { Draft } from "../../../types/news";
 import { DraftResolver } from "../utils/dataAccessors";
 import { EmojiToolbar } from "./EditorialTools";
 
+const wrapperStyle: React.CSSProperties = { flex: 1, position: 'relative' };
+const textareaStyle: React.CSSProperties = { paddingInlineEnd: '40px' };
+const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
+
 interface EditorialFieldProps {
     fieldId: string;
     draft: Draft;
@@ -33,16 +37,17 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
         "tpe-input-field",
         !isCategory ? "tpe-textarea" : "",
         isMain ? "tpe-input-main" : "",
-        isCategory ? "tpe-category-input" : "",
         "tpe-uppercase"
     ].filter(Boolean).join(" ");
 
     return (
-        <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, position: 'relative' }}>
+        <div className="tpe-flex-row tpe-textarea-wrapper" style={wrapperStyle}>
             {isCategory ? (
                 <input 
                     id={inputId}
                     aria-label={placeholder || fieldId}
+                    dir="auto"
+                    enterKeyHint="done"
                     spellCheck={false}
                     autoComplete="off"
                     className={inputClasses}
@@ -57,15 +62,18 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                     <textarea 
                         id={inputId}
                         aria-label={placeholder || fieldId}
+                        dir="auto"
+                        autoComplete="off"
+                        autoCorrect="off"
                         className={inputClasses}
                         placeholder={placeholder}
                         value={val}
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange(e.target.value)}
                         onFocus={onFocus}
                         onBlur={onBlur}
-                        style={{ paddingInlineEnd: '40px' }}
+                        style={textareaStyle}
                     />
-                    <div className="tpe-field-tools" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 }}>
+                    <div className="tpe-field-tools" style={fieldToolsStyle}>
                         <EmojiToolbar fieldId={fieldId} value={val} onUpdate={handleChange} popDirection="down" />
                     </div>
                 </>

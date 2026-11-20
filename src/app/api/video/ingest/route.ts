@@ -12,33 +12,37 @@ const MAX_CACHED_VIDEOS = 5;
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const STALE_TEMP_AGE_MS = 60 * 60 * 1000;
 
-/** Checks if the container already has clean AAC audio and no negative edit-list offset. */
-const canCopyAudioLosslessly = async (inputPath: string, signal?: AbortSignal): Promise<boolean> => {
+/** Probes duration, AAC audio compatibility, and edit-list offset in one `ffprobe` pass. */
+const probeIngestAudio = async (inputPath: string, signal?: AbortSignal): Promise<{ copyAudio: boolean; durationSec: number }> => {
     try {
         const { stdout } = await spawnExec("ffprobe", [
             "-v", "error",
-            "-show_entries", "format=start_time:stream=codec_type,codec_name,initial_padding",
+            "-show_entries", "format=duration,start_time:stream=codec_type,codec_name,initial_padding",
             "-of", "json",
             inputPath,
         ], { signal, timeoutMs: 30_000 });
         const parsed = JSON.parse(stdout) as {
-            format?: { start_time?: string };
+            format?: { duration?: string; start_time?: string };
             streams?: { codec_type?: string; codec_name?: string; initial_padding?: number }[];
         };
+        const durationSec = Math.max(0, Number(parsed.format?.duration ?? 0) || 0);
         const startTime = Number(parsed.format?.start_time ?? 0);
-        if (Number.isFinite(startTime) && startTime < -0.05) return false;
+        if (Number.isFinite(startTime) && startTime < -0.05) return { copyAudio: false, durationSec };
 
         const audioStream = parsed.streams?.find((s) => s.codec_type === "audio");
-        if (!audioStream) return true;
-        return audioStream.codec_name === "aac" && (audioStream.initial_padding ?? 0) <= 2048;
+        if (!audioStream) return { copyAudio: true, durationSec };
+        return {
+            copyAudio: audioStream.codec_name === "aac" && (audioStream.initial_padding ?? 0) <= 2048,
+            durationSec,
+        };
     } catch {
-        return false;
+        return { copyAudio: false, durationSec: 0 };
     }
 };
 
 /**
  * Remuxes the video stream bit-for-bit untouched (`-c:v copy`).
- * Copies clean AAC audio directly, or strips negative edit lists and converts Opus/PCM audio to AAC.
+ * Streams real-time FFmpeg `-progress pipe:1` percentage updates while copying or re-encoding audio.
  */
 const runLosslessVideoIngest = async (
     inputPath: string,
@@ -48,14 +52,17 @@ const runLosslessVideoIngest = async (
     signal?: AbortSignal
 ): Promise<void> => {
     onStage?.("PROBING STREAMS & CODECS (FFPROBE)...");
-    const copyAudio = await canCopyAudioLosslessly(inputPath, signal);
-    onStage?.(copyAudio
-        ? "AAC AUDIO DETECTED — LOSSLESS STREAM COPY (+FASTSTART)..."
-        : "RE-ENCODING AUDIO TO 48KHZ AAC & MOVING MOOV ATOM...");
+    const { copyAudio, durationSec } = await probeIngestAudio(inputPath, signal);
+    const baseLabel = copyAudio
+        ? "AAC AUDIO DETECTED — LOSSLESS STREAM COPY (+FASTSTART)"
+        : "RE-ENCODING AUDIO TO 48KHZ AAC & MOVING MOOV ATOM";
+    onStage?.(`${baseLabel}... 0%`);
     const args = [
         "-y",
         "-hide_banner",
         "-loglevel", "error",
+        "-nostats",
+        "-progress", "pipe:1",
         ...(stripEditList && !copyAudio ? ["-ignore_editlist", "1"] : []),
         "-i", inputPath,
         "-c:v", "copy",
@@ -63,7 +70,31 @@ const runLosslessVideoIngest = async (
         "-movflags", "+faststart",
         outputPath,
     ];
-    await spawnExec("ffmpeg", args, { signal, timeoutMs: 180_000 });
+    let lastPct = -1;
+    let latestSpeed = "";
+    await spawnExec("ffmpeg", args, {
+        signal,
+        timeoutMs: 180_000,
+        onStdoutLine: onStage ? (line) => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("speed=")) {
+                const sp = trimmed.slice(6).trim();
+                if (sp && sp !== "N/A") latestSpeed = sp;
+            } else if (trimmed.startsWith("out_time_us=") && durationSec > 0) {
+                const us = Number(trimmed.slice(12));
+                if (Number.isFinite(us) && us >= 0) {
+                    const pct = Math.min(99, Math.max(0, Math.round((us / 1_000_000 / durationSec) * 100)));
+                    if (pct !== lastPct) {
+                        lastPct = pct;
+                        const spSuffix = latestSpeed ? ` (${latestSpeed})` : "";
+                        onStage(`${baseLabel}... ${pct}%${spSuffix}`);
+                    }
+                }
+            } else if (trimmed === "progress=end") {
+                onStage("FINALIZING MOOV ATOM (+FASTSTART)... 99%");
+            }
+        } : undefined,
+    });
 };
 
 /** Keeps `.next/cache/tpe-videos` bounded to the newest clips and removes legacy/temp files. */
@@ -220,7 +251,7 @@ export async function HEAD(request: Request) {
             "Accept-Ranges": "bytes",
             "Content-Length": String(resolved.totalSize),
             "Content-Type": "video/mp4",
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, max-age=31536000, immutable",
         },
     });
 }
@@ -245,7 +276,7 @@ export async function GET(request: Request) {
                 "Accept-Ranges": "bytes",
                 "Content-Length": String(end - start + 1),
                 "Content-Type": "video/mp4",
-                "Cache-Control": "public, max-age=31536000, immutable",
+                "Cache-Control": "private, max-age=31536000, immutable",
             },
         });
     }
@@ -256,7 +287,7 @@ export async function GET(request: Request) {
             "Accept-Ranges": "bytes",
             "Content-Length": String(totalSize),
             "Content-Type": "video/mp4",
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, max-age=31536000, immutable",
         },
     });
 }

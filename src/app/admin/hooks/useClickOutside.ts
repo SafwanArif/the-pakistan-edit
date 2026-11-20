@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 
 /**
  * 2027 Institutional Hook: useClickOutside
- * Standardized event listener for closing popovers and trays.
+ * Standardized event listener for closing popovers and trays — attaches zero global listeners when disabled.
  */
-export const useClickOutside = (handler: () => void, ignoreSelector?: string) => {
+export const useClickOutside = (handler: () => void, ignoreSelector?: string, enabled = true) => {
     const ref = useRef<HTMLDivElement>(null);
     const handlerRef = useRef(handler);
     useEffect(() => {
@@ -12,6 +12,8 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string) =>
     });
 
     useEffect(() => {
+        if (!enabled) return;
+
         const listener = (event: MouseEvent | TouchEvent) => {
             const target = event.target as HTMLElement | null;
             if (!ref.current || ref.current.contains(target)) {
@@ -28,7 +30,7 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string) =>
         };
 
         document.addEventListener("mousedown", listener);
-        document.addEventListener("touchstart", listener);
+        document.addEventListener("touchstart", listener, { passive: true });
         document.addEventListener("keydown", onKeyDown);
 
         return () => {
@@ -36,7 +38,7 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string) =>
             document.removeEventListener("touchstart", listener);
             document.removeEventListener("keydown", onKeyDown);
         };
-    }, [ignoreSelector]);
+    }, [ignoreSelector, enabled]);
 
     return ref;
 };

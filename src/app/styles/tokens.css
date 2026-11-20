@@ -1,0 +1,111 @@
+/* Global Brand & Design Tokens */
+@property --brand-pine {
+  syntax: '<color>';
+  initial-value: oklch(20% 0.02 165);
+  inherits: true;
+}
+@property --brand-lime {
+  syntax: '<color>';
+  initial-value: oklch(85% 0.23 135);
+  inherits: true;
+}
+@property --brand-green {
+  syntax: '<color>';
+  initial-value: oklch(55% 0.12 150);
+  inherits: true;
+}
+@property --brand-gold {
+  syntax: '<color>';
+  initial-value: oklch(75% 0.12 85);
+  inherits: true;
+}
+@property --brand-mist {
+  syntax: '<color>';
+  initial-value: oklch(96% 0.01 160);
+  inherits: true;
+}
+
+:root {
+  color-scheme: only dark;
+  accent-color: var(--ui-accent);
+  interpolate-size: allow-keywords;
+
+  --ui-bg: var(--brand-pine);
+  --ui-primary: var(--brand-lime);
+  --ui-indicator: var(--brand-green);
+  --ui-accent: var(--brand-gold);
+  --ui-text: var(--brand-mist);
+  --ui-text-dim: oklch(from var(--ui-text) l c h / 0.4);
+  --ui-text-secondary: oklch(from var(--ui-text) l c h / 0.68);
+  --ui-surface-subtle: oklch(from var(--ui-text) l c h / 0.03);
+  --ui-surface-elevated: oklch(from var(--ui-text) l c h / 0.06);
+  --ui-accent-subtle: oklch(from var(--ui-accent) l c h / 0.14);
+  --ui-accent-border: oklch(from var(--ui-accent) l c h / 0.45);
+  --ui-pre-subtle: oklch(from var(--ui-pre) l c h / 0.10);
+  --ui-pre-border: oklch(from var(--ui-pre) l c h / 0.45);
+  --ui-bg-popover: oklch(from var(--ui-bg) l c h / 0.95);
+  --ui-border: oklch(from var(--ui-text) l c h / 0.1);
+  --ui-pre: #38bdf8;
+  --ui-outro: #fb7185;
+  --ui-danger: oklch(65% 0.22 25);
+  --ui-error: var(--ui-danger);
+
+  --tpe-font-inter: var(--font-inter-tight), sans-serif;
+  --tpe-font-playfair: var(--font-playfair-display), serif;
+  --tpe-font-geist: var(--font-geist-sans), sans-serif;
+
+  --space-xs: round(nearest, clamp(4px, 0.5vw, 8px), 1px);
+  --space-sm: round(nearest, clamp(8px, 1vw, 12px), 1px);
+  --space-md: round(nearest, clamp(16px, 2vw, 24px), 1px);
+  --space-lg: round(nearest, clamp(24px, 3vw, 40px), 1px);
+
+  --ui-header-height: 52px;
+  --ui-input-height: 42px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-pill: 99px;
+
+  --blur-md: 20px;
+  --shadow-md: 0 8px 32px oklch(0% 0 0 / 0.5);
+  --shadow-lg: 0 20px 60px oklch(0% 0 0 / 0.8);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%,
+    0.938 16.7%, 1.017, 1.041 21.8%, 1.028 28.1%, 0.999 38.7%, 1
+  );
+
+  --transition-color:
+    color 0.16s var(--ease-standard),
+    background-color 0.16s var(--ease-standard),
+    border-color 0.16s var(--ease-standard);
+  --transition-fast:
+    translate 0.18s var(--ease-standard),
+    scale 0.18s var(--ease-standard),
+    opacity 0.18s var(--ease-standard),
+    border-color 0.18s var(--ease-standard),
+    background-color 0.18s var(--ease-standard),
+    color 0.18s var(--ease-standard);
+  --transition-lux:
+    translate 0.32s var(--ease-out-expo),
+    scale 0.32s var(--ease-out-expo),
+    opacity 0.32s var(--ease-out-expo),
+    border-color 0.32s var(--ease-out-expo),
+    background-color 0.32s var(--ease-out-expo),
+    color 0.32s var(--ease-out-expo);
+
+  --z-toolbar: 100;
+  --z-popover: 500;
+  --z-system: 1000;
+  --z-overlay: 2000;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --ui-border: oklch(from var(--ui-text) l c h / 0.35);
+    --ui-text-dim: oklch(from var(--ui-text) l c h / 0.72);
+    --ui-text-secondary: oklch(from var(--ui-text) l c h / 0.85);
+    --ui-bg-popover: var(--ui-bg);
+  }
+}

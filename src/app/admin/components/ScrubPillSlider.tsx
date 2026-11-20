@@ -16,8 +16,17 @@ interface ScrubPillSliderProps {
     onChange: (next: number) => void;
 }
 
-/** 2026/2027 Fused Scrub-Bar: layers label, proportional fill track, and tabular readout in one compact pill. */
-export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = ({
+/** Parses typed scrub-pill input, stripping unit suffixes (`ms`, `px`, `%`, `s`) and clamping to `[min, max]`. */
+export function parseScrubPillInput(raw: string, min: number, max: number): number | null {
+    const cleaned = raw.trim().replace(/\s*(?:ms|px|%|s)\s*$/i, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed)) return null;
+    return clamp(Math.round(parsed), min, max);
+}
+
+/** 2026/2027 Fused Scrub-Bar: layers label, GPU-composited proportional fill track, and tabular readout in one compact pill. */
+export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     label,
     value,
     min,
@@ -38,9 +47,9 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = ({
     const pct = Math.max(0, Math.min(100, ((value - min) / span) * 100));
 
     const commitText = () => {
-        const parsed = Number(draftText.replace(/%.*$/, "").trim());
-        if (Number.isFinite(parsed)) {
-            onChange(clamp(Math.round(parsed), min, max));
+        const parsed = parseScrubPillInput(draftText, min, max);
+        if (parsed !== null) {
+            onChange(parsed);
         }
         setIsEditing(false);
     };
@@ -154,18 +163,40 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = ({
                 transition: "border-color 0.12s ease",
             }}
         >
-            {/* Proportional fill track behind label & readout */}
+            {/* Proportional fill track behind label & readout (GPU scaleX + GPU translate3d edge cap) */}
             <div
                 style={{
                     position: "absolute",
-                    insetBlock: 0,
-                    left: 0,
-                    width: `${pct}%`,
+                    inset: 0,
+                    transform: `scaleX(${pct / 100})`,
+                    transformOrigin: "left center",
+                    willChange: "transform",
                     background: `color-mix(in oklch, ${accentColor} 24%, transparent)`,
-                    borderRight: pct > 0 && pct < 100 ? `2px solid ${accentColor}` : "none",
                     pointerEvents: "none",
                 }}
             />
+            {pct > 0 && pct < 100 && (
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        transform: `translate3d(${pct}%, 0, 0)`,
+                        willChange: "transform",
+                        pointerEvents: "none",
+                    }}
+                >
+                    <div
+                        style={{
+                            position: "absolute",
+                            left: "-1px",
+                            top: 0,
+                            bottom: 0,
+                            width: "2px",
+                            background: accentColor,
+                        }}
+                    />
+                </div>
+            )}
             <div
                 style={{
                     position: "relative",
@@ -188,4 +219,6 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = ({
             </div>
         </div>
     );
-};
+});
+
+ScrubPillSlider.displayName = "ScrubPillSlider";

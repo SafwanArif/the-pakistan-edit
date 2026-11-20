@@ -6,7 +6,10 @@ interface ExportOverlayProps {
     onClose?: () => void;
 }
 
-export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose }) => {
+const overlayInnerStyle: React.CSSProperties = { display: 'grid', placeItems: 'center', gap: '20px', textAlign: 'center', maxWidth: '400px' };
+const closeEngineBtnStyle: React.CSSProperties = { marginTop: '20px', inlineSize: '120px' };
+
+export const ExportOverlay: React.FC<ExportOverlayProps> = React.memo(({ status, onClose }) => {
     const isError = /error/i.test(status);
     const isComplete = /complete|success/i.test(status);
 
@@ -25,7 +28,7 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose })
             placeItems: 'center',
             transition: 'var(--transition-lux)'
         }}>
-            <div style={{ display: 'grid', placeItems: 'center', gap: '20px', textAlign: 'center', maxWidth: '400px' }}>
+            <div style={overlayInnerStyle}>
                 <TPEVectorLogo scale={1.8} showWordmark={false} />
                 <div 
                     role="status"
@@ -48,7 +51,7 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose })
                         type="button"
                         onClick={onClose}
                         className="tpe-nav-btn tpe-btn-danger"
-                        style={{ marginTop: '20px', inlineSize: '120px' }}
+                        style={closeEngineBtnStyle}
                     >
                         CLOSE ENGINE
                     </button>
@@ -56,4 +59,5 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = ({ status, onClose })
             </div>
         </div>
     );
-};
+});
+ExportOverlay.displayName = "ExportOverlay";

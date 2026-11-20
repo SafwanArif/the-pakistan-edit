@@ -4,28 +4,31 @@ import { DraftResolver, VideoDraftResolver } from "../utils/dataAccessors";
 import { FormatButton } from "./EditorialTools";
 import { Draft, VideoDraft, PostMode } from "../../../types/news";
 
+const BOLD_EFFECT_STYLE: React.CSSProperties = { fontWeight: 800 };
+const ITALIC_EFFECT_STYLE: React.CSSProperties = { fontStyle: 'italic' };
+const LABEL_BOX_EFFECT_STYLE: React.CSSProperties = { background: '#000', padding: '2px 6px', borderRadius: '3px', fontWeight: 700, border: '1px solid var(--ui-border)' };
+const WHITE_BOX_EFFECT_STYLE: React.CSSProperties = { background: '#fff', padding: '2px 6px', borderRadius: '3px', fontWeight: 700 };
+
 interface SelectionPopoverProps {
     postMode: PostMode;
     carouselDraft: Draft;
     onCarouselChange: (d: Draft) => void;
     videoDraft: VideoDraft;
     onVideoChange: (d: VideoDraft) => void;
-    currentTime?: number;
+    activeSceneTime?: number;
 }
 
 /**
  * 2027 Institutional Standard: SelectionPopover
- * Detached UI element that tracks the global selection state and provides
- * contextual formatting tools without re-rendering the parent form.
- * Works seamlessly across both Image Carousel and Video Engine modes.
+ * Detached UI element isolated from 120fps playback ticks via React.memo + discrete activeSceneTime.
  */
-export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
+export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     postMode,
     carouselDraft,
     onCarouselChange,
     videoDraft,
     onVideoChange,
-    currentTime = 0
+    activeSceneTime = 0,
 }) => {
     const { selection } = useEditorialSelection();
 
@@ -34,7 +37,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
     const isVideo = postMode === 'video' || selection.fieldId.startsWith('video-');
 
     const val = isVideo
-        ? VideoDraftResolver.get(selection.fieldId, videoDraft, currentTime)
+        ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime)
         : (DraftResolver.get(selection.fieldId, carouselDraft) as string);
     
     const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
@@ -48,7 +51,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
 
     const handleUpdate = (newVal: string) => {
         if (isVideo) {
-            onVideoChange(VideoDraftResolver.set(selection.fieldId, newVal, videoDraft, currentTime));
+            onVideoChange(VideoDraftResolver.set(selection.fieldId, newVal, videoDraft, activeSceneTime));
         } else {
             onCarouselChange(DraftResolver.set(selection.fieldId, newVal, carouselDraft));
         }
@@ -68,12 +71,13 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
                 zIndex: 9999
             }}
         >
-            <FormatButton label="GOLD" syntaxOpen="==" syntaxClose="==" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-accent)" effectStyle={{ fontWeight: 800 }} />
-            <FormatButton label="BOLD" syntaxOpen="**" syntaxClose="**" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text)" effectStyle={{ fontWeight: 800 }} />
-            <FormatButton label="ITALIC" syntaxOpen="*" syntaxClose="*" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text-dim)" effectStyle={{ fontStyle: 'italic' }} />
-            <FormatButton label="GREEN" syntaxOpen="~~" syntaxClose="~~" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-indicator)" effectStyle={{ fontWeight: 800 }} />
-            <FormatButton label="LABEL BOX" syntaxOpen="^^" syntaxClose="^^" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#fff" effectStyle={{ background: '#000', padding: '2px 6px', borderRadius: '3px', fontWeight: 700, border: '1px solid var(--ui-border)' }} />
-            <FormatButton label="WHITE BOX" syntaxOpen="&&" syntaxClose="&&" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#050505" effectStyle={{ background: '#fff', padding: '2px 6px', borderRadius: '3px', fontWeight: 700 }} />
+            <FormatButton label="GOLD" syntaxOpen="==" syntaxClose="==" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-accent)" effectStyle={BOLD_EFFECT_STYLE} />
+            <FormatButton label="BOLD" syntaxOpen="**" syntaxClose="**" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text)" effectStyle={BOLD_EFFECT_STYLE} />
+            <FormatButton label="ITALIC" syntaxOpen="*" syntaxClose="*" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text-dim)" effectStyle={ITALIC_EFFECT_STYLE} />
+            <FormatButton label="GREEN" syntaxOpen="~~" syntaxClose="~~" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-indicator)" effectStyle={BOLD_EFFECT_STYLE} />
+            <FormatButton label="LABEL BOX" syntaxOpen="^^" syntaxClose="^^" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#fff" effectStyle={LABEL_BOX_EFFECT_STYLE} />
+            <FormatButton label="WHITE BOX" syntaxOpen="&&" syntaxClose="&&" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#050505" effectStyle={WHITE_BOX_EFFECT_STYLE} />
         </div>
     );
-};
+});
+SelectionPopover.displayName = "SelectionPopover";

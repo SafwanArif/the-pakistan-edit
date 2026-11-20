@@ -3,6 +3,32 @@
 import React from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 
+const pairConnectorBaseStyle: React.CSSProperties = {
+    position: "absolute",
+    top: "50%",
+    height: "2px",
+    transform: "translateY(-50%)",
+    background: "linear-gradient(90deg, var(--ui-pre), var(--ui-accent))",
+    boxShadow: "0 0 6px oklch(from var(--ui-accent) l c h / 0.55)",
+    pointerEvents: "none",
+};
+
+const playheadRailBaseStyle: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    willChange: "transform",
+    pointerEvents: "none",
+};
+
+const playheadNeedleBaseStyle: React.CSSProperties = {
+    position: "absolute",
+    left: 0,
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    borderRadius: "2px",
+    transition: "height 0.12s ease",
+};
+
 interface TimelineKeyframeDiamondProps {
     kf: VideoKeyframe;
     pct: number;
@@ -16,7 +42,7 @@ interface TimelineKeyframeDiamondProps {
 }
 
 /** Shared NLE keyframe diamond marker used by both card and master timeline scrubbers. */
-const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = ({
+const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = React.memo(({
     kf,
     pct,
     displayTime,
@@ -76,24 +102,40 @@ const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = ({
             }}
         />
     );
-};
+});
+
+TimelineKeyframeDiamond.displayName = "TimelineKeyframeDiamond";
 
 interface TimelineKeyframeTrackProps {
     keyframes: VideoKeyframe[];
     rangeStart: number;
     rangeDuration: number;
     currentTime: number;
+    isPlaying?: boolean;
     size?: number;
     zIndex?: number;
     onJump: (time: number, side?: 'pre' | 'post') => void;
 }
 
-/** Renders keyframes with Focus Isolation: Cut Keyframes collapse to 1 diamond at their earliest time and reveal their paired PRE ─── POST bridge when focused. */
-export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
+const getFocusedKeyframeKey = (keyframes: VideoKeyframe[], currentTime: number, isPlaying = false): string => {
+    if (isPlaying) return "";
+    const kf = keyframes.find((k) =>
+        Math.abs(k.time - currentTime) <= 0.06
+        || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - currentTime) <= 0.06)
+    );
+    if (!kf) return "";
+    const atPost = Math.abs(currentTime - kf.time) <= 0.06 ? 1 : 0;
+    const atPre = kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(currentTime - kf.pre.time) <= 0.06 ? 1 : 0;
+    return `${kf.id}:${atPre}:${atPost}`;
+};
+
+/** Renders keyframes with Focus Isolation, skipping 120Hz playback ticks when focus proximity is unchanged. */
+export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React.memo(({
     keyframes,
     rangeStart,
     rangeDuration,
     currentTime,
+    isPlaying = false,
     size = 7,
     zIndex = 2,
     onJump,
@@ -105,7 +147,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
     const getEarliestTime = (kf: VideoKeyframe) =>
         kf.easing === 'snap' && kf.pre?.time !== undefined ? Math.min(kf.time, kf.pre.time) : kf.time;
 
-    const focusedKf = keyframes.find((kf) =>
+    const focusedKf = isPlaying ? undefined : keyframes.find((kf) =>
         Math.abs(kf.time - currentTime) <= 0.06
         || (kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(kf.pre.time - currentTime) <= 0.06)
     );
@@ -130,15 +172,9 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
                         <React.Fragment key={kf.id}>
                             <div
                                 style={{
-                                    position: "absolute",
+                                    ...pairConnectorBaseStyle,
                                     left: `${prePct}%`,
                                     width: `${Math.max(0, postPct - prePct)}%`,
-                                    top: "50%",
-                                    height: "2px",
-                                    transform: "translateY(-50%)",
-                                    background: "linear-gradient(90deg, var(--ui-pre), var(--ui-accent))",
-                                    boxShadow: "0 0 6px oklch(from var(--ui-accent) l c h / 0.55)",
-                                    pointerEvents: "none",
                                     zIndex,
                                 }}
                             />
@@ -184,7 +220,18 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = ({
             })}
         </>
     );
-};
+}, (prev, next) =>
+    prev.keyframes === next.keyframes
+    && prev.rangeStart === next.rangeStart
+    && prev.rangeDuration === next.rangeDuration
+    && Boolean(prev.isPlaying) === Boolean(next.isPlaying)
+    && prev.size === next.size
+    && prev.zIndex === next.zIndex
+    && prev.onJump === next.onJump
+    && getFocusedKeyframeKey(prev.keyframes, prev.currentTime, Boolean(prev.isPlaying)) === getFocusedKeyframeKey(next.keyframes, next.currentTime, Boolean(next.isPlaying))
+);
+
+TimelineKeyframeTrack.displayName = "TimelineKeyframeTrack";
 
 interface TimelinePlayheadNeedleProps {
     pct: number;
@@ -194,8 +241,8 @@ interface TimelinePlayheadNeedleProps {
     zIndex?: number;
 }
 
-/** Shared slim vertical playhead needle for NLE timeline scrubbers. */
-export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = ({
+/** Shared slim vertical playhead needle positioned via 100%-width GPU translate3d rail (zero layout reflow). */
+export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = React.memo(({
     pct,
     active,
     height,
@@ -204,18 +251,21 @@ export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = ({
 }) => (
     <div
         style={{
-            position: "absolute",
-            left: `${pct}%`,
-            top: "50%",
-            transform: "translate(-50%, -50%)",
-            width: `${width}px`,
-            height: `${height}px`,
-            borderRadius: "2px",
-            background: active ? "#fff" : "var(--ui-accent)",
-            boxShadow: active ? "0 0 8px var(--ui-accent)" : "none",
-            pointerEvents: "none",
-            transition: "height 0.12s ease",
+            ...playheadRailBaseStyle,
+            transform: `translate3d(${pct}%, 0, 0)`,
             zIndex,
         }}
-    />
-);
+    >
+        <div
+            style={{
+                ...playheadNeedleBaseStyle,
+                width: `${width}px`,
+                height: `${height}px`,
+                background: active ? "#fff" : "var(--ui-accent)",
+                boxShadow: active ? "0 0 8px var(--ui-accent)" : "none",
+            }}
+        />
+    </div>
+));
+
+TimelinePlayheadNeedle.displayName = "TimelinePlayheadNeedle";

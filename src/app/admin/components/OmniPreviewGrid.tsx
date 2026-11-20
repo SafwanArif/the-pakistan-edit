@@ -7,6 +7,28 @@ import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import { TikTokIcon, InstagramIcon, XIcon } from "../../../components/icons/TPEIcons";
 import { useContainerScale } from "../hooks/useContainerScale";
 
+const PLATFORM_CONFIGS: { id: Platform; label: string; w: number; h: number }[] = (
+    ["tiktok", "instagram", "square"] as const
+).map((platform) => ({
+    id: platform,
+    label: platform === "tiktok" ? "TikTok" : platform === "square" ? "X / FB" : "Instagram",
+    w: OMNI_CONFIG[platform].width,
+    h: OMNI_CONFIG[platform].height,
+}));
+
+const previewCardStyle: React.CSSProperties = {
+    background: 'var(--ui-bg)', borderRadius: '16px', border: '1px solid var(--ui-border)',
+    overflow: 'hidden', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', alignSelf: 'center',
+};
+const previewHeaderStyle: React.CSSProperties = {
+    padding: '12px 16px', borderBlockEnd: '1px solid var(--ui-border)', fontSize: '11px', fontWeight: 700,
+    textTransform: 'uppercase', color: 'var(--ui-text-dim)', letterSpacing: '0.05em',
+    justifyContent: 'space-between', background: 'oklch(from var(--ui-bg) l c h / 0.5)',
+};
+const previewTitleWrapStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px' };
+const previewDimStyle: React.CSSProperties = { fontSize: '9px', fontWeight: 600, color: 'oklch(from var(--ui-text) l c h / 0.1)', letterSpacing: '0.1em' };
+const gridContainerStyle: React.CSSProperties = { inlineSize: '100%', blockSize: '100%' };
+
 interface PreviewItemProps {
     p: { id: Platform; label: string; w: number; h: number };
     displayDraft: Draft;
@@ -17,15 +39,15 @@ const PreviewItem = React.memo<PreviewItemProps>(({ p, displayDraft, currentStep
     const { ref, scale } = useContainerScale(p.w);
 
     return (
-        <div style={{ background: 'var(--ui-bg)', borderRadius: '16px', border: '1px solid var(--ui-border)', overflow: 'hidden', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', alignSelf: 'center' }}>
-            <div className="tpe-flex-row" style={{ padding: '12px 16px', borderBlockEnd: '1px solid var(--ui-border)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--ui-text-dim)', letterSpacing: '0.05em', justifyContent: 'space-between', background: 'oklch(from var(--ui-bg) l c h / 0.5)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={previewCardStyle}>
+            <div className="tpe-flex-row" style={previewHeaderStyle}>
+                <div style={previewTitleWrapStyle}>
                     {p.id === "tiktok" && <TikTokIcon width={12} height={12} />}
                     {p.id === "square" && <XIcon width={12} height={12} />}
                     {p.id === "instagram" && <InstagramIcon width={12} height={12} />}
                     <span>{p.label}</span>
                 </div>
-                <div style={{ fontSize: '9px', fontWeight: 600, color: 'oklch(from var(--ui-text) l c h / 0.1)', letterSpacing: '0.1em' }}>{p.w} × {p.h}</div>
+                <div style={previewDimStyle}>{p.w} × {p.h}</div>
             </div>
             <div ref={ref} style={{ width: '100%', position: "relative", overflow: "hidden", background: '#111', display: 'flex', justifyContent: 'center', aspectRatio: `${p.w} / ${p.h}` }}>
                 <div style={{ position: "absolute", insetBlockStart: 0, transformOrigin: "top center", transform: `scale(${scale})`, width: `${p.w}px`, height: `${p.h}px` }}>
@@ -45,7 +67,7 @@ PreviewItem.displayName = "PreviewItem";
  * 2027 Institutional Standard: OmniPreviewGrid
  * Optimized for high-speed narrative ingestion with sub-pixel precision scaling.
  */
-export const OmniPreviewGrid: React.FC<{ draft: Draft; currentStep: number }> = ({ draft, currentStep }) => {
+export const OmniPreviewGrid: React.FC<{ draft: Draft; currentStep: number }> = React.memo(({ draft, currentStep }) => {
     const deferredDraft = useDeferredValue(draft);
 
     const displayDraft = useMemo(() => ({
@@ -56,23 +78,14 @@ export const OmniPreviewGrid: React.FC<{ draft: Draft; currentStep: number }> = 
         image: deferredDraft.image || "https://images.unsplash.com/photo-1590409279774-7221bfad3dd9?q=80&w=1200&auto=format&fit=crop",
     }), [deferredDraft]);
 
-    const platformConfigs = useMemo(() => {
-        const platforms: Platform[] = ["tiktok", "instagram", "square"];
-        return platforms.map(platform => ({
-            id: platform,
-            label: platform === "tiktok" ? "TikTok" : platform === "square" ? "X / FB" : "Instagram",
-            w: OMNI_CONFIG[platform].width,
-            h: OMNI_CONFIG[platform].height
-        }));
-    }, []);
-    
     return (
-        <div className="tpe-flex-col" style={{ inlineSize: '100%', blockSize: '100%' }}>
+        <div className="tpe-flex-col" style={gridContainerStyle}>
             <div className="previews-container">
-                {platformConfigs.map(p => (
+                {PLATFORM_CONFIGS.map(p => (
                     <PreviewItem key={p.id} p={p} displayDraft={displayDraft} currentStep={currentStep} />
                 ))}
             </div>
         </div>
     );
-};
+});
+OmniPreviewGrid.displayName = "OmniPreviewGrid";

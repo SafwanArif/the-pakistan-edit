@@ -1,13 +1,25 @@
 import React, { useState } from "react";
+import dynamic from "next/dynamic";
 import { SOCIAL_ICONS } from "../../../config/editorial";
 import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
-import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
+
+const LazyEmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
+
+const SOURCE_PREFIX_OPTIONS = ["SOURCE:", "VIA:", "REPORT:", "DATA:"] as const;
+const IMAGE_CREDIT_OPTIONS = ["PHOTO:", "STILL:", "VIA:", "SOURCE:"] as const;
+const VIDEO_CREDIT_OPTIONS = ["FOOTAGE:", "CLIP:", "VIA:", "COURTESY:"] as const;
+
+/** Normalizes user-entered custom prefix text, rejecting empty/colon-only strings and avoiding trailing `::`. */
+export function normalizeEditorialPrefix(raw: string): string | null {
+    const cleaned = raw.toUpperCase().trim().replace(/:+$/, "").trim();
+    return cleaned ? `${cleaned}:` : null;
+}
 
 /**
  * 2027 Institutional Primitive: FormatButton
  */
-export const FormatButton: React.FC<{ label: string, syntaxOpen: string, syntaxClose: string, fieldId: string, value: string, onUpdate: (v: string) => void, color: string, effectStyle?: React.CSSProperties }> = ({ label, syntaxOpen, syntaxClose, fieldId, value, onUpdate, color, effectStyle }) => (
+export const FormatButton: React.FC<{ label: string, syntaxOpen: string, syntaxClose: string, fieldId: string, value: string, onUpdate: (v: string) => void, color: string, effectStyle?: React.CSSProperties }> = React.memo(({ label, syntaxOpen, syntaxClose, fieldId, value, onUpdate, color, effectStyle }) => (
     <button 
         type="button"
         aria-label={`Format ${label}`}
@@ -20,7 +32,7 @@ export const FormatButton: React.FC<{ label: string, syntaxOpen: string, syntaxC
     >
         {label}
     </button>
-);
+));
 FormatButton.displayName = "FormatButton";
 
 /**
@@ -33,13 +45,13 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
         <div style={{ position: 'relative' }}>
             <button type="button" aria-label="Insert emoji" aria-expanded={open} aria-haspopup="dialog" onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
             <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="auto">
-                <EmojiPicker 
+                <LazyEmojiPicker
                     onEmojiClick={(emojiData) => {
                         insertTextAtCursor(fieldId, value, emojiData.emoji, onUpdate);
                         setOpen(false);
                     }}
-                    theme={Theme.DARK}
-                    emojiStyle={EmojiStyle.APPLE}
+                    theme={"dark" as never}
+                    emojiStyle={"apple" as never}
                     searchPlaceHolder="Search emojis..."
                     lazyLoadEmojis={true}
                     skinTonesDisabled={true}
@@ -61,7 +73,7 @@ const PrefixToolbar = React.memo<{
     onPrefixChange: (p: string) => void, 
     onUpdate: (val: string) => void, 
     fieldId?: string,
-    options: string[],
+    options: readonly string[],
     showSocial?: boolean
 }>(({ value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial }) => {
     const [open, setOpen] = useState(false);
@@ -86,8 +98,8 @@ const PrefixToolbar = React.memo<{
                     placeholder="Custom..." 
                     onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { 
                         if (e.key === 'Enter') { 
-                            const custom = (e.target as HTMLInputElement).value.toUpperCase().trim() + ":"; 
-                            onPrefixChange(custom); 
+                            const custom = normalizeEditorialPrefix(e.currentTarget.value);
+                            if (custom) onPrefixChange(custom); 
                             setOpen(false); 
                         } 
                     }} 
@@ -109,15 +121,15 @@ PrefixToolbar.displayName = "PrefixToolbar";
 
 export const SourcePrefixToolbar: React.FC<{
     value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
-}> = (props) => <PrefixToolbar {...props} options={["SOURCE:", "VIA:", "REPORT:", "DATA:"]} showSocial={true} />;
+}> = React.memo((props) => <PrefixToolbar {...props} options={SOURCE_PREFIX_OPTIONS} showSocial={true} />);
 SourcePrefixToolbar.displayName = "SourcePrefixToolbar";
 
 export const ImageCreditToolbar: React.FC<{
     value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
-}> = (props) => <PrefixToolbar {...props} options={["PHOTO:", "STILL:", "VIA:", "SOURCE:"]} showSocial={false} />;
+}> = React.memo((props) => <PrefixToolbar {...props} options={IMAGE_CREDIT_OPTIONS} showSocial={false} />);
 ImageCreditToolbar.displayName = "ImageCreditToolbar";
 
 export const VideoCreditToolbar: React.FC<{
     value: string, prefix: string, onPrefixChange: (p: string) => void, onUpdate: (val: string) => void, fieldId?: string
-}> = (props) => <PrefixToolbar {...props} options={["FOOTAGE:", "CLIP:", "VIA:", "COURTESY:"]} showSocial={true} />;
+}> = React.memo((props) => <PrefixToolbar {...props} options={VIDEO_CREDIT_OPTIONS} showSocial={true} />);
 VideoCreditToolbar.displayName = "VideoCreditToolbar";

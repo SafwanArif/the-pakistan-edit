@@ -18,12 +18,16 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
  * with a `2ms` tolerance to absorb IEEE-754 float drift across preview and FFmpeg export.
  */
 export const findSubtitleAtMediaTime = (
-    subtitles: SubtitleSegment[] | undefined,
+    subtitles: readonly SubtitleSegment[] | undefined,
     mediaTime: number
 ): SubtitleSegment | undefined => {
     if (!subtitles?.length) return undefined;
     const t = mediaTime + 0.002;
-    return subtitles.find((s) => t >= s.start && t < s.end);
+    for (let i = 0; i < subtitles.length; i++) {
+        const seg = subtitles[i]!;
+        if (t >= seg.start && t < seg.end) return seg;
+    }
+    return undefined;
 };
 
 /** Maps a source-media subtitle start timestamp to its timeline seek position. */

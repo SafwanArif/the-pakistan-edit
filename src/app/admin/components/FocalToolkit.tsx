@@ -6,6 +6,9 @@ import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
 import { useClickOutside } from "../hooks/useClickOutside";
 
+const SNAP_MODES = ['height', 'width', 'grid'] as const;
+const RESET_SLIDE_FIELDS = ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'] as const;
+
 interface FocalToolkitProps {
     activeDraft: Draft;
     updateDraft: (draft: Draft) => void;
@@ -20,11 +23,11 @@ interface FocalToolkitProps {
 /**
  * Floating HUD for per-slide focal pan/zoom, snap mode, slide steps, and undo/redo.
  */
-export const FocalToolkit: React.FC<FocalToolkitProps> = ({ 
+export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({ 
     activeDraft, updateDraft, currentStep, setStep, undo, redo, canUndo, canRedo
 }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
-    const hudRef = useClickOutside(() => setIsExpanded(false));
+    const hudRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded);
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
 
     const handleSliderChange = useCallback((field: string, value: number, min: number, max: number) => {
@@ -142,14 +145,15 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
                             <button
                                 type="button"
                                 onClick={() => {
-                                    const modes: ('height' | 'width' | 'grid')[] = ['height', 'width', 'grid'];
                                     const currentMode = asset.snapMode || 'height';
-                                    const next = modes[(modes.indexOf(currentMode) + 1) % 3]!;
+                                    const next = SNAP_MODES[(SNAP_MODES.indexOf(currentMode) + 1) % SNAP_MODES.length]!;
                                     let d = DraftResolver.set(`slide-${currentStep}-snapMode`, next, activeDraft);
-                                    ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'].forEach(f => d = DraftResolver.set(`slide-${currentStep}-${f}`, f === 'imageZoom' ? 100 : 50, d));
+                                    RESET_SLIDE_FIELDS.forEach(f => {
+                                        d = DraftResolver.set(`slide-${currentStep}-${f}`, f === 'imageZoom' ? 100 : 50, d);
+                                    });
                                     updateDraft(d);
                                 }}
-                                className="tpe-btn-primary tpe-btn-icon"
+                                className="tpe-btn-primary"
                                 style={{ boxShadow: 'none' }}
                                 aria-label="Toggle Snap Mode"
                             >
@@ -168,4 +172,5 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = ({
             )}
         </div>
     );
-};
+});
+FocalToolkit.displayName = "FocalToolkit";

@@ -106,6 +106,26 @@ export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: '9:16' |
         vid.src = url;
     });
 
+/** Normalizes hydrated IndexedDB drafts by restoring missing/duplicate scenes and sorting keyframes and star cues ascending by time. */
+export const normalizeHydratedVideoDraft = (
+    savedDraft: Partial<VideoDraft>,
+    baseDraft: VideoDraft = createDefaultVideoDraft()
+): VideoDraft => {
+    const draft: VideoDraft = { ...baseDraft, ...savedDraft };
+    if (!draft.scenes || draft.scenes.length === 0) {
+        draft.scenes = baseDraft.scenes;
+    } else {
+        draft.scenes = ensureUniqueSceneIds(draft.scenes);
+    }
+    if (draft.keyframes?.length) {
+        draft.keyframes = [...draft.keyframes].sort((a, b) => a.time - b.time);
+    }
+    if (draft.starCues?.length) {
+        draft.starCues = [...draft.starCues].sort((a, b) => a.time - b.time);
+    }
+    return draft;
+};
+
 /**
  * Local-first state orchestrator for Video drafts with synchronised multi-preview playback
  * and disk-backed HTTP 206 byte-range video streaming (bit-for-bit original quality).
@@ -119,12 +139,14 @@ export const useVideoDraftState = () => {
     // Playback state synchronised across all preview cards
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
+    const [seekNonce, setSeekNonce] = useState(0);
     const [playbackMode, setPlaybackMode] = useState<'play-all' | 'loop-angle'>('play-all');
     const isMuted = Boolean(videoDraft.isMuted);
 
     const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const ingestAbortRef = useRef<AbortController | null>(null);
     const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
+    const rVfcAnchorRef = useRef<{ time: number; perfNow: number } | null>(null);
 
     useEffect(() => {
         sceneBoundsRef.current = getSceneBoundaries(videoDraft.scenes);
@@ -147,6 +169,15 @@ export const useVideoDraftState = () => {
     const totalDuration = getTotalVideoDuration(videoDraft);
     const scenesDuration = (videoDraft.scenes || []).reduce((acc, s) => acc + (s.duration || 0), 0);
     const isOutroActive = Boolean(videoDraft.enableOutro && currentTime >= scenesDuration);
+    const activeSceneIsImage = (() => {
+        let elapsed = 0;
+        for (const s of videoDraft.scenes || []) {
+            const next = elapsed + (s.duration || 0);
+            if (currentTime >= elapsed && currentTime < next) return s.mediaType === 'image';
+            elapsed = next;
+        }
+        return false;
+    })();
 
     const updateVideoDraft = useCallback(async (newDraft: VideoDraft) => {
         setVideoDraft(newDraft);
@@ -234,12 +265,7 @@ export const useVideoDraftState = () => {
             let pendingMigrationBlob: Blob | undefined;
 
             if (savedDraft) {
-                draft = { ...draft, ...savedDraft };
-                if (!draft.scenes || draft.scenes.length === 0) {
-                    draft.scenes = createDefaultVideoDraft().scenes;
-                } else {
-                    draft.scenes = ensureUniqueSceneIds(draft.scenes);
-                }
+                draft = normalizeHydratedVideoDraft(savedDraft, draft);
                 if (savedBlob && !draft.videoUrl?.startsWith('/api/video/ingest')) {
                     pendingMigrationBlob = savedBlob;
                 } else if (draft.videoUrl?.startsWith('blob:') && !savedBlob) {
@@ -266,31 +292,58 @@ export const useVideoDraftState = () => {
         return () => { cancelled = true; };
     }, [ingestVideoBlob]);
 
-    // Run rAF timeline clock when no native video is loaded or when the Outro screen is active (video element unmounted)
+    // Native-VSync rAF timeline clock (60/120/144/240Hz): glides playheads & telemetry smoothly even on 24/30fps video, Photo scenes, or Outro
     useEffect(() => {
-        if (!isPlaying) return;
+        if (!isPlaying) {
+            rVfcAnchorRef.current = null;
+            return;
+        }
         const hasNativeVideo = !!videoDraft.videoUrl;
-        if (hasNativeVideo && !isOutroActive) return;
-
-        let animId: number;
-        let lastRenderTime = performance.now();
+        let animId = 0;
+        let lastReactPushNow = performance.now();
 
         const tick = (now: number) => {
-            const elapsedSinceRender = now - lastRenderTime;
-
-            if (elapsedSinceRender >= 40) {
-                const delta = elapsedSinceRender / 1000;
-                lastRenderTime = now;
-
-                setCurrentTime((prev: number) => {
-                    const next = prev + delta;
-                    if (playbackModeRef.current === 'loop-angle') {
-                        const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
-                        if (active && next >= active.end) return active.start;
+            const elapsedPushMs = now - lastReactPushNow;
+            const pushIntervalMs = (!hasNativeVideo || isOutroActive || activeSceneIsImage) ? 32 : 100;
+            // Pace React root state updates to 10Hz (~100ms, matching 0.1s MM:SS.d timecode resolution) during native video playback;
+            // all VideoCard motion (zoom, pan, posY, ambient, fades, progress bar, logo) runs at full 120/144Hz via rAF refs.
+            if (elapsedPushMs >= pushIntervalMs) {
+                const pushDt = elapsedPushMs / 1000;
+                lastReactPushNow = now;
+                if (!hasNativeVideo || isOutroActive || activeSceneIsImage) {
+                    setCurrentTime((prev: number) => {
+                        const next = prev + pushDt;
+                        let resolved = next;
+                        if (playbackModeRef.current === 'loop-angle') {
+                            const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
+                            if (active && next >= active.end) {
+                                resolved = active.start;
+                            } else if (totalDuration > 0 && next >= totalDuration) {
+                                resolved = 0;
+                            }
+                        } else if (totalDuration > 0 && next >= totalDuration) {
+                            resolved = 0;
+                        }
+                        currentTimeRef.current = resolved;
+                        return resolved;
+                    });
+                } else {
+                    const anchor = rVfcAnchorRef.current;
+                    if (anchor) {
+                        const elapsed = Math.min(0.12, Math.max(0, (now - anchor.perfNow) / 1000));
+                        const rawTarget = totalDuration > 0 ? Math.min(totalDuration, anchor.time + elapsed) : anchor.time + elapsed;
+                        // Never extrapolate across an upcoming scene cut before requestVideoFrameCallback executes the deck swap
+                        const activeScene = sceneBoundsRef.current.find(b => anchor.time >= b.start && anchor.time < b.end);
+                        const target = activeScene ? Math.min(rawTarget, activeScene.end - 0.001) : rawTarget;
+                        currentTimeRef.current = target;
+                        setCurrentTime((prev: number) => {
+                            const diff = target - prev;
+                            if (Math.abs(diff) >= 0.08) return target;
+                            if (diff > 0.002) return target;
+                            return prev;
+                        });
                     }
-                    if (totalDuration > 0 && next >= totalDuration) return 0;
-                    return next;
-                });
+                }
             }
 
             animId = requestAnimationFrame(tick);
@@ -298,7 +351,7 @@ export const useVideoDraftState = () => {
 
         animId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(animId);
-    }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive]);
+    }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage]);
 
     useEffect(() => () => {
         if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -309,7 +362,9 @@ export const useVideoDraftState = () => {
     }, []);
 
     const seekTo = useCallback((time: number) => {
+        rVfcAnchorRef.current = { time, perfNow: performance.now() };
         setCurrentTime(time);
+        setSeekNonce((n) => n + 1);
     }, []);
 
     const toggleMute = useCallback(() => {
@@ -334,12 +389,18 @@ export const useVideoDraftState = () => {
             return;
         }
 
-        setCurrentTime((prev: number) => {
-            if (Math.abs(prev - mediaTime) >= 0.025) {
-                return mediaTime;
-            }
-            return prev;
-        });
+        const now = performance.now();
+        const prevAnchor = rVfcAnchorRef.current;
+        const expectedT = prevAnchor
+            ? prevAnchor.time + Math.min(0.12, Math.max(0, (now - prevAnchor.perfNow) / 1000))
+            : currentTimeRef.current;
+        const isJump = Math.abs(mediaTime - expectedT) >= 0.22;
+        rVfcAnchorRef.current = { time: mediaTime, perfNow: now };
+
+        if (isJump) {
+            currentTimeRef.current = mediaTime;
+            setCurrentTime(mediaTime);
+        }
 
         if (mediaDuration && mediaDuration > 0 && !Number.isNaN(mediaDuration)) {
             const prevDraft = videoDraftRef.current;
@@ -367,24 +428,8 @@ export const useVideoDraftState = () => {
     }, []);
 
     return {
-        isMounted,
-        videoDraft,
-        updateVideoDraft,
-        resetVideoDraft,
-        isOptimisingVideo,
-        ingestStatus,
-        ingestVideoBlob,
-        // Playback Sync
-        isPlaying,
-        setIsPlaying,
-        togglePlay,
-        playbackMode,
-        setPlaybackMode,
-        currentTime,
-        setCurrentTime,
-        seekTo,
-        isMuted,
-        toggleMute,
-        syncTimeFromVideo
+        isMounted, videoDraft, updateVideoDraft, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
+        isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, seekNonce,
+        setCurrentTime, seekTo, isMuted, toggleMute, syncTimeFromVideo
     };
 };

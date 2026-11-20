@@ -49,9 +49,9 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
             <div className="tpe-news-bg tpe-full-absolute">
                 <AssetLayer 
                     bgImage={asset.image || ""} 
-                    zoom={asset.imageZoom || 100} 
-                    posX={asset.imagePosX || 50} 
-                    posY={asset.imagePosY || 50} 
+                    zoom={asset.imageZoom ?? 100} 
+                    posX={asset.imagePosX ?? 50} 
+                    posY={(platform === 'square' ? (asset.imagePosY_Square ?? asset.imagePosY) : asset.imagePosY) ?? 50} 
                     mode={asset.snapMode || 'height'} 
                     imageWidth={asset.imageWidth}
                     imageHeight={asset.imageHeight}
@@ -63,21 +63,21 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
             {/* 🏛️ 2. BRANDING LAYER ( Zidane Standard ) */}
             {type === 'bulletin' ? (
                 <div className="tpe-branding-overlay tpe-flex-row">
-                    <div className="tpe-brand-left">
+                    <div className="tpe-brand-left" translate="no">
                         <TPEVectorLogo scale={1.8} showWordmark={true} />
                     </div>
                     <div className="tpe-brand-right tpe-flex-col">
                         <div className="tpe-category-tag">
-                            <span className="tpe-slash">{"//"}</span> {draft.category || "NEWS"}
+                            <span className="tpe-slash" aria-hidden="true">{"//"}</span> {draft.category || "NEWS"}
                         </div>
-                        <div className="tpe-watermark">@thePakistanEdit</div>
+                        <div className="tpe-watermark" translate="no">@thePakistanEdit</div>
                     </div>
                 </div>
             ) : (
                 <div className="tpe-branding-mini tpe-flex-row">
                      <TPEVectorLogo scale={1.15} showWordmark={false} />
                      <div className="tpe-category-pill">
-                        <span className="tpe-slash">{"//"}</span> {draft.category || "STORY"}
+                        <span className="tpe-slash" aria-hidden="true">{"//"}</span> {draft.category || "STORY"}
                      </div>
                 </div>
             )}
@@ -87,7 +87,7 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                 {type === 'bulletin' ? (
                     <div className="tpe-bulletin-group">
                         {progressBars}
-                        <div className="tpe-news-h1">
+                        <div dir="auto" className="tpe-news-h1">
                             <HighlightedText text={heading} />
                         </div>
                     </div>
@@ -97,10 +97,10 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                         {heading && (
                             <div className="tpe-news-h3-container tpe-flex-row">
                                 <div className="tpe-news-h3-bar" />
-                                <h3 className="tpe-news-h3">{heading}</h3>
+                                <h3 dir="auto" className="tpe-news-h3">{heading}</h3>
                             </div>
                         )}
-                        <div className="tpe-news-content">
+                        <div dir="auto" className="tpe-news-content">
                             <HighlightedText text={content} />
                         </div>
                     </div>

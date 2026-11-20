@@ -26,12 +26,18 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [urlInput, setUrlInput] = useState("");
     
-    const containerRef = useClickOutside(() => setIsExpanded(false));
+    const containerRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded);
 
     const hasOverride = !!draft.slideAssets?.[step]?.image || (step === 1 && !!draft.image);
     const hasEffectiveImage = hasOverride || !!draft.image;
+    const creditFieldId = `slide-${step}-imageCredit`;
+    const creditPrefixFieldId = `slide-${step}-creditPrefix`;
     const sourceFieldId = step === 2 ? 'sourceName' : `extra-source-${step - 3}`;
     const sourcePrefixFieldId = step === 2 ? 'sourcePrefix' : `extra-sourcePrefix-${step - 3}`;
+    const imageCredit = String(DraftResolver.get(creditFieldId, draft) ?? '');
+    const creditPrefix = String(DraftResolver.get(creditPrefixFieldId, draft) || "PHOTO:");
+    const sourceName = String(DraftResolver.get(sourceFieldId, draft) ?? '');
+    const sourcePrefix = String(DraftResolver.get(sourcePrefixFieldId, draft) || "SOURCE:");
 
     const handleLinkSubmit = () => {
         const clean = urlInput.trim();
@@ -62,7 +68,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
             <div className={`${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>
                 <div className="tpe-flex-row" style={{ gap: '6px' }}>
                     <label className="tpe-asset-btn tpe-upload-label" aria-label="Upload image" title="Upload image">
-                        <input type="file" className="tpe-sr-only" accept="image/*" onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
+                        <input type="file" className="tpe-sr-only" accept="image/png,image/jpeg,image/webp" onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
                         <UploadIcon />
                     </label>
                     <button type="button" aria-pressed={showLinkInput} aria-label="Paste image URL" onClick={() => setShowLinkInput(!showLinkInput)} className="tpe-asset-btn" data-active={showLinkInput}><LinkIcon /></button>
@@ -90,17 +96,17 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                         {hasEffectiveImage && (
                             <div className="tpe-source-row-wrapper">
                                 <ImageCreditToolbar 
-                                    value={String(DraftResolver.get(`slide-${step}-imageCredit`, draft) ?? '')} 
-                                    prefix={String(DraftResolver.get(`slide-${step}-creditPrefix`, draft) || "PHOTO:")} 
-                                    onPrefixChange={(p: string) => onChange(DraftResolver.set(`slide-${step}-creditPrefix`, p, draft))}
-                                    onUpdate={(v: string) => onChange(DraftResolver.set(`slide-${step}-imageCredit`, v, draft))}
+                                    value={imageCredit} 
+                                    prefix={creditPrefix} 
+                                    onPrefixChange={(p: string) => onChange(DraftResolver.set(creditPrefixFieldId, p, draft))}
+                                    onUpdate={(v: string) => onChange(DraftResolver.set(creditFieldId, v, draft))}
                                 />
                                 <input 
                                     aria-label="Image credit"
                                     className="tpe-input-field tpe-uppercase" 
                                     placeholder="CREDIT" 
-                                    value={String(DraftResolver.get(`slide-${step}-imageCredit`, draft) ?? '')}
-                                    onChange={(e) => onChange(DraftResolver.set(`slide-${step}-imageCredit`, e.target.value, draft))}
+                                    value={imageCredit}
+                                    onChange={(e) => onChange(DraftResolver.set(creditFieldId, e.target.value, draft))}
                                 />
                             </div>
                         )}
@@ -109,8 +115,8 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                             <div className="tpe-source-row-wrapper">
                                 <SourcePrefixToolbar 
                                     fieldId={sourceFieldId}
-                                    value={String(DraftResolver.get(sourceFieldId, draft) ?? '')} 
-                                    prefix={String(DraftResolver.get(sourcePrefixFieldId, draft) || "SOURCE:")}
+                                    value={sourceName} 
+                                    prefix={sourcePrefix}
                                     onPrefixChange={(p: string) => onChange(DraftResolver.set(sourcePrefixFieldId, p, draft))}
                                     onUpdate={(v: string) => onChange(DraftResolver.set(sourceFieldId, v, draft))}
                                 />
@@ -119,7 +125,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                                     aria-label="Source name"
                                     className="tpe-input-field tpe-uppercase" 
                                     placeholder="SOURCE" 
-                                    value={String(DraftResolver.get(sourceFieldId, draft) ?? '')}
+                                    value={sourceName}
                                     onChange={(e) => onChange(DraftResolver.set(sourceFieldId, e.target.value, draft))}
                                 />
                             </div>

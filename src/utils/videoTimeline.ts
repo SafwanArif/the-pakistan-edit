@@ -77,7 +77,8 @@ export const calculatePsychologyPacedScenes = (
     const base = ensureUniqueSceneIds(existingScenes?.length ? [...existingScenes] : createDefaultTimelineScenes());
     const { storyIdx } = getTimelineStructure(base);
     const story = base[storyIdx]!;
-    const storyDur = Math.max(4, Math.round((totalClipDuration - (story.clipStartOffset || 0)) * 10) / 10);
+    const safeClipDuration = Number.isFinite(totalClipDuration) ? Math.max(0, totalClipDuration) : 0;
+    const storyDur = Math.max(4, Math.round((safeClipDuration - (story.clipStartOffset || 0)) * 10) / 10);
     base[storyIdx] = { ...story, duration: storyDur };
     return base;
 };
@@ -104,14 +105,13 @@ export const interpolateKeyframe = (
     currentTime: number,
     fallback?: { zoom?: number; posX?: number; posY?: number }
 ): { zoom: number; posX: number; posY: number } => {
+    const fbZoom = fallback?.zoom ?? 100;
+    const fbX = fallback?.posX ?? 50;
     const fbY = fallback?.posY ?? 100;
-    const defaultFraming = {
-        zoom: fallback?.zoom ?? 100,
-        posX: fallback?.posX ?? 50,
-        posY: fbY,
-    };
 
-    if (!keyframes || keyframes.length === 0) return defaultFraming;
+    if (!keyframes || keyframes.length === 0) {
+        return { zoom: fbZoom, posX: fbX, posY: fbY };
+    }
 
     let alreadySorted = true;
     for (let i = 1; i < keyframes.length; i++) {
@@ -127,7 +127,10 @@ export const interpolateKeyframe = (
         return { zoom: last.zoom, posX: last.posX, posY: last.posY ?? fbY };
     }
 
-    let prev: VideoKeyframe = { id: '__base__', time: 0, ...defaultFraming };
+    let prevTime = 0;
+    let prevZoom = fbZoom;
+    let prevPosX = fbX;
+    let prevPosY = fbY;
     let next = sorted[0]!;
     if (currentTime < sorted[0]!.time) {
         const first = sorted[0]!;
@@ -140,50 +143,53 @@ export const interpolateKeyframe = (
     } else {
         for (let i = 0; i < sorted.length - 1; i++) {
             if (currentTime >= sorted[i]!.time && currentTime < sorted[i + 1]!.time) {
-                prev = sorted[i]!;
+                const p = sorted[i]!;
+                prevTime = p.time;
+                prevZoom = p.zoom;
+                prevPosX = p.posX;
+                prevPosY = p.posY ?? fbY;
                 next = sorted[i + 1]!;
                 break;
             }
         }
     }
 
-    const prevY = prev.posY ?? fbY;
-    const span = next.time - prev.time;
-    if (span <= 0) return { zoom: prev.zoom, posX: prev.posX, posY: prevY };
+    const span = next.time - prevTime;
+    if (span <= 0) return { zoom: prevZoom, posX: prevPosX, posY: prevPosY };
     if (currentTime >= next.time) {
         return { zoom: next.zoom, posX: next.posX, posY: next.posY ?? fbY };
     }
     if (next.easing === 'snap' && !next.pre) {
-        return { zoom: prev.zoom, posX: prev.posX, posY: prevY };
+        return { zoom: prevZoom, posX: prevPosX, posY: prevPosY };
     }
     const preTarget = next.easing === 'snap' ? next.pre : undefined;
     if (preTarget) {
         const preTime = preTarget.time !== undefined
-            ? Math.min(next.time, Math.max(prev.time, preTarget.time))
+            ? Math.min(next.time, Math.max(prevTime, preTarget.time))
             : next.time;
         const preY = preTarget.posY ?? fbY;
         if (currentTime >= preTime) {
             return { zoom: preTarget.zoom, posX: preTarget.posX, posY: preY };
         }
-        const preSpan = preTime - prev.time;
+        const preSpan = preTime - prevTime;
         if (preSpan <= 0) return { zoom: preTarget.zoom, posX: preTarget.posX, posY: preY };
-        const preT = (currentTime - prev.time) / preSpan;
+        const preT = (currentTime - prevTime) / preSpan;
         const smoothPreT = (1 - Math.cos(preT * Math.PI)) / 2;
         return {
-            zoom: Math.round((prev.zoom + (preTarget.zoom - prev.zoom) * smoothPreT) * 10) / 10,
-            posX: Math.round((prev.posX + (preTarget.posX - prev.posX) * smoothPreT) * 10) / 10,
-            posY: Math.round((prevY + (preY - prevY) * smoothPreT) * 10) / 10,
+            zoom: prevZoom + (preTarget.zoom - prevZoom) * smoothPreT,
+            posX: prevPosX + (preTarget.posX - prevPosX) * smoothPreT,
+            posY: prevPosY + (preY - prevPosY) * smoothPreT,
         };
     }
 
-    const t = (currentTime - prev.time) / span;
+    const t = (currentTime - prevTime) / span;
     const targetY = next.posY ?? fbY;
     const smoothT = (1 - Math.cos(t * Math.PI)) / 2;
 
     return {
-        zoom: Math.round((prev.zoom + (next.zoom - prev.zoom) * smoothT) * 10) / 10,
-        posX: Math.round((prev.posX + (next.posX - prev.posX) * smoothT) * 10) / 10,
-        posY: Math.round((prevY + (targetY - prevY) * smoothT) * 10) / 10,
+        zoom: prevZoom + (next.zoom - prevZoom) * smoothT,
+        posX: prevPosX + (next.posX - prevPosX) * smoothT,
+        posY: prevPosY + (targetY - prevPosY) * smoothT,
     };
 };
 
@@ -202,6 +208,11 @@ export const getActiveSceneAtTime = (draft: VideoDraft, currentTime: number): { 
 
     if (draft.enableOutro && currentTime >= elapsed) {
         return { scene: null, isOutro: true, sceneIndex: scenes.length };
+    }
+
+    if (scenes.length > 0 && currentTime >= elapsed) {
+        const lastIdx = scenes.length - 1;
+        return { scene: scenes[lastIdx]!, isOutro: false, sceneIndex: lastIdx };
     }
 
     return { scene: scenes[0] ?? null, isOutro: false, sceneIndex: 0 };
@@ -262,11 +273,24 @@ export const formatTimecode = (seconds: number): string => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ds}`;
 };
 
-export const getSceneBoundaries = (scenes: TimelineScene[] = []) =>
-    scenes.reduce<{ id: string; idx: number; start: number; end: number; mediaType: 'video' | 'image'; mediaUrl?: string }[]>((acc, s, idx) => {
-        const start = idx === 0 ? 0 : acc[idx - 1]!.end;
-        return [...acc, { id: s.id, idx, start, end: start + (s.duration || 0), mediaType: s.mediaType || 'video', mediaUrl: s.mediaUrl }];
-    }, []);
+export interface SceneBoundary {
+    id: string;
+    idx: number;
+    start: number;
+    end: number;
+    mediaType: 'video' | 'image';
+    mediaUrl?: string;
+}
+
+export const getSceneBoundaries = (scenes: TimelineScene[] = []): SceneBoundary[] => {
+    let elapsed = 0;
+    return scenes.map((s, idx) => {
+        const start = elapsed;
+        const end = start + (s.duration || 0);
+        elapsed = end;
+        return { id: s.id, idx, start, end, mediaType: s.mediaType || 'video', mediaUrl: s.mediaUrl };
+    });
+};
 
 /**
  * Maps timeline timecode (seconds) to the underlying video clip timestamp,
@@ -312,10 +336,29 @@ export const mediaTimeToTimelineTime = (draft: VideoDraft, mediaTime: number, cu
     const hasCustomJump = hookOffset > 0 || rehookOffset > 0 || storyOffset > 0 || hasReHook;
 
     if (hasCustomJump && currentTimelineTime < hookDur) {
-        return Math.max(0, mediaTime - hookOffset);
+        if (Math.abs(currentTimelineTime - hookDur) < 0.25) {
+            const nextOffset = hasReHook ? rehookOffset : storyOffset;
+            if (Math.abs(mediaTime - nextOffset) < 0.25 && Math.abs(mediaTime - (hookOffset + hookDur)) > 0.4) {
+                return hookDur + Math.max(0, mediaTime - nextOffset);
+            }
+        }
+        return clamp(mediaTime - hookOffset, 0, hookDur);
     }
     if (hasReHook && currentTimelineTime >= hookDur && currentTimelineTime < preStoryDur) {
-        return hookDur + Math.max(0, mediaTime - rehookOffset);
+        if (Math.abs(currentTimelineTime - hookDur) < 0.25 && Math.abs(mediaTime - (hookOffset + hookDur)) < 0.25 && Math.abs(mediaTime - rehookOffset) > 0.4) {
+            return hookDur;
+        }
+        if (Math.abs(currentTimelineTime - preStoryDur) < 0.25 && Math.abs(mediaTime - storyOffset) < 0.25 && Math.abs(mediaTime - (rehookOffset + (preStoryDur - hookDur))) > 0.4) {
+            return preStoryDur + Math.max(0, mediaTime - storyOffset);
+        }
+        return clamp(hookDur + Math.max(0, mediaTime - rehookOffset), hookDur, preStoryDur);
+    }
+
+    if (hasCustomJump && Math.abs(currentTimelineTime - preStoryDur) < 0.25) {
+        const prevEndMedia = hasReHook ? (rehookOffset + (preStoryDur - hookDur)) : (hookOffset + hookDur);
+        if (Math.abs(mediaTime - prevEndMedia) < 0.35 && Math.abs(mediaTime - storyOffset) > 0.5) {
+            return preStoryDur;
+        }
     }
 
     const baseOffset = hasCustomJump ? preStoryDur : 0;

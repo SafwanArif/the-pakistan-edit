@@ -5,6 +5,9 @@ export type ExtraSlideField = 'heading' | 'content' | 'source' | 'sourcePrefix';
 export type SlideAssetField = keyof SlideAsset;
 
 const CORE_FIELDS = new Set<string>(['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix']);
+const EXTRA_SLIDE_PATH_RE = /^extra-([a-zA-Z]+)-(\d+)$/;
+const SLIDE_ASSET_PATH_RE = /^slide-(\d+)-([a-zA-Z_]+)$/;
+const VIDEO_PREFIX_RE = /^video-/;
 
 export type DraftPath = 
     | CoreField 
@@ -23,7 +26,7 @@ export const DraftResolver = {
             return (draft[path as keyof Draft] as string | number | undefined) ?? "";
         }
 
-        const extraMatch = (path as string).match(/^extra-([a-zA-Z]+)-(\d+)$/);
+        const extraMatch = (path as string).match(EXTRA_SLIDE_PATH_RE);
         if (extraMatch) {
             const field = extraMatch[1]! as ExtraSlideField;
             const index = parseInt(extraMatch[2]!, 10);
@@ -35,7 +38,7 @@ export const DraftResolver = {
             if (field === 'sourcePrefix') return slide.sourcePrefix || "SOURCE:";
         }
 
-        const slideMatch = (path as string).match(/^slide-(\d+)-([a-zA-Z_]+)$/);
+        const slideMatch = (path as string).match(SLIDE_ASSET_PATH_RE);
         if (slideMatch) {
             const slideNum = parseInt(slideMatch[1]!, 10);
             const field = slideMatch[2]! as SlideAssetField;
@@ -58,7 +61,7 @@ export const DraftResolver = {
             return { ...draft, [path]: value };
         }
 
-        const extraMatch = (path as string).match(/^extra-([a-zA-Z]+)-(\d+)$/);
+        const extraMatch = (path as string).match(EXTRA_SLIDE_PATH_RE);
         if (extraMatch) {
             const field = extraMatch[1]! as ExtraSlideField;
             const index = parseInt(extraMatch[2]!, 10);
@@ -73,7 +76,7 @@ export const DraftResolver = {
             return { ...draft, extraSlides };
         }
 
-        const slideMatch = (path as string).match(/^slide-(\d+)-([a-zA-Z_]+)$/);
+        const slideMatch = (path as string).match(SLIDE_ASSET_PATH_RE);
         if (slideMatch) {
             const slideNum = parseInt(slideMatch[1]!, 10);
             const field = slideMatch[2]! as SlideAssetField;
@@ -128,7 +131,7 @@ export const getEffectiveSlideAsset = (step: number, draft: Draft): SlideAsset =
 export const VideoDraftResolver = {
     get: (path: string, draft: VideoDraft, currentTime: number = 0): string => {
         if (!path) return "";
-        const cleanPath = path.replace(/^video-/, '');
+        const cleanPath = path.replace(VIDEO_PREFIX_RE, '');
         const { scene, sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
         const textScene = isSharedReHookScene(draft.scenes, sceneIndex) ? draft.scenes![0]! : scene;
 
@@ -154,7 +157,7 @@ export const VideoDraftResolver = {
     },
 
     set: (path: string, value: string, draft: VideoDraft, currentTime: number = 0): VideoDraft => {
-        const cleanPath = path.replace(/^video-/, '');
+        const cleanPath = path.replace(VIDEO_PREFIX_RE, '');
         const { sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
 
         if (cleanPath === 'category') return { ...draft, category: value };

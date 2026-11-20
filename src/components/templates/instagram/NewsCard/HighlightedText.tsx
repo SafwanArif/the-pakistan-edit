@@ -59,6 +59,48 @@ const tokenize = (text: string): Token[] => {
     return tokens;
 };
 
+const BOLD_STYLE: React.CSSProperties = { fontWeight: 600 };
+const ITALIC_STYLE: React.CSSProperties = { fontStyle: 'italic' };
+const GOLD_STYLE: React.CSSProperties = { color: "var(--ui-accent)" };
+const GREEN_STYLE: React.CSSProperties = { color: "var(--ui-indicator)" };
+const BLACK_BOX_STYLE: React.CSSProperties = {
+    position: 'relative',
+    zIndex: 1,
+    backgroundImage: 'linear-gradient(to bottom, transparent 12%, black 12%, black 97%, transparent 97%)',
+    paddingInline: '4px',
+    marginInline: '-4px',
+    borderRadius: '2px',
+    WebkitBoxDecorationBreak: 'clone',
+    boxDecorationBreak: 'clone',
+};
+const WHITE_BOX_STYLE: React.CSSProperties = {
+    position: 'relative',
+    zIndex: 1,
+    backgroundImage: 'linear-gradient(to bottom, transparent 12%, #ffffff 12%, #ffffff 97%, transparent 97%)',
+    color: '#050505',
+    textShadow: 'none',
+    paddingInline: '4px',
+    marginInline: '-4px',
+    borderRadius: '2px',
+    WebkitBoxDecorationBreak: 'clone',
+    boxDecorationBreak: 'clone',
+};
+const FLAG_IMG_STYLE: React.CSSProperties = {
+    blockSize: '1.05em',
+    inlineSize: 'auto',
+    verticalAlign: '-0.18em',
+    display: 'inline-block',
+    marginInline: '4px',
+};
+const SOCIAL_IMG_STYLE: React.CSSProperties = {
+    blockSize: '0.88em',
+    inlineSize: 'auto',
+    verticalAlign: '-0.11em',
+    display: 'inline-block',
+    marginInlineEnd: '4px',
+};
+const TEXT_SPAN_STYLE: React.CSSProperties = { position: 'relative', zIndex: 2 };
+
 /** Renders inline-formatted editorial text and flag icons. */
 export const HighlightedText = React.memo<{ text?: string }>(({ text }) => {
     const parsedNodes = useMemo(() => {
@@ -69,53 +111,35 @@ export const HighlightedText = React.memo<{ text?: string }>(({ text }) => {
 
             switch (token.type) {
                 case 'bold':
-                    return <span key={key} style={{ fontWeight: 600 }}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={BOLD_STYLE}><HighlightedText text={token.value} /></span>;
                 case 'italic':
-                    return <span key={key} style={{ fontStyle: 'italic' }}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={ITALIC_STYLE}><HighlightedText text={token.value} /></span>;
                 case 'gold':
-                    return <span key={key} style={{ color: "var(--ui-accent)" }}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={GOLD_STYLE}><HighlightedText text={token.value} /></span>;
                 case 'green':
-                    return <span key={key} style={{ color: "var(--ui-indicator)" }}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={GREEN_STYLE}><HighlightedText text={token.value} /></span>;
                 case 'highlight':
                     return (
-                        <span key={key} style={{ 
-                            position: 'relative',
-                            zIndex: 1,
-                            backgroundImage: 'linear-gradient(to bottom, transparent 12%, black 12%, black 97%, transparent 97%)', 
-                            paddingInline: '4px', marginInline: '-4px',
-                            borderRadius: '2px',
-                            WebkitBoxDecorationBreak: 'clone',
-                            boxDecorationBreak: 'clone'
-                        }}>
+                        <span key={key} style={BLACK_BOX_STYLE}>
                             <HighlightedText text={token.value} />
                         </span>
                     );
                 case 'whiteHighlight':
                     return (
-                        <span key={key} style={{ 
-                            position: 'relative',
-                            zIndex: 1,
-                            backgroundImage: 'linear-gradient(to bottom, transparent 12%, #ffffff 12%, #ffffff 97%, transparent 97%)', 
-                            color: '#050505',
-                            textShadow: 'none',
-                            paddingInline: '4px', marginInline: '-4px',
-                            borderRadius: '2px',
-                            WebkitBoxDecorationBreak: 'clone',
-                            boxDecorationBreak: 'clone'
-                        }}>
+                        <span key={key} style={WHITE_BOX_STYLE}>
                             <HighlightedText text={token.value} />
                         </span>
                     );
                 case 'flag': {
                     const flagSrc = FLAGS[token.value];
-                    return flagSrc ? <Image key={key} src={flagSrc} alt="" width={24} height={24} unoptimized loading="eager" decoding="sync" style={{ blockSize: '1.05em', inlineSize: 'auto', verticalAlign: '-0.18em', display: 'inline-block', marginInline: '4px' }} /> : null;
+                    return flagSrc ? <Image key={key} src={flagSrc} alt="" width={24} height={24} unoptimized loading="eager" decoding="sync" style={FLAG_IMG_STYLE} /> : null;
                 }
                 case 'social': {
                     const socialSrc = SOCIAL_LOGOS[token.value];
-                    return socialSrc ? <Image key={key} src={socialSrc} alt="" width={24} height={24} unoptimized loading="eager" decoding="sync" style={{ blockSize: '0.88em', inlineSize: 'auto', verticalAlign: '-0.11em', display: 'inline-block', marginInlineEnd: '4px' }} /> : null;
+                    return socialSrc ? <Image key={key} src={socialSrc} alt="" width={24} height={24} unoptimized loading="eager" decoding="sync" style={SOCIAL_IMG_STYLE} /> : null;
                 }
                 default:
-                    return <span key={key} style={{ position: 'relative', zIndex: 2 }}>{token.value}</span>;
+                    return <span key={key} style={TEXT_SPAN_STYLE}>{token.value}</span>;
             }
         });
     }, [text]);

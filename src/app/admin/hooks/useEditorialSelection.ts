@@ -58,5 +58,7 @@ export const useEditorialSelection = () => {
         };
     }, [checkSelection]);
 
-    return { selection, clearSelection: () => setSelection(null) };
+    const clearSelection = useCallback(() => setSelection(null), []);
+
+    return { selection, clearSelection };
 };

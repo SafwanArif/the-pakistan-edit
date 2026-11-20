@@ -35,7 +35,7 @@ export const wrapSelectionWithSyntax = (fieldId: string, value: string, syntaxOp
         const lowerClose = syntaxClose.toLowerCase();
 
         // 1. If selection ITSELF is wrapped in the markers, toggle them OFF
-        if (lowerSelection.startsWith(lowerOpen) && lowerSelection.endsWith(lowerClose)) {
+        if (selection.length >= syntaxOpen.length + syntaxClose.length && lowerSelection.startsWith(lowerOpen) && lowerSelection.endsWith(lowerClose)) {
             const innerText = selection.substring(syntaxOpen.length, selection.length - syntaxClose.length);
             const newVal = value.substring(0, start) + innerText + value.substring(end);
             onUpdate(newVal);

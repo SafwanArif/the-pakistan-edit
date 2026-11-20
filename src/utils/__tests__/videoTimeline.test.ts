@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultVideoDraft, getTopBoxOffsetY, type VideoDraft } from "../../types/news";
+import { createDefaultVideoDraft, getTopBoxOffsetY, type VideoDraft, type VideoKeyframe } from "../../types/news";
 import {
+    autoPadToMonetisationThreshold,
+    calculatePsychologyPacedScenes,
+    ensureUniqueSceneIds,
+    getActiveSceneAtTime,
     getHookTransitionFade,
+    getSceneBoundaries,
     getSceneRoleLabel,
     getTimelineStructure,
     interpolateKeyframe,
@@ -15,9 +20,28 @@ import {
     buildSrtContent,
     findSubtitleAtMediaTime,
     getActiveSubtitleTimelineTimes,
+    getMediaSubtitleTimelineTime,
 } from "../subtitleTimeline";
-import { getKeyframeTelemetryTint } from "../../app/admin/utils/keyframeTelemetry";
+import {
+    CIRCLE_PATH_R3,
+    buildDotStarMorphPath,
+    buildLogoEmblemPath,
+    evaluateEmblemCue,
+    evaluateSingleCueSpin,
+    getCueTotalDuration,
+    getStarAnimState,
+    getStarDotTransform,
+} from "../starMorphMath";
+import { getKeyframeTelemetryTint, resolveKeyframeJumpStop } from "../../app/admin/utils/keyframeTelemetry";
 import { resolveStudioShortcutSeek } from "../../app/admin/hooks/useStudioShortcuts";
+import { VideoDraftResolver } from "../../app/admin/utils/dataAccessors";
+import { parseScrubPillInput } from "../../app/admin/components/ScrubPillSlider";
+import { resolveSceneSubtitleSeekTime } from "../../app/admin/components/TimelineStoryboard";
+import { normalizeHydratedVideoDraft } from "../../app/admin/hooks/useVideoDraftState";
+import { sanitize, getAnchorKeyword } from "../../app/admin/utils/textUtils";
+import { build45BoxHExpr, build45ScaleExpr, buildTopOffsetYExpr } from "../../lib/server/ffmpegFilters";
+import { buildSceneFilterStages } from "../../lib/server/ffmpegSceneGraph";
+import { createByteLimitTransform } from "../../lib/server/videoMedia";
 
 const makeDraft = (overrides: Partial<VideoDraft> = {}): VideoDraft => ({
     ...createDefaultVideoDraft(),
@@ -94,7 +118,10 @@ describe("interpolateKeyframe", () => {
             { id: "k1", time: 0, zoom: 0, posX: 50, posY: 100, easing: "smooth" as const },
             { id: "k2", time: 10, zoom: 100, posX: 0, posY: 0, easing: "smooth" as const },
         ];
-        expect(interpolateKeyframe(kfs, 5)).toEqual({ zoom: 50, posX: 25, posY: 50 });
+        const mid = interpolateKeyframe(kfs, 5);
+        expect(mid.zoom).toBeCloseTo(50, 5);
+        expect(mid.posX).toBeCloseTo(25, 5);
+        expect(mid.posY).toBeCloseTo(50, 5);
 
         const snapKfs = [
             { id: "k1", time: 0, zoom: 10, posX: 20, posY: 100, easing: "smooth" as const },
@@ -163,8 +190,9 @@ describe("interpolateKeyframe", () => {
 });
 
 describe("getTopBoxOffsetY", () => {
-    it("maps 100 to top (0px) and 0 to bottom edge (containerH - boxH)", () => {
+    it("maps 100 to top (0px), 50 to true vertical center, and 0 to bottom edge (containerH - boxH)", () => {
         expect(getTopBoxOffsetY(100, 1350, 608)).toBe(0);
+        expect(getTopBoxOffsetY(50, 1350, 608)).toBe(371);
         expect(getTopBoxOffsetY(0, 1350, 608)).toBe(742);
         expect(getTopBoxOffsetY(undefined, 1350, 608)).toBe(0);
     });
@@ -322,5 +350,384 @@ describe("findSubtitleAtMediaTime, getSceneRoleLabel, isSharedReHookScene & getK
         expect(resolveStudioShortcutSeek("0", false, ctx)).toBe(60);
         expect(resolveStudioShortcutSeek("ArrowRight", true, ctx)).toBe(17);
         expect(resolveStudioShortcutSeek("ArrowLeft", false, ctx)).toBe(11);
+    });
+
+    it("keeps VideoDraftResolver in parity with anchored vs un-anchored 02. Re-Hook copy", () => {
+        const baseScenes = [
+            { id: "scene-1", title: "HOOK TITLE", subtitle: "HOOK SUB", duration: 4 },
+            { id: "rehook-1", title: "OWN REHOOK", subtitle: "OWN SUB", duration: 4, shareHookText: true },
+            { id: "scene-2", title: "STORY TITLE", subtitle: "STORY SUB", duration: 20 },
+        ];
+        const anchoredDraft = makeDraft({ headline: "HOOK TITLE", subtitle: "HOOK SUB", scenes: baseScenes });
+
+        expect(isSharedReHookScene(anchoredDraft.scenes, 1)).toBe(true);
+        expect(VideoDraftResolver.get("video-headline", anchoredDraft, 5)).toBe("HOOK TITLE");
+        expect(VideoDraftResolver.get("video-subtitle", anchoredDraft, 5)).toBe("HOOK SUB");
+
+        const editedAnchored = VideoDraftResolver.set("video-headline", "UPDATED HOOK", anchoredDraft, 5);
+        expect(editedAnchored.scenes[0]?.title).toBe("UPDATED HOOK");
+        expect(editedAnchored.headline).toBe("UPDATED HOOK");
+        expect(editedAnchored.scenes[1]?.title).toBe("OWN REHOOK");
+
+        const unanchoredDraft = makeDraft({
+            headline: "HOOK TITLE",
+            subtitle: "HOOK SUB",
+            scenes: baseScenes.map((s, idx) => (idx === 1 ? { ...s, shareHookText: false } : s)),
+        });
+        expect(isSharedReHookScene(unanchoredDraft.scenes, 1)).toBe(false);
+        expect(VideoDraftResolver.get("video-headline", unanchoredDraft, 5)).toBe("OWN REHOOK");
+
+        const editedUnanchored = VideoDraftResolver.set("video-headline", "UPDATED REHOOK", unanchoredDraft, 5);
+        expect(editedUnanchored.scenes[1]?.title).toBe("UPDATED REHOOK");
+        expect(editedUnanchored.scenes[0]?.title).toBe("HOOK TITLE");
+        expect(editedUnanchored.headline).toBe("HOOK TITLE");
+    });
+
+    it("computes scene boundaries, unique IDs, pacing, monetisation padding, and subtitle jump targets", () => {
+        const healed = ensureUniqueSceneIds([
+            { id: "dup", title: "A", duration: 4 },
+            { id: "dup", title: "B", duration: 4, mediaType: "image" },
+            { id: "", title: "C", duration: 20 },
+        ]);
+        expect(new Set(healed.map((s) => s.id)).size).toBe(3);
+
+        expect(getSceneBoundaries([])).toEqual([]);
+        expect(getSceneBoundaries(healed)).toEqual([
+            { id: "dup", idx: 0, start: 0, end: 4, mediaType: "video", mediaUrl: undefined },
+            { id: "scene-2", idx: 1, start: 4, end: 8, mediaType: "image", mediaUrl: undefined },
+            { id: "scene-3", idx: 2, start: 8, end: 28, mediaType: "video", mediaUrl: undefined },
+        ]);
+
+        const paced = calculatePsychologyPacedScenes(45, [
+            { id: "scene-1", title: "H", duration: 4, clipStartOffset: 10 },
+            { id: "rehook-1", title: "R", duration: 4, clipStartOffset: 20 },
+            { id: "scene-2", title: "S", duration: 12, clipStartOffset: 5 },
+        ]);
+        expect(paced[0]?.duration).toBe(4);
+        expect(paced[1]?.duration).toBe(4);
+        expect(paced[2]?.duration).toBe(40);
+
+        const shortDraft = makeDraft({
+            enableOutro: true,
+            outroDuration: 5,
+            scenes: [
+                { id: "scene-1", title: "H", duration: 4 },
+                { id: "scene-2", title: "S", duration: 10 },
+            ],
+        });
+        const padded = autoPadToMonetisationThreshold(shortDraft, 61.5);
+        expect(padded.scenes[1]?.duration).toBeCloseTo(52.5, 5);
+
+        const jumpDraft = makeDraft({
+            scenes: [
+                { id: "scene-1", title: "H", duration: 4, clipStartOffset: 15 },
+                { id: "rehook-1", title: "R", duration: 4, clipStartOffset: 30 },
+                { id: "scene-2", title: "S", duration: 40, clipStartOffset: 2 },
+            ],
+        });
+        expect(getMediaSubtitleTimelineTime(jumpDraft, 16.5)).toBe(1.5);
+        expect(getMediaSubtitleTimelineTime(jumpDraft, 32)).toBe(6);
+        expect(getMediaSubtitleTimelineTime(jumpDraft, 5)).toBe(11);
+    });
+
+    it("resolves active scene at exact end-of-timeline without wrapping back to Hook when Outro is disabled", () => {
+        const noOutroDraft = makeDraft({
+            enableOutro: false,
+            scenes: [
+                { id: "scene-1", title: "H", duration: 4 },
+                { id: "rehook-1", title: "R", duration: 4 },
+                { id: "scene-2", title: "S", duration: 12 },
+            ],
+        });
+        expect(getActiveSceneAtTime(noOutroDraft, 20)).toEqual({
+            scene: noOutroDraft.scenes[2],
+            isOutro: false,
+            sceneIndex: 2,
+        });
+
+        const withOutroDraft = makeDraft({ ...noOutroDraft, enableOutro: true, outroDuration: 5 });
+        expect(getActiveSceneAtTime(withOutroDraft, 20)).toEqual({
+            scene: null,
+            isOutro: true,
+            sceneIndex: 3,
+        });
+
+        const nanPaced = calculatePsychologyPacedScenes(Number.NaN, noOutroDraft.scenes);
+        expect(nanPaced[2]?.duration).toBe(4);
+    });
+});
+
+describe("parseScrubPillInput (Bug #7 regression)", () => {
+    it("parses integer and decimal inputs with %, ms, px, or s unit suffixes and clamps bounds", () => {
+        expect(parseScrubPillInput("600ms", 100, 2000)).toBe(600);
+        expect(parseScrubPillInput("36px", 12, 72)).toBe(36);
+        expect(parseScrubPillInput("150%", 100, 300)).toBe(150);
+        expect(parseScrubPillInput("2s", 1, 10)).toBe(2);
+        expect(parseScrubPillInput(" -45 px ", -100, 100)).toBe(-45);
+        expect(parseScrubPillInput("120.6%", 50, 200)).toBe(121);
+        expect(parseScrubPillInput("9999ms", 100, 2000)).toBe(2000);
+        expect(parseScrubPillInput("-500%", 0, 100)).toBe(0);
+    });
+
+    it("rejects empty, unit-only, non-finite, and malformed text inputs", () => {
+        expect(parseScrubPillInput("", 0, 100)).toBeNull();
+        expect(parseScrubPillInput("   ", 0, 100)).toBeNull();
+        expect(parseScrubPillInput("ms", 0, 100)).toBeNull();
+        expect(parseScrubPillInput("abc%", 0, 100)).toBeNull();
+        expect(parseScrubPillInput("Infinity", 0, 100)).toBeNull();
+    });
+});
+
+describe("Portion D Stage 2 regressions (Bugs #10, #12, #26)", () => {
+    it("steps across split snap PRE/POST stops and wraps cleanly (Bug #10)", () => {
+        const kfs: VideoKeyframe[] = [
+            { id: "k2", time: 12, zoom: 120, posX: 60, easing: "snap", pre: { time: 10, zoom: 100, posX: 50 } },
+            { id: "k1", time: 5, zoom: 100, posX: 50, easing: "smooth" },
+            { id: "k3", time: 18, zoom: 140, posX: 40, easing: "snap" },
+        ];
+        expect(resolveKeyframeJumpStop(kfs, 5, "next")).toEqual({ time: 10, side: "pre" });
+        expect(resolveKeyframeJumpStop(kfs, 10, "next")).toEqual({ time: 12, side: "post" });
+        expect(resolveKeyframeJumpStop(kfs, 12, "prev")).toEqual({ time: 10, side: "pre" });
+        expect(resolveKeyframeJumpStop(kfs, 12, "next")).toEqual({ time: 18, side: "pre" });
+        expect(resolveKeyframeJumpStop(kfs, 18, "next")).toEqual({ time: 5, side: "post" });
+        expect(resolveKeyframeJumpStop(kfs, 5, "prev")).toEqual({ time: 18, side: "pre" });
+    });
+
+    it("resolves telemetry PRE tint safely even when sortedKeyframes differs in order from draft.keyframes (Bug #12)", () => {
+        const sortedKfs: VideoKeyframe[] = [
+            { id: "g1", time: 5, zoom: 120, posX: 60, easing: "smooth" },
+            { id: "s2", time: 20, zoom: 100, posX: 50, easing: "snap" },
+        ];
+        expect(getKeyframeTelemetryTint(sortedKfs, 20, "pre", true, true).color).toBe("var(--ui-pre)");
+        expect(getKeyframeTelemetryTint(sortedKfs, 5, "post", false, true).color).toBe("var(--ui-accent)");
+    });
+
+    it("seeks card subtitles via wrapMediaTime and clamps inside card bounds (Bug #26)", () => {
+        const draft = makeDraft({
+            videoDuration: 30,
+            scenes: [
+                { id: "hook", title: "H", subtitle: "", duration: 10 },
+                { id: "story", title: "S", subtitle: "", duration: 25 },
+                { id: "angle", title: "A", subtitle: "", duration: 15 },
+            ],
+        });
+        expect(resolveSceneSubtitleSeekTime(draft, { start: 35, end: 50 }, 15, 8, 10, 0)).toBe(38);
+        expect(resolveSceneSubtitleSeekTime(draft, { start: 25, end: 40 }, 15, 4, 10, 0)).toBe(34);
+        expect(resolveSceneSubtitleSeekTime(draft, { start: 25, end: 40 }, 15, 24, 10, 0)).toBe(25);
+        expect(resolveSceneSubtitleSeekTime(draft, { start: 0, end: 10 }, 10, 15, 10, 0)).toBeCloseTo(9.95, 4);
+    });
+});
+
+describe("starMorphMath", () => {
+    it("morphs cleanly between circular dot (m=0) and scaled 5-point star (m=1) with zero stale scratch state", () => {
+        expect(buildDotStarMorphPath(0)).toBe(CIRCLE_PATH_R3);
+        expect(buildDotStarMorphPath(-1)).toBe(CIRCLE_PATH_R3);
+
+        const starDefault = buildDotStarMorphPath(1, 100);
+        const cubicCount = (starDefault.match(/ C /g) || []).length;
+        expect(cubicCount).toBe(10);
+        expect(starDefault.startsWith("M 0.000 -4.450")).toBe(true);
+        expect(starDefault.endsWith(" Z")).toBe(true);
+
+        const starScaled = buildDotStarMorphPath(1, 150);
+        expect(starScaled.startsWith("M 0.000 -6.675")).toBe(true);
+        expect(buildDotStarMorphPath(1, 100)).toBe(starDefault);
+    });
+
+    it("evaluates spin angles and morph envelope across all spin modes", () => {
+        expect(evaluateSingleCueSpin(0, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 0, angleDeg: 0 });
+        expect(evaluateSingleCueSpin(1.65, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 0, angleDeg: 0 });
+
+        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 1, angleDeg: 126 });
+        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "cw-1x")).toEqual({ morph: 1, angleDeg: 144 });
+        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "cw-2x")).toEqual({ morph: 1, angleDeg: 288 });
+        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "ccw")).toEqual({ morph: 1, angleDeg: -126 });
+
+        const midHold = evaluateSingleCueSpin(0.5 + 0.65 * 0.5, 0.5, 0.65, "flag-tilt");
+        expect(midHold.morph).toBe(1);
+        expect(midHold.angleDeg).toBeCloseTo(135, 5);
+    });
+
+    it("resolves active multi-cue star animations along the playback timeline", () => {
+        const cfg = {
+            starCues: [
+                { id: "c0", time: 0 },
+                { id: "c1", time: 10 },
+            ],
+            morphDuration: 0.5,
+            holdDuration: 0.65,
+            spinMode: "cw-1x" as const,
+        };
+        expect(getStarAnimState(0.5, cfg)).toEqual({ morph: 1, angleDeg: 144 });
+        expect(getStarAnimState(5.0, cfg)).toEqual({ morph: 0, angleDeg: 0 });
+        expect(getStarAnimState(10.5, cfg)).toEqual({ morph: 1, angleDeg: 144 });
+        expect(getStarAnimState(12.0, cfg)).toEqual({ morph: 0, angleDeg: 0 });
+    });
+
+    it("lifts the star upward as it expands so its bottom stays anchored on the y=42 baseline", () => {
+        expect(getStarDotTransform(0, 0, 100)).toBe("translate(32 39)");
+        expect(getStarDotTransform(1, 0, 100)).toBe("translate(32 37.550)");
+        expect(getStarDotTransform(1, 144, 150)).toBe("translate(32 35.325) rotate(144.00)");
+    });
+
+    it("morphs Dot -> Star -> Crescent -> Dot anti-clockwise with drift vs still hold feel", () => {
+        expect(getCueTotalDuration(0.45, 0.5, "star-crescent")).toBeCloseTo(2.35, 5);
+        expect(getCueTotalDuration(0.45, 0.5, "star-only")).toBeCloseTo(1.4, 5);
+
+        const starHoldMid = evaluateEmblemCue(0.45 + 0.25, 0.45, 0.5, "ccw", "star-crescent", "drift");
+        expect(starHoldMid.shapeA).toBe("star");
+        expect(starHoldMid.expandFactor).toBe(1);
+        expect(starHoldMid.angleDeg).toBeCloseTo(-135, 3);
+
+        const crescentHoldStill = evaluateEmblemCue(0.45 * 2 + 0.5 + 0.25, 0.45, 0.5, "ccw", "star-crescent", "still");
+        expect(crescentHoldStill.shapeA).toBe("crescent");
+        expect(crescentHoldStill.expandFactor).toBe(1);
+        expect(crescentHoldStill.angleDeg).toBeCloseTo(-360, 3);
+
+        const crescentPath = buildLogoEmblemPath("crescent", "crescent", 1, 100);
+        expect((crescentPath.match(/ C /g) || []).length).toBe(10);
+        expect(crescentPath.endsWith(" Z")).toBe(true);
+    });
+});
+
+describe("Portion F Stage 2 regressions (Bug #21)", () => {
+    it("sorts keyframes and starCues ascending and deduplicates scene IDs on draft hydration", () => {
+        const hydrated = normalizeHydratedVideoDraft({
+            scenes: [
+                { id: "dup", title: "Hook", subtitle: "", duration: 4 },
+                { id: "dup", title: "Story", subtitle: "", duration: 20 },
+            ],
+            keyframes: [
+                { id: "k2", time: 18, zoom: 120, posX: 60, easing: "smooth" },
+                { id: "k1", time: 4, zoom: 100, posX: 50, easing: "snap" },
+            ],
+            starCues: [
+                { id: "c2", time: 14 },
+                { id: "c1", time: 1.5 },
+            ],
+        });
+        expect(hydrated.keyframes?.map((k) => k.id)).toEqual(["k1", "k2"]);
+        expect(hydrated.starCues?.map((c) => c.id)).toEqual(["c1", "c2"]);
+        expect(new Set(hydrated.scenes.map((s) => s.id)).size).toBe(2);
+
+        const emptyScenesHydrated = normalizeHydratedVideoDraft({ scenes: [] });
+        expect(emptyScenesHydrated.scenes.length).toBeGreaterThan(0);
+    });
+
+    it("sanitizes slugs and extracts anchor keywords across leading/repeated spaces", () => {
+        expect(sanitize("  Karachi!! 2027--Brief ")).toBe("karachi-2027-brief");
+        expect(getAnchorKeyword("STATE BANK ==DIGITAL TRADE== POLICY")).toBe("digital-trade");
+        expect(getAnchorKeyword("   Breaking   Economic   Briefing   Today")).toBe("breaking-economic-briefing");
+        expect(getAnchorKeyword("   ")).toBe("news");
+    });
+});
+
+describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic boxH/topOffsetY parity)", () => {
+    it("emits dynamic 4:5 scale, boxH, and topOffsetY expressions across 0% -> 100% zoom glides", () => {
+        const draft = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 0,
+            posX: 50,
+            posY: 50,
+            enableAmbientBlur: true,
+            keyframes: [
+                { id: "k0", time: 0, zoom: 0, posX: 50, posY: 50, easing: "smooth" },
+                { id: "k1", time: 5, zoom: 100, posX: 50, posY: 50, easing: "smooth" },
+            ],
+        });
+        const hContain = 608;
+        const scaleFill = 1350 / hContain;
+        const scaleInfo = build45ScaleExpr(draft, 0, 5, scaleFill);
+        const boxInfo = build45BoxHExpr(draft, 0, 5, 1350, hContain);
+        const topInfo = buildTopOffsetYExpr(draft, 0, 5, 1350, hContain, true);
+
+        expect(scaleInfo.isConstant).toBe(false);
+        expect(scaleInfo.minV).toBeCloseTo(1, 2);
+        expect(scaleInfo.maxV).toBeCloseTo(scaleFill, 2);
+
+        expect(boxInfo.isConstant).toBe(false);
+        expect(boxInfo.minH).toBeCloseTo(hContain, 0);
+        expect(boxInfo.maxH).toBeCloseTo(1350, 0);
+
+        expect(topInfo.isConstant).toBe(false);
+        expect(topInfo.minY).toBeCloseTo(0, 0);
+        expect(topInfo.maxY).toBeCloseTo((1350 - hContain) / 2, 0);
+
+        const stage = buildSceneFilterStages({
+            index: 0,
+            scene: draft.scenes[0]!,
+            scenes: draft.scenes,
+            draft,
+            start: 0,
+            duration: 5,
+            width: 1080,
+            height: 1350,
+            targetFps: 30,
+            is45: true,
+            isImage: false,
+            hasReHook: false,
+            setupIdx: 1,
+            srcWidth: 1920,
+            srcHeight: 1080,
+            srcHasAudio: true,
+            mediaIdx: 0,
+            overlayIdx: 1,
+            customLoopVideoSource: null,
+            customLoopAudioSource: null,
+            loopTrim: "",
+            aLoopTrim: "",
+        });
+        expect(stage.filters.some((f) => f.includes("eval=frame"))).toBe(true);
+        expect(stage.filters.some((f) => f.includes("[bg_top_spill_0]"))).toBe(true);
+    });
+
+    it("applies 4:5 letterbox & ambient spill to landscape photo scenes using probed image dimensions (Bug #25)", () => {
+        const draft = makeDraft({ aspectRatio: "4:5", zoom: 0, posX: 50, posY: 100, enableAmbientBlur: true });
+        const stage = buildSceneFilterStages({
+            index: 0,
+            scene: { ...draft.scenes[0]!, mediaType: "image" },
+            scenes: draft.scenes,
+            draft,
+            start: 0,
+            duration: 5,
+            width: 1080,
+            height: 1350,
+            targetFps: 30,
+            is45: true,
+            isImage: true,
+            hasReHook: false,
+            setupIdx: 1,
+            srcWidth: 1920,
+            srcHeight: 1080,
+            srcHasAudio: false,
+            mediaIdx: 0,
+            overlayIdx: 1,
+            customLoopVideoSource: null,
+            customLoopAudioSource: null,
+            loopTrim: "",
+            aLoopTrim: "",
+        });
+        expect(stage.filters.some((f) => f.includes("[bg_spill_0]"))).toBe(true);
+    });
+
+    it("enforces streaming byte ceiling on chunked proxy responses (Bug #22)", async () => {
+        const withinLimit = new ReadableStream<Uint8Array>({
+            start(c) {
+                c.enqueue(new Uint8Array(4));
+                c.enqueue(new Uint8Array(4));
+                c.close();
+            },
+        }).pipeThrough(createByteLimitTransform(10));
+        const okBuf = await new Response(withinLimit).arrayBuffer();
+        expect(okBuf.byteLength).toBe(8);
+
+        const overLimit = new ReadableStream<Uint8Array>({
+            start(c) {
+                c.enqueue(new Uint8Array(6));
+                c.enqueue(new Uint8Array(6));
+                c.close();
+            },
+        }).pipeThrough(createByteLimitTransform(10));
+        await expect(new Response(overLimit).arrayBuffer()).rejects.toThrow(/exceeds/i);
     });
 });

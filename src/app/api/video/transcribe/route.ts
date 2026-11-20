@@ -3,21 +3,12 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import type { SubtitleSegment } from "../../../../types/news";
-import { CACHE_DIR, resolveCachedVideoPath, spawnExec } from "../../../../lib/server/videoMedia";
+import { CACHE_DIR, fileExists, resolveCachedVideoPath, spawnExec } from "../../../../lib/server/videoMedia";
 
 export const runtime = "nodejs";
 
 const WHISPER_DIR = path.join(process.cwd(), "tools", "whisper");
 let cachedWhisperSetup: { bin: string; model: string; kind: "cpp" | "cli" } | null = null;
-
-const fileExists = async (target: string): Promise<boolean> => {
-    try {
-        await fs.promises.access(target);
-        return true;
-    } catch {
-        return false;
-    }
-};
 
 const findWhisperSetup = async (): Promise<{ bin: string; model: string; kind: "cpp" | "cli" } | null> => {
     if (cachedWhisperSetup && await fileExists(cachedWhisperSetup.bin) && await fileExists(cachedWhisperSetup.model)) {
@@ -62,6 +53,7 @@ export async function POST(request: Request) {
             }, { status: 422 });
         }
 
+        await fs.promises.mkdir(CACHE_DIR, { recursive: true });
         const uid = crypto.randomUUID().slice(0, 8);
         wavPath = path.join(CACHE_DIR, `audio-${uid}.wav`);
         jsonPrefix = path.join(CACHE_DIR, `subs-${uid}`);

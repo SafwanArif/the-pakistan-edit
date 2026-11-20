@@ -4,7 +4,7 @@ import { clamp } from "../../../types/news";
 export interface StudioShortcutContext {
     togglePlay: () => void;
     seekTo: (time: number) => void;
-    onToggleToolTab: (tab: "keyframes" | "subtitles") => void;
+    onToggleToolTab: (tab: "keyframes" | "subtitles" | "motion") => void;
     sceneStarts: number[];
     outroStart: number;
     enableOutro: boolean;
@@ -52,14 +52,19 @@ export const useStudioShortcuts = (ctx: StudioShortcutContext) => {
                 s.togglePlay();
                 return;
             }
-            if (e.key === "k" || e.key === "K") {
+            if (e.code === "KeyK") {
                 e.preventDefault();
                 s.onToggleToolTab("keyframes");
                 return;
             }
-            if (e.key === "c" || e.key === "C") {
+            if (e.code === "KeyC") {
                 e.preventDefault();
                 s.onToggleToolTab("subtitles");
+                return;
+            }
+            if (e.code === "KeyM") {
+                e.preventDefault();
+                s.onToggleToolTab("motion");
                 return;
             }
             if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && target?.closest('[role="slider"]')) {

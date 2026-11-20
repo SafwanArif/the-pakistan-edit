@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import type { VideoDraft } from "../../../../types/news";
 import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "../../../../types/news";
 import { OMNI_CONFIG, VIDEO_PLATFORM_CONFIGS, aspectRatioToPlatform } from "../../../../config/omnichannel";
-import { CACHE_DIR, createFileWebStream, fileExists, resolveCachedVideoPath, spawnExec } from "../../../../lib/server/videoMedia";
+import { assertDiskHeadroom, CACHE_DIR, createFileWebStream, fileExists, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
 import { buildAssSubtitles, escapeFfmpegFilterPath } from "../../../../lib/server/ffmpegFilters";
 import { buildSceneFilterStages } from "../../../../lib/server/ffmpegSceneGraph";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const parseRatio = (rate?: string): number | null => {
     if (!rate) return null;
@@ -30,22 +33,39 @@ const parseFrameRate = (avgRate?: string, rRate?: string): number => {
     return Math.min(120, Math.max(24, Math.round(raw)));
 };
 
-const probeVideoInfo = async (filePath: string, signal?: AbortSignal): Promise<{ width: number; height: number; duration: number; hasAudio: boolean; fps: number }> => {
+const probeVideoInfo = async (filePath: string, signal?: AbortSignal): Promise<{ width: number; height: number; duration: number; hasAudio: boolean; fps: number; isHdr: boolean }> => {
     const { stdout } = await spawnExec("ffprobe", [
-        "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate,avg_frame_rate", "-of", "json", filePath,
+        "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate,avg_frame_rate,color_transfer:stream_tags=rotate:stream_side_data=rotation", "-of", "json", filePath,
     ], { signal, timeoutMs: 30_000 });
     const parsed = JSON.parse(stdout) as {
         format?: { duration?: string };
-        streams?: { codec_type?: string; width?: number; height?: number; r_frame_rate?: string; avg_frame_rate?: string }[];
+        streams?: {
+            codec_type?: string;
+            width?: number;
+            height?: number;
+            r_frame_rate?: string;
+            avg_frame_rate?: string;
+            color_transfer?: string;
+            tags?: { rotate?: string };
+            side_data_list?: { rotation?: number | string }[];
+        }[];
     };
     const vStream = parsed.streams?.find((s) => s.codec_type === "video");
     const hasAudio = Boolean(parsed.streams?.some((s) => s.codec_type === "audio"));
+    const codedW = vStream?.width || 1920;
+    const codedH = vStream?.height || 1080;
+    const sideRot = vStream?.side_data_list?.find((sd) => sd.rotation !== undefined)?.rotation;
+    const rawRot = Number(sideRot ?? vStream?.tags?.rotate ?? 0);
+    const isQuarterTurn = Number.isFinite(rawRot) && Math.abs(Math.round(rawRot)) % 180 === 90;
+    const trc = (vStream?.color_transfer || "").toLowerCase();
+    const isHdr = trc === "arib-std-b67" || trc === "smpte2084";
     return {
-        width: vStream?.width || 1920,
-        height: vStream?.height || 1080,
+        width: isQuarterTurn ? codedH : codedW,
+        height: isQuarterTurn ? codedW : codedH,
         duration: Number(parsed.format?.duration || 0) || 60,
         hasAudio,
         fps: parseFrameRate(vStream?.avg_frame_rate, vStream?.r_frame_rate),
+        isHdr,
     };
 };
 
@@ -53,6 +73,7 @@ const probeVideoInfo = async (filePath: string, signal?: AbortSignal): Promise<{
 export async function POST(request: Request) {
     const tempFiles: string[] = [];
     const uid = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    void sweepStaleExportFiles();
 
     try {
         const formData = await request.formData();
@@ -74,6 +95,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Master video must be uploaded to the studio first." }, { status: 400 });
         }
         await fs.promises.mkdir(CACHE_DIR, { recursive: true });
+        await assertDiskHeadroom();
         const masterInfo = await probeVideoInfo(masterPath, request.signal);
 
         const targetPlatform = aspectRatioToPlatform(draft.aspectRatio);
@@ -99,7 +121,8 @@ export async function POST(request: Request) {
         for (let i = 0; i < scenes.length; i++) {
             const s = scenes[i]!;
             const b = bounds[i]!;
-            const dur = Math.min(180, Math.max(0.5, Number(s.duration) || 5));
+            const rawDur = Math.min(180, Math.max(0.5, Number(s.duration) || 5));
+            const dur = Math.max(1, Math.round(rawDur * targetFps)) / targetFps;
             const ovBlob = formData.get(`overlay_${i}`);
             if (!(ovBlob instanceof Blob)) {
                 return NextResponse.json({ error: `Missing overlay_${i}` }, { status: 400 });
@@ -115,7 +138,19 @@ export async function POST(request: Request) {
             if (customMediaBlob instanceof Blob) {
                 const ext = isImage ? ".png" : ".mp4";
                 srcPath = await saveTempBlob(customMediaBlob, ext);
-                if (!isImage) srcInfo = await probeVideoInfo(srcPath, request.signal);
+                if (isImage) {
+                    const probed = await probeVideoInfo(srcPath, request.signal).catch(() => null);
+                    srcInfo = {
+                        width: probed?.width ?? W,
+                        height: probed?.height ?? H,
+                        duration: dur,
+                        hasAudio: false,
+                        fps: targetFps,
+                        isHdr: false,
+                    };
+                } else {
+                    srcInfo = await probeVideoInfo(srcPath, request.signal);
+                }
             } else if (cachedSceneVideo && !isImage) {
                 srcPath = cachedSceneVideo;
                 srcInfo = await probeVideoInfo(srcPath, request.signal);
@@ -137,7 +172,7 @@ export async function POST(request: Request) {
                     const loopStart = i === 0
                         ? (s.clipStartOffset ?? 0)
                         : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath && i >= setupIdx ? setupOffset : 0));
-                    args.push("-stream_loop", "-1", "-i", srcPath);
+                    args.push("-fflags", "+genpts+discardcorrupt", "-stream_loop", "-1", "-i", srcPath);
                     const firstPassDur = Math.max(0.1, srcInfo.duration - rawStart);
                     if (rawStart > loopStart + 0.05 && firstPassDur < dur - 0.05) {
                         const remDur = dur - firstPassDur;
@@ -158,7 +193,7 @@ export async function POST(request: Request) {
                         aLoopTrim = `atrim=start=${rawStart.toFixed(3)}:duration=${dur.toFixed(3)},`;
                     }
                 } else {
-                    args.push("-ss", Math.max(0, rawStart).toFixed(3), "-t", dur.toFixed(3), "-i", srcPath);
+                    args.push("-fflags", "+genpts+discardcorrupt", "-ss", Math.max(0, rawStart).toFixed(3), "-t", dur.toFixed(3), "-i", srcPath);
                 }
             }
 
@@ -182,6 +217,7 @@ export async function POST(request: Request) {
                 srcWidth: srcInfo.width,
                 srcHeight: srcInfo.height,
                 srcHasAudio: srcInfo.hasAudio,
+                srcIsHdr: !isImage && srcInfo.isHdr,
                 mediaIdx,
                 overlayIdx: ovIdx,
                 customLoopVideoSource,
@@ -195,11 +231,12 @@ export async function POST(request: Request) {
 
         const outroBlob = formData.get("outroOverlay");
         if (draft.enableOutro && outroBlob instanceof Blob) {
-            const outroDur = Math.min(15, Math.max(1, Number(draft.outroDuration) || 5));
+            const rawOutroDur = Math.min(15, Math.max(1, Number(draft.outroDuration) || 5));
+            const outroDur = Math.max(1, Math.round(rawOutroDur * targetFps)) / targetFps;
             const outroPath = await saveTempBlob(outroBlob, ".png");
             const oIdx = inputIdx++;
             args.push("-framerate", String(targetFps), "-loop", "1", "-t", outroDur.toFixed(3), "-i", outroPath);
-            filters.push(`[${oIdx}:v]fps=${targetFps},scale=${W}:${H}:flags=lanczos,fade=t=in:st=0:d=0.25:color=#050505,format=yuv420p,setsar=1[v_outro]`);
+            filters.push(`[${oIdx}:v]fps=${targetFps},scale=${W}:${H}:flags=lanczos+accurate_rnd+full_chroma_int:out_color_matrix=bt709:out_range=tv,fade=t=in:st=0:d=0.25:color=#050505,format=yuv420p,setsar=1,settb=1/90000[v_outro]`);
             filters.push(`anullsrc=r=48000:cl=stereo:d=${outroDur.toFixed(3)}[a_outro]`);
             concatInputs.push(`[v_outro][a_outro]`);
         }
@@ -219,37 +256,41 @@ export async function POST(request: Request) {
             filters.push(`${concatInputs.join("")}concat=n=${segCount}:v=1:a=1[v_cat][a_cat]`);
             filters.push(`[v_cat]ass='${escapeFfmpegFilterPath(assPath)}'${fontsDirArg}[vsub]`);
             finalVideoMap = "[vsub]";
-            if (shouldLoudnorm) {
-                filters.push(`[a_cat]alimiter=limit=0.841:attack=5:release=50,loudnorm=I=-14:TP=-1.5:LRA=11:linear=true[anorm]`);
-                finalAudioMap = "[anorm]";
-            } else {
-                finalAudioMap = "[a_cat]";
-            }
         } else {
             filters.push(`${concatInputs.join("")}concat=n=${segCount}:v=1:a=1[vout][a_cat]`);
-            if (shouldLoudnorm) {
-                filters.push(`[a_cat]alimiter=limit=0.841:attack=5:release=50,loudnorm=I=-14:TP=-1.5:LRA=11:linear=true[anorm]`);
-                finalAudioMap = "[anorm]";
-            } else {
-                finalAudioMap = "[a_cat]";
-            }
         }
+
+        if (shouldLoudnorm) {
+            filters.push(`[a_cat]alimiter=limit=0.841:attack=5:release=50,loudnorm=I=-14:TP=-1.5:LRA=11:linear=true,aresample=48000[anorm]`);
+            finalAudioMap = "[anorm]";
+        } else {
+            finalAudioMap = "[a_cat]";
+        }
+
+        const filterScriptPath = path.join(CACHE_DIR, `filter-${uid}.txt`);
+        await fs.promises.writeFile(filterScriptPath, filters.join(";\n"), "utf8");
+        tempFiles.push(filterScriptPath);
 
         const outPath = path.join(CACHE_DIR, `export-${uid}.mp4`);
         tempFiles.push(outPath);
 
-        await spawnExec("ffmpeg", [
+        const renderThreads = String(Math.max(2, os.cpus().length - 2));
+        await withExportSlot(() => spawnExec("ffmpeg", [
             "-y", "-hide_banner", "-loglevel", "error",
             ...args,
-            "-filter_complex", filters.join(";"),
+            "-filter_complex_script", filterScriptPath,
             "-map", finalVideoMap, "-map", finalAudioMap,
+            "-map_metadata", "-1", "-dn", "-sn",
+            "-threads", renderThreads,
+            "-max_muxing_queue_size", "4096",
             "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-profile:v", "high", "-level", "4.2",
-            "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+            "-g", String(targetFps * 2), "-keyint_min", String(targetFps * 2), "-sc_threshold", "0",
+            "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
             "-r", String(targetFps),
             "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
             "-movflags", "+faststart",
             outPath,
-        ], { signal: request.signal, timeoutMs: 300_000 });
+        ], { signal: request.signal, timeoutMs: 300_000 }), request.signal);
 
         const stat = await fs.promises.stat(outPath);
         const outIdx = tempFiles.indexOf(outPath);

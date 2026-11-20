@@ -3,29 +3,30 @@
 import React, { useState } from "react";
 import { formatTimecode, parseTimeInput } from "../../../types/news";
 
-export const KeyDiamondGlyph: React.FC<{ kind: 'snap' | 'glide' }> = ({ kind }) => (
-    <span
-        aria-hidden="true"
-        style={{
-            display: 'inline-block',
-            width: '7px',
-            height: '7px',
-            borderRadius: '1.5px',
-            transform: 'rotate(45deg)',
-            background: kind === 'snap'
-                ? 'linear-gradient(135deg, var(--ui-pre) 48%, var(--ui-accent) 52%)'
-                : 'var(--ui-accent)',
-            flexShrink: 0,
-        }}
-    />
-);
+const DIAMOND_BASE_STYLE: React.CSSProperties = {
+    display: 'inline-block',
+    width: '7px',
+    height: '7px',
+    borderRadius: '1.5px',
+    transform: 'rotate(45deg)',
+    flexShrink: 0,
+};
+const DIAMOND_STYLES: Record<'snap' | 'glide', React.CSSProperties> = {
+    snap: { ...DIAMOND_BASE_STYLE, background: 'linear-gradient(135deg, var(--ui-pre) 48%, var(--ui-accent) 52%)' },
+    glide: { ...DIAMOND_BASE_STYLE, background: 'var(--ui-accent)' },
+};
+
+export const KeyDiamondGlyph: React.FC<{ kind: 'snap' | 'glide' }> = React.memo(({ kind }) => (
+    <span aria-hidden="true" style={DIAMOND_STYLES[kind]} />
+));
+KeyDiamondGlyph.displayName = "KeyDiamondGlyph";
 
 export const SnapCap: React.FC<{
     ariaLabel: string;
     value: number;
     options: { label: string; val: number; title: string }[];
     onSelect: (val: number) => void;
-}> = ({ ariaLabel, value, options, onSelect }) => (
+}> = React.memo(({ ariaLabel, value, options, onSelect }) => (
     <div
         className="tpe-mode-cluster"
         role="group"
@@ -50,7 +51,8 @@ export const SnapCap: React.FC<{
             );
         })}
     </div>
-);
+));
+SnapCap.displayName = "SnapCap";
 
 export const KeyframeTimeChip: React.FC<{
     prefix: string;
@@ -60,7 +62,7 @@ export const KeyframeTimeChip: React.FC<{
     title: string;
     onSelect?: () => void;
     onCommitTime?: (nextTime: number) => void;
-}> = ({ prefix, time, active, accentColor, title, onSelect, onCommitTime }) => {
+}> = React.memo(({ prefix, time, active, accentColor, title, onSelect, onCommitTime }) => {
     const [editingText, setEditingText] = useState<string | null>(null);
 
     if (editingText !== null && onCommitTime) {
@@ -119,4 +121,5 @@ export const KeyframeTimeChip: React.FC<{
             </button>
         </div>
     );
-};
+});
+KeyframeTimeChip.displayName = "KeyframeTimeChip";

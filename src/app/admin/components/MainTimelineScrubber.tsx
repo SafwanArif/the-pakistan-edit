@@ -14,6 +14,82 @@ interface SceneMarker {
     color?: string;
 }
 
+const MainTimelineSegments = React.memo<{
+    sceneMarkers: SceneMarker[];
+    outroPct: number;
+    activeSegIdx: number;
+    isOutroActive: boolean;
+}>(({ sceneMarkers, outroPct, activeSegIdx, isOutroActive }) => (
+    <>
+        {sceneMarkers.map((m, idx) => {
+            const nextPct = sceneMarkers[idx + 1]?.percent ?? (outroPct > 0 ? 100 - outroPct : 100);
+            const segW = Math.max(0, nextPct - m.percent);
+            const isActiveSeg = idx === activeSegIdx;
+            const roleColor = m.color || "var(--ui-accent)";
+            const displayLabel = segW >= 8 ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
+            return (
+                <div
+                    key={`${m.id}-${idx}`}
+                    style={{
+                        position: "absolute",
+                        left: `${m.percent}%`,
+                        width: `${segW}%`,
+                        top: 0,
+                        bottom: 0,
+                        borderRight: idx < sceneMarkers.length - 1 || outroPct > 0 ? "2px solid #050505" : "none",
+                        borderTop: `2.5px solid ${roleColor}`,
+                        background: `color-mix(in oklch, ${roleColor} ${isActiveSeg ? "22%" : "9%"}, transparent)`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: segW < 8 ? "center" : "flex-start",
+                        paddingInline: segW < 8 ? "0px" : "5px",
+                        overflow: "hidden",
+                        pointerEvents: "none",
+                    }}
+                >
+                    {displayLabel && (
+                        <span style={{ fontSize: segW < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: segW < 8 ? "0" : "0.05em", color: roleColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: segW < 8 ? "clip" : "ellipsis" }}>
+                            {displayLabel}
+                        </span>
+                    )}
+                </div>
+            );
+        })}
+
+        {outroPct > 0 && (() => {
+            const outroColor = "var(--ui-outro)";
+            const outroNum = String(sceneMarkers.length + 1).padStart(2, "0");
+            const outroLabel = outroPct >= 8 ? `${outroNum}. OUTRO` : (outroPct >= 1.2 ? outroNum : undefined);
+            return (
+                <div
+                    style={{
+                        position: "absolute",
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${outroPct}%`,
+                        borderTop: `2.5px solid ${outroColor}`,
+                        background: `color-mix(in oklch, ${outroColor} ${isOutroActive ? "22%" : "9%"}, transparent)`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: outroPct < 8 ? "center" : "flex-start",
+                        paddingInline: outroPct < 8 ? "0px" : "5px",
+                        overflow: "hidden",
+                        pointerEvents: "none",
+                    }}
+                >
+                    {outroLabel && (
+                        <span style={{ fontSize: outroPct < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: outroPct < 8 ? "0" : "0.05em", color: outroColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: outroPct < 8 ? "clip" : "ellipsis" }}>
+                            {outroLabel}
+                        </span>
+                    )}
+                </div>
+            );
+        })()}
+    </>
+));
+MainTimelineSegments.displayName = "MainTimelineSegments";
+
 interface MainTimelineScrubberProps {
     duration: number;
     currentTime: number;
@@ -41,7 +117,7 @@ interface MainTimelineScrubberProps {
 }
 
 /** 2027 NLE-style master timeline scrubber with fused draggable Hook/Re-Hook emoji handles, hover timecode, vertical playhead, and clickable keyframes. */
-export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
+export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.memo(({
     duration,
     currentTime,
     isPlaying,
@@ -91,9 +167,17 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
         const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
         if (!rect) return { pct: 0, time: 0 };
         const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-        const snapped = Math.round(ratio * maxSec * 20) / 20;
+        const snapped = Math.round(ratio * maxSec * 100) / 100;
         return { pct: ratio * 100, time: clamp(snapped, 0, maxSec) };
     };
+
+    const isOutroActive = outroPct > 0 && pct >= 100 - outroPct;
+    const activeSegIdx = isOutroActive
+        ? -1
+        : sceneMarkers.findIndex((m, idx) => {
+            const nextPct = sceneMarkers[idx + 1]?.percent ?? (outroPct > 0 ? 100 - outroPct : 100);
+            return pct >= m.percent && pct < nextPct;
+        });
 
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
         e.stopPropagation();
@@ -144,9 +228,12 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                 className="tpe-scrubber"
                 role="slider"
                 aria-label="Master timeline scrubber"
+                aria-orientation="horizontal"
+                draggable={false}
                 aria-valuemin={0}
                 aria-valuemax={Math.round(safeDuration * 10) / 10}
                 aria-valuenow={Math.round(currentTime * 10) / 10}
+                aria-valuetext={`${formatTimecode(currentTime)} of ${formatTimecode(safeDuration)}`}
                 tabIndex={0}
                 onKeyDown={(e) => {
                     const step = e.shiftKey ? 5 : 1;
@@ -163,6 +250,9 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                         e.preventDefault();
                         onJumpToTime(safeDuration);
                     }
+                }}
+                onPointerEnter={() => {
+                    dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                 }}
                 onPointerDown={(e) => {
                     e.currentTarget.setPointerCapture(e.pointerId);
@@ -193,7 +283,13 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                     dragRectRef.current = null;
                     onScrubEnd(currentTime);
                 }}
-                onMouseLeave={() => { if (!isDragging && !dragTarget) setHoverInfo(null); }}
+                onLostPointerCapture={() => {
+                    if (!isDragging) return;
+                    setIsDragging(false);
+                    dragRectRef.current = null;
+                    onScrubEnd(currentTime);
+                }}
+                onMouseLeave={() => { if (!isDragging && !dragTarget) { dragRectRef.current = null; setHoverInfo(null); } }}
                 style={{
                     position: "relative",
                     width: "100%",
@@ -212,176 +308,99 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = ({
                     <div
                         style={{
                             position: "absolute",
-                            left: `${Math.max(4, Math.min(96, hoverInfo.pct))}%`,
-                            top: "-20px",
-                            transform: "translateX(-50%)",
-                            padding: "1px 6px",
-                            borderRadius: "4px",
-                            background: "var(--ui-bg-popover)",
-                            border: `1px solid ${dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)"}`,
-                            fontSize: "8.5px",
-                            fontFamily: "monospace",
-                            fontWeight: 800,
-                            color: dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)",
+                            inset: 0,
+                            transform: `translate3d(${Math.max(4, Math.min(96, hoverInfo.pct))}%, 0, 0)`,
+                            willChange: "transform",
                             pointerEvents: "none",
                             zIndex: 8,
-                            whiteSpace: "nowrap",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
                         }}
                     >
-                        {dragTarget === "hook" ? "🪝 " : dragTarget === "rehook" ? "RE-HOOK " : (() => {
-                            if (outroPct > 0 && hoverInfo.pct >= 100 - outroPct) {
-                                return `${String(sceneMarkers.length + 1).padStart(2, '0')}. OUTRO • `;
-                            }
-                            const hoveredSeg = [...sceneMarkers].reverse().find(m => hoverInfo.pct >= m.percent);
-                            return hoveredSeg?.label ? `${hoveredSeg.label} • ` : "";
-                        })()}
-                        {formatTimecode(hoverInfo.time)}
+                        <div
+                            style={{
+                                position: "absolute",
+                                left: 0,
+                                top: "-20px",
+                                transform: "translateX(-50%)",
+                                padding: "1px 6px",
+                                borderRadius: "4px",
+                                background: "var(--ui-bg-popover)",
+                                border: `1px solid ${dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)"}`,
+                                fontSize: "8.5px",
+                                fontFamily: "monospace",
+                                fontWeight: 800,
+                                color: dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)",
+                                whiteSpace: "nowrap",
+                                boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
+                            }}
+                        >
+                            {dragTarget === "hook" ? "🪝 " : dragTarget === "rehook" ? "RE-HOOK " : (() => {
+                                if (outroPct > 0 && hoverInfo.pct >= 100 - outroPct) {
+                                    return `${String(sceneMarkers.length + 1).padStart(2, '0')}. OUTRO • `;
+                                }
+                                const hoveredSeg = [...sceneMarkers].reverse().find(m => hoverInfo.pct >= m.percent);
+                                return hoveredSeg?.label ? `${hoveredSeg.label} • ` : "";
+                            })()}
+                            {formatTimecode(hoverInfo.time)}
+                        </div>
                     </div>
                 )}
 
                 {/* Top Lane: Dedicated Keyframe Rail (visible when KEYFRAMES drawer is open) */}
                 {showKeyframesLane && (
                     <div style={{ position: "relative", width: "100%", height: "14px", borderRadius: "4px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                        <TimelineKeyframeTrack keyframes={keyframes} rangeStart={0} rangeDuration={safeDuration} currentTime={currentTime} size={10} zIndex={4} onJump={onJumpToTime} />
+                        <TimelineKeyframeTrack keyframes={keyframes} rangeStart={0} rangeDuration={safeDuration} currentTime={currentTime} isPlaying={isPlaying} size={10} zIndex={4} onJump={onJumpToTime} />
                     </div>
                 )}
 
                 {/* Main Lane: Segmented Angle-Card Blocks */}
                 <div style={{ position: "relative", width: "100%", height: "22px", borderRadius: "5px", background: "rgba(0,0,0,0.35)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    {/* Segmented Scene / Angle Blocks */}
-                    {sceneMarkers.map((m, idx) => {
-                        const nextPct = sceneMarkers[idx + 1]?.percent ?? (outroPct > 0 ? 100 - outroPct : 100);
-                        const segW = Math.max(0, nextPct - m.percent);
-                        const isActiveSeg = pct >= m.percent && pct < nextPct;
-                        const roleColor = m.color || "var(--ui-accent)";
-                        const displayLabel = segW >= 8 ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
-                        return (
-                            <div
-                                key={`${m.id}-${idx}`}
-                                style={{
-                                    position: "absolute",
-                                    left: `${m.percent}%`,
-                                    width: `${segW}%`,
-                                    top: 0,
-                                    bottom: 0,
-                                    borderRight: idx < sceneMarkers.length - 1 || outroPct > 0 ? "2px solid #050505" : "none",
-                                    borderTop: `2.5px solid ${roleColor}`,
-                                    background: `color-mix(in oklch, ${roleColor} ${isActiveSeg ? "22%" : "9%"}, transparent)`,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: segW < 8 ? "center" : "flex-start",
-                                    paddingInline: segW < 8 ? "0px" : "5px",
-                                    overflow: "hidden",
-                                    pointerEvents: "none",
-                                }}
-                            >
-                                {displayLabel && (
-                                    <span style={{ fontSize: segW < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: segW < 8 ? "0" : "0.05em", color: roleColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: segW < 8 ? "clip" : "ellipsis" }}>
-                                        {displayLabel}
-                                    </span>
-                                )}
-                            </div>
-                        );
-                    })}
+                    <MainTimelineSegments sceneMarkers={sceneMarkers} outroPct={outroPct} activeSegIdx={activeSegIdx} isOutroActive={isOutroActive} />
 
-                    {/* Outro Block */}
-                    {outroPct > 0 && (() => {
-                        const outroColor = "var(--ui-outro)";
-                        const isOutroActive = pct >= 100 - outroPct;
-                        const outroNum = String(sceneMarkers.length + 1).padStart(2, "0");
-                        const outroLabel = outroPct >= 8 ? `${outroNum}. OUTRO` : (outroPct >= 1.2 ? outroNum : undefined);
-                        return (
-                            <div
-                                style={{
-                                    position: "absolute",
-                                    right: 0,
-                                    top: 0,
-                                    bottom: 0,
-                                    width: `${outroPct}%`,
-                                    borderTop: `2.5px solid ${outroColor}`,
-                                    background: `color-mix(in oklch, ${outroColor} ${isOutroActive ? "22%" : "9%"}, transparent)`,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: outroPct < 8 ? "center" : "flex-start",
-                                    paddingInline: outroPct < 8 ? "0px" : "5px",
-                                    overflow: "hidden",
-                                    pointerEvents: "none",
-                                }}
-                            >
-                                {outroLabel && (
-                                    <span style={{ fontSize: outroPct < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: outroPct < 8 ? "0" : "0.05em", color: outroColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: outroPct < 8 ? "clip" : "ellipsis" }}>
-                                        {outroLabel}
-                                    </span>
-                                )}
-                            </div>
-                        );
-                    })()}
-
-                    {/* Hook / Re-Hook Source Clip Span Highlights */}
+                    {/* Hook / Re-Hook Source Clip Span Highlights (GPU translate3d + scaleX) */}
                     {showHookHandles && clipDuration > 0 && (
                         <>
-                            <div style={{ position: "absolute", left: `${hookLeftPct}%`, width: `${hookWidthPct}%`, bottom: 0, height: "3px", background: "var(--ui-accent)", opacity: 0.75, pointerEvents: "none" }} />
+                            <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${hookLeftPct}%, 0, 0) scaleX(${hookWidthPct / 100})`, transformOrigin: "left center", willChange: "transform", background: "var(--ui-accent)", opacity: 0.75, pointerEvents: "none" }} />
                             {rehookDuration > 0 && (
-                                <div style={{ position: "absolute", left: `${rehookLeftPct}%`, width: `${rehookWidthPct}%`, bottom: 0, height: "3px", background: "var(--ui-indicator)", opacity: 0.75, pointerEvents: "none" }} />
+                                <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${rehookLeftPct}%, 0, 0) scaleX(${rehookWidthPct / 100})`, transformOrigin: "left center", willChange: "transform", background: "var(--ui-indicator)", opacity: 0.75, pointerEvents: "none" }} />
                             )}
                         </>
                     )}
 
-                    {/* Played Progress Sweep */}
-                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`, background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
+                    {/* Played Progress Sweep (GPU scaleX) */}
+                    <div style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: "transform", background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
                 </div>
 
                 <TimelinePlayheadNeedle pct={pct} active={isPlaying || isDragging} height={showKeyframesLane ? 42 : 26} width={2.5} zIndex={6} />
             </div>
 
-            {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail */}
+            {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail (GPU translate3d) */}
             {showHookHandles && clipDuration > 0 && (
                 <>
-                    <button
-                        type="button"
-                        onPointerDown={(e) => startHandleDrag(e, "hook")}
-                        title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
-                        style={{
-                            position: "absolute",
-                            left: `${Math.max(2, Math.min(98, hookLeftPct))}%`,
-                            bottom: "-1px",
-                            transform: "translateX(-50%)",
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            fontSize: "12px",
-                            lineHeight: 1,
-                            cursor: dragTarget === "hook" ? "grabbing" : "grab",
-                            zIndex: 6,
-                        }}
-                    >
-                        <HookGlyph role="hook" />
-                    </button>
-                    {rehookDuration > 0 && (
+                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "-1px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
                         <button
                             type="button"
-                            onPointerDown={(e) => startHandleDrag(e, "rehook")}
-                            title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
-                            style={{
-                                position: "absolute",
-                                left: `${Math.max(2, Math.min(98, rehookLeftPct))}%`,
-                                bottom: "-1px",
-                                transform: "translateX(-50%)",
-                                background: "transparent",
-                                border: "none",
-                                padding: 0,
-                                fontSize: "12px",
-                                lineHeight: 1,
-                                cursor: dragTarget === "rehook" ? "grabbing" : "grab",
-                                zIndex: 6,
-                            }}
+                            onPointerDown={(e) => startHandleDrag(e, "hook")}
+                            title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
+                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-50%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto" }}
                         >
-                            <HookGlyph role="rehook" />
+                            <HookGlyph role="hook" />
                         </button>
+                    </div>
+                    {rehookDuration > 0 && (
+                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "-1px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
+                            <button
+                                type="button"
+                                onPointerDown={(e) => startHandleDrag(e, "rehook")}
+                                title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
+                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-50%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto" }}
+                            >
+                                <HookGlyph role="rehook" />
+                            </button>
+                        </div>
                     )}
                 </>
             )}
         </div>
     );
-};
+});
+MainTimelineScrubber.displayName = "MainTimelineScrubber";

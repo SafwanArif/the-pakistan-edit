@@ -1,3 +1,9 @@
+import { createDefaultTimelineScenes } from "../utils/videoTimeline";
+
+// ---------------------------------------------------------------------------
+// 1. Carousel Editorial Domain
+// ---------------------------------------------------------------------------
+
 export interface SlideAsset {
     image?: string;
     imagePosX?: number;
@@ -38,6 +44,9 @@ export interface Draft {
     slideAssets?: Record<number, SlideAsset>;
 }
 
+// ---------------------------------------------------------------------------
+// 2. Video Timeline & Keyframes Domain
+// ---------------------------------------------------------------------------
 
 export type PostMode = 'carousel' | 'video';
 export type VideoAspectRatio = '9:16' | '4:5' | '1:1';
@@ -45,32 +54,6 @@ export type VideoHeadlinePreset = 'bottom' | 'center' | 'top';
 export type SubtitleFontId = 'plus-jakarta' | 'onest' | 'dm-sans' | 'geist';
 export type SubtitleBackdropId = 'pill' | 'glass' | 'shadow' | 'none';
 export type FadePresetMode = 'auto' | 'micro' | 'editorial';
-
-export const getDefaultSubtitleFontSize = (aspectRatio?: VideoAspectRatio): number => (
-    aspectRatio === '9:16' ? 48 : 42
-);
-
-/** Computes 4:5 vertical top offset in px from `posY` (`100` = top of canvas, `0` = bottom of video touches bottom of canvas). */
-export const getTopBoxOffsetY = (posY: number | undefined, canvasHeight: number, boxHeight: number): number => {
-    const maxTop = Math.max(0, canvasHeight - boxHeight);
-    const clamped = Math.max(0, Math.min(100, posY ?? 100));
-    const progress = Math.pow((100 - clamped) / 100, 1.5);
-    return Math.round(progress * maxTop);
-};
-
-export const SUBTITLE_BACKDROP_OPTIONS: Record<SubtitleBackdropId, { label: string }> = {
-    shadow: { label: 'Floating Shadow' },
-    pill: { label: 'Solid Pill' },
-    glass: { label: 'Glass Tint' },
-    none: { label: 'No Backdrop' },
-};
-
-export const SUBTITLE_FONT_OPTIONS: Record<SubtitleFontId, { label: string; cssFamily: string; assName: string }> = {
-    'plus-jakarta': { label: 'Plus Jakarta Sans', cssFamily: 'var(--font-plus-jakarta), sans-serif', assName: 'Plus Jakarta Sans' },
-    'onest': { label: 'Onest', cssFamily: 'var(--font-onest), sans-serif', assName: 'Onest' },
-    'dm-sans': { label: 'DM Sans', cssFamily: 'var(--font-dm-sans), sans-serif', assName: 'DM Sans' },
-    'geist': { label: 'Geist', cssFamily: 'var(--font-geist-sans), sans-serif', assName: 'Geist' },
-};
 
 export interface VideoKeyframeState {
     time?: number; // Optional independent incoming timestamp (<= keyframe time) for hold-before-cut dwell
@@ -82,7 +65,7 @@ export interface VideoKeyframeState {
 export interface VideoKeyframeBase {
     id: string;
     time: number; // in seconds
-    zoom: number; // 0 to 100% in 4:5 Top-Box, 100 to 200% in Full Bleed (outgoing / post state)
+    zoom: number; // 0 to 100% in 4:5 Contain, 100 to 200% in Full Bleed (outgoing / post state)
     posX: number; // 0 to 100%
     posY?: number; // 4:5 vertical ceiling (only meaningful in 4:5 letterbox zoom < 100)
 }
@@ -126,6 +109,21 @@ export interface SubtitleSegment {
     text: string;
 }
 
+// ---------------------------------------------------------------------------
+// 3. On-Demand P. Star Motion Domain
+// ---------------------------------------------------------------------------
+
+export type StarSpinMode = 'ccw' | 'flag-tilt' | 'cw-1x' | 'cw-2x';
+export type StarSequenceMode = 'star-crescent' | 'star-only' | 'crescent-only';
+export type StarHoldFeel = 'drift' | 'still';
+
+export interface StarSpinCue {
+    id: string;
+    time: number; // Timeline timestamp in seconds where the P. dot morphs into the 5-point star and back
+}
+
+export const DEFAULT_STAR_CUES: readonly StarSpinCue[] = [{ id: 'star-0', time: 0 }];
+
 export interface VideoDraft {
     videoUrl: string;
     videoName?: string;
@@ -146,7 +144,7 @@ export interface VideoDraft {
     isMuted?: boolean;
     normalizeAudio?: boolean;
 
-    // 🏛️ Dedicated Video Timeline Engine
+    // Dedicated Video Timeline Engine
     enableOutro: boolean; // default true
     outroDuration: number; // default 5s
     outroCta?: string; // e.g. "FOLLOW FOR VERIFIED STRATEGIC INTELLIGENCE"
@@ -159,11 +157,51 @@ export interface VideoDraft {
     subtitleFont?: SubtitleFontId;
     subtitleBackdrop?: SubtitleBackdropId;
     enableMotion?: boolean;
+    motionWordmark?: boolean;
+    motionText?: boolean;
+    starCues?: StarSpinCue[];
+    starMorphDuration?: number;
+    starHoldDuration?: number;
+    starScale?: number;
+    starSpinMode?: StarSpinMode;
+    starSequence?: StarSequenceMode;
+    starHoldFeel?: StarHoldFeel;
+    enableAmbientBlur?: boolean;
 }
 
-import { createDefaultTimelineScenes } from "../utils/videoTimeline";
+// ---------------------------------------------------------------------------
+// 4. Pure Framing Helpers, Constants, Barrel Re-Exports & Draft Factories
+// ---------------------------------------------------------------------------
+
+export const getDefaultSubtitleFontSize = (aspectRatio?: VideoAspectRatio): number => (
+    aspectRatio === '9:16' ? 48 : 42
+);
+
+/** Computes 4:5 vertical top offset in px from `posY` (`100` = top of canvas, `50` = true vertical center, `0` = bottom edge). */
+export const getTopBoxOffsetY = (posY: number | undefined, canvasHeight: number, boxHeight: number): number => {
+    const maxTop = Math.max(0, canvasHeight - boxHeight);
+    const clamped = Math.max(0, Math.min(100, posY ?? 100));
+    const progress = (100 - clamped) / 100;
+    return progress * maxTop;
+};
+
+export const SUBTITLE_BACKDROP_OPTIONS = {
+    shadow: { label: 'Floating Shadow' },
+    pill: { label: 'Solid Pill' },
+    glass: { label: 'Glass Tint' },
+    none: { label: 'No Backdrop' },
+} as const satisfies Record<SubtitleBackdropId, { label: string }>;
+
+export const SUBTITLE_FONT_OPTIONS = {
+    'plus-jakarta': { label: 'Plus Jakarta Sans', cssFamily: 'var(--font-plus-jakarta), sans-serif', assName: 'Plus Jakarta Sans' },
+    'onest': { label: 'Onest', cssFamily: 'var(--font-onest), sans-serif', assName: 'Onest' },
+    'dm-sans': { label: 'DM Sans', cssFamily: 'var(--font-dm-sans), sans-serif', assName: 'DM Sans' },
+    'geist': { label: 'Geist', cssFamily: 'var(--font-geist-sans), sans-serif', assName: 'Geist' },
+} as const satisfies Record<SubtitleFontId, { label: string; cssFamily: string; assName: string }>;
+
 export * from "../utils/videoTimeline";
 export * from "../utils/subtitleTimeline";
+export * from "../utils/starMorphMath";
 
 export const createDefaultDraft = (): Draft => ({
     headline: "",
@@ -207,6 +245,14 @@ export const createDefaultVideoDraft = (): VideoDraft => {
         enableOutro: true,
         outroDuration: 5,
         outroCta: "FOLLOW @THEPAKISTANEDIT FOR VERIFIED INSTITUTIONAL INTELLIGENCE",
+        enableAmbientBlur: true,
+        starCues: [{ id: 'star-0', time: 0 }],
+        starMorphDuration: 0.45,
+        starHoldDuration: 0.5,
+        starScale: 100,
+        starSpinMode: 'ccw',
+        starSequence: 'star-crescent',
+        starHoldFeel: 'drift',
         scenes,
         keyframes: [],
     };

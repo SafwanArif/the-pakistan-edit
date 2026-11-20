@@ -55,6 +55,7 @@ export default function AdminDashboard() {
         playbackMode,
         setPlaybackMode,
         currentTime,
+        seekNonce,
         seekTo,
         isMuted,
         syncTimeFromVideo
@@ -126,7 +127,7 @@ export default function AdminDashboard() {
                 className="tpe-mode-btn"
                 data-active={postMode === 'video'}
                 onClick={() => handleSetPostMode('video')}
-                title="Timeline Video Engine (60s+ Monetization & Top-Box)"
+                title="Timeline Video Engine (60s+ Monetization & 4:5 Contain)"
             >
                 <VideoIcon width={12} height={12} stroke={postMode === 'video' ? '#000' : 'currentColor'} />
                 <span>VIDEO ENGINE</span>
@@ -138,6 +139,16 @@ export default function AdminDashboard() {
         () => getActiveSceneAtTime(videoDraft, currentTime),
         [videoDraft, currentTime]
     );
+    const activeSceneTime = useMemo(() => {
+        const scenes = videoDraft.scenes || [];
+        let t = 0;
+        for (let i = 0; i < activeVideoScene.sceneIndex && i < scenes.length; i++) {
+            t += scenes[i]?.duration || 0;
+        }
+        return t + (activeVideoScene.isOutro ? 0.1 : 0);
+    }, [videoDraft.scenes, activeVideoScene.sceneIndex, activeVideoScene.isOutro]);
+
+    const totalVideoDuration = useMemo(() => getTotalVideoDuration(videoDraft), [videoDraft]);
 
     if (!isCarouselMounted || !isVideoMounted) return null;
 
@@ -187,12 +198,22 @@ export default function AdminDashboard() {
                             : 'transparent';
 
                         return (
-                            <div 
-                                key={i} 
-                                onClick={() => setCurrentStep(stepNum)} 
-                                className="tpe-progress-segment" 
+                            <div
+                                key={i}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Go to slide ${stepNum}`}
+                                aria-current={isActive ? "step" : undefined}
+                                onClick={() => setCurrentStep(stepNum)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        setCurrentStep(stepNum);
+                                    }
+                                }}
+                                className="tpe-progress-segment"
                                 data-active={isActive}
-                                style={{ background: segmentColor }} 
+                                style={{ background: segmentColor }}
                             />
                         );
                     })}
@@ -222,12 +243,13 @@ export default function AdminDashboard() {
                         />
                     </>
                 ) : (
-                    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', overflow: 'hidden' }}>
+                    <div className="tpe-nle-split-pane">
                         {/* 🏛️ LEFT PANE: Dedicated Timeline Storyboard & Production Inspector */}
                         <TimelineStoryboard
                             draft={videoDraft}
                             onChange={updateVideoDraft}
                             currentTime={currentTime}
+                            isPlaying={isPlaying}
                             seekTo={seekTo}
                             playbackMode={playbackMode}
                             onTogglePlaybackMode={handleTogglePlaybackMode}
@@ -241,7 +263,8 @@ export default function AdminDashboard() {
                             togglePlay={togglePlay}
                             playbackMode={playbackMode}
                             currentTime={currentTime}
-                            duration={getTotalVideoDuration(videoDraft)}
+                            seekNonce={seekNonce}
+                            duration={totalVideoDuration}
                             seekTo={seekTo}
                             isMuted={isMuted}
                             isLoadingStream={isOptimisingVideo}
@@ -259,7 +282,7 @@ export default function AdminDashboard() {
                 onCarouselChange={updateDraft}
                 videoDraft={videoDraft}
                 onVideoChange={updateVideoDraft}
-                currentTime={currentTime}
+                activeSceneTime={activeSceneTime}
             />
         </div>
     );

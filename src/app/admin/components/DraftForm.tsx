@@ -19,10 +19,12 @@ interface DraftFormProps {
     modeSwitcher?: React.ReactNode;
 }
 
+const logoResetBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' };
+
 /**
  * Schema-driven form ribbon for Carousel slide editing and batch export.
  */
-export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit, step, setStep, onReset, modeSwitcher }) => {
+export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, modeSwitcher }) => {
     const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
     const [focusedField, setFocusedField] = React.useState<string | null>(null);
     
@@ -61,7 +63,7 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
                     aria-label="Reset draft"
                     onClick={() => { if (window.confirm("Reset draft?")) onReset?.(); }}
                     className="tpe-logo-wrapper"
-                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+                    style={logoResetBtnStyle}
                 >
                     <TPEVectorLogo scale={0.9} showWordmark={false} />
                 </button>
@@ -139,4 +141,5 @@ export const DraftForm: React.FC<DraftFormProps> = ({ draft, onChange, onSubmit,
             </div>
         </div>
     );
-};
+});
+DraftForm.displayName = "DraftForm";

@@ -32,6 +32,13 @@ const TAB_META: { id: MasterChecklistTab; label: string }[] = [
     { id: "psychology", label: "PSYCHOLOGY" },
 ];
 
+const TONE_PALETTES: Record<NonNullable<MasterCheckItem["tone"]>, { text: string; bg: string; border: string }> = {
+    green: { text: "#4ade80", bg: "rgba(34, 197, 94, 0.08)", border: "rgba(34, 197, 94, 0.25)" },
+    red: { text: "#f87171", bg: "rgba(239, 68, 68, 0.10)", border: "rgba(239, 68, 68, 0.30)" },
+    yellow: { text: "#facc15", bg: "rgba(250, 204, 21, 0.09)", border: "rgba(250, 204, 21, 0.30)" },
+    orange: { text: "#fb923c", bg: "rgba(249, 115, 22, 0.10)", border: "rgba(249, 115, 22, 0.30)" },
+};
+
 export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
     const scenes = draft.scenes || [];
     const totalSec = getTotalVideoDuration(draft);
@@ -197,7 +204,7 @@ interface MasterChecklistPopoverProps {
     onClose: () => void;
 }
 
-export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = ({
+export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = React.memo(({
     draft,
     onChange,
     onClose,
@@ -222,6 +229,8 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = ({
     return (
         <div
             ref={popoverRef}
+            role="dialog"
+            aria-label="Master Video Standards Checklist"
             style={{
                 position: "fixed",
                 top: "96px",
@@ -274,13 +283,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = ({
             <div className="tpe-flex-col" style={{ gap: "5px", maxHeight: "300px", overflowY: "auto" }}>
                 {tabItems.map((item) => {
                     const tone = item.tone ?? (item.passed ? "green" : "orange");
-                    const palette = tone === "green"
-                        ? { text: "#4ade80", bg: "rgba(34, 197, 94, 0.08)", border: "rgba(34, 197, 94, 0.25)" }
-                        : tone === "red"
-                            ? { text: "#f87171", bg: "rgba(239, 68, 68, 0.10)", border: "rgba(239, 68, 68, 0.30)" }
-                            : tone === "yellow"
-                                ? { text: "#facc15", bg: "rgba(250, 204, 21, 0.09)", border: "rgba(250, 204, 21, 0.30)" }
-                                : { text: "#fb923c", bg: "rgba(249, 115, 22, 0.10)", border: "rgba(249, 115, 22, 0.30)" };
+                    const palette = TONE_PALETTES[tone];
                     return (
                     <div
                         key={item.id}
@@ -319,4 +322,5 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = ({
             </div>
         </div>
     );
-};
+});
+MasterChecklistPopover.displayName = "MasterChecklistPopover";

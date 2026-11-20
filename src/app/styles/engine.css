@@ -1,0 +1,128 @@
+/* Studio Shell, Container Queries & Off-Screen Rendering Optimization */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  block-size: 100dvh;
+  background: var(--ui-bg);
+  overflow: hidden;
+}
+
+.command-ribbon {
+  min-block-size: var(--ui-header-height);
+  border-block-end: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  z-index: var(--z-system);
+  position: relative;
+}
+
+.sandbox-grid {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  overflow: hidden;
+  flex-direction: column;
+  position: relative;
+}
+
+.tpe-progress-container {
+  display: flex;
+  gap: 2px;
+  block-size: 3px;
+  background: oklch(from var(--ui-text) l c h / 0.05);
+}
+
+.tpe-progress-segment {
+  flex: 1;
+  block-size: 100%;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.tpe-nle-split-pane {
+  display: flex;
+  flex-direction: row;
+  block-size: 100%;
+  inline-size: 100%;
+  overflow: hidden;
+}
+
+.previews-container {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 30px;
+  align-content: safe center;
+  inline-size: min(100%, 1200px);
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 40px);
+}
+
+.tpe-storyboard-pane {
+  container-type: inline-size;
+  container-name: storyboard;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  touch-action: pan-y;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tpe-storyboard-pane {
+    scroll-behavior: smooth;
+  }
+}
+
+.tpe-transport-bar {
+  container-type: inline-size;
+  container-name: transport;
+  contain: layout style;
+}
+
+.tpe-storyboard-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
+  scroll-margin-block: 12px;
+}
+
+.tpe-subtitle-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 26px;
+}
+
+.tpe-storyboard-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-block-start: 2px;
+  align-items: stretch;
+}
+
+@container storyboard (width <= 340px) {
+  .tpe-storyboard-controls-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width <= 900px) {
+  .dashboard-container {
+    block-size: auto;
+    min-block-size: 100dvh;
+    overflow: auto;
+    scroll-padding-block-start: calc(var(--ui-header-height) + 12px);
+  }
+
+  .command-ribbon {
+    position: sticky;
+    inset-block-start: 0;
+  }
+
+  .sandbox-grid {
+    overflow: visible;
+  }
+
+  .tpe-nle-split-pane {
+    flex-direction: column-reverse;
+    block-size: auto;
+    overflow: visible;
+  }
+}

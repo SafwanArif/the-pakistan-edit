@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { VideoDraft, TimelineScene, timelineTimeToMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFadeDurations, getTimelineStructure, clamp } from "../../../types/news";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFadeDurations, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { SceneChecklistPopover, FadePresetControl } from "./SceneChecklistPopover";
@@ -14,6 +14,7 @@ interface TimelineStoryboardProps {
     draft: VideoDraft;
     onChange: (d: VideoDraft) => void;
     currentTime: number;
+    isPlaying?: boolean;
     seekTo: (time: number) => void;
     playbackMode?: 'play-all' | 'loop-angle';
     onTogglePlaybackMode?: () => void;
@@ -23,21 +24,43 @@ const playingPillStyle: React.CSSProperties = {
     fontSize: '8px', padding: '1px 5px', borderRadius: '3px', background: 'var(--ui-accent)', color: '#000', fontWeight: 900
 };
 
+/** Maps a subtitle segment's media start time inside a scene card to a clamped timeline seek target. */
+export function resolveSceneSubtitleSeekTime(
+    draft: VideoDraft,
+    bounds: { start: number; end: number },
+    sceneDuration: number,
+    mediaStart: number,
+    preStoryDur: number,
+    storyOffset: number,
+): number {
+    const maxTarget = Math.max(bounds.start, bounds.end - 0.05);
+    const clipDur = draft.videoDuration || 0;
+    const cardMediaStart = wrapMediaTime(draft, bounds.start, clipDur);
+    const loopStart = bounds.start >= preStoryDur && storyOffset > 0 && storyOffset < clipDur - 0.5 ? storyOffset : 0;
+    const wrappedDelta = clipDur > 0 && cardMediaStart + sceneDuration > clipDur && mediaStart < cardMediaStart && mediaStart >= loopStart
+        ? (clipDur - cardMediaStart) + (mediaStart - loopStart)
+        : null;
+    const rawTarget = wrappedDelta !== null && wrappedDelta < sceneDuration
+        ? bounds.start + wrappedDelta
+        : bounds.start + Math.max(0, mediaStart - cardMediaStart);
+    return clamp(rawTarget, bounds.start, maxTarget);
+}
+
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
-    draft, onChange, currentTime, seekTo, playbackMode = 'play-all', onTogglePlaybackMode
+    draft, onChange, currentTime, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode
 }) => {
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
     const [openSubSceneIdx, setOpenSubSceneIdx] = useState<number | null>(null);
     const [showMasterChecklist, setShowMasterChecklist] = useState(false);
-    const checklistRef = useClickOutside(() => setOpenChecklistIdx(null));
-    const masterChecklistRef = useClickOutside(() => setShowMasterChecklist(false));
+    const checklistRef = useClickOutside(() => setOpenChecklistIdx(null), undefined, openChecklistIdx !== null);
+    const masterChecklistRef = useClickOutside(() => setShowMasterChecklist(false), undefined, showMasterChecklist);
     const masterItems = useMemo(() => getMasterChecklistItems(draft), [draft]);
     const masterPassed = useMemo(() => masterItems.filter(i => i.passed).length, [masterItems]);
     const scenes = draft.scenes || [];
 
     const sceneBoundaries = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
-    const { hasReHook, storyIdx: setupIdx } = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
+    const { hasReHook, storyIdx: setupIdx, preStoryDur, storyOffset } = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
     const sceneSubtitlesList = useMemo(
         () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles({ ...draft, scenes: draft.scenes, subtitles: draft.subtitles, videoDuration: draft.videoDuration }, b.start, b.end) : [])),
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,32 +74,38 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
     const isOutroActive = draft.enableOutro && currentTime >= outroStart;
     const currentMediaTime = useMemo(() => Math.round(timelineTimeToMediaTime(draft, currentTime) * 10) / 10, [draft, currentTime]);
 
-    const updateScene = (index: number, patch: Partial<TimelineScene>) => {
-        const updated = [...scenes];
+    const draftRef = useRef(draft);
+    const sceneBoundariesRef = useRef(sceneBoundaries);
+    useEffect(() => { draftRef.current = draft; sceneBoundariesRef.current = sceneBoundaries; });
+
+    const updateScene = useCallback((index: number, patch: Partial<TimelineScene>) => {
+        const curDraft = draftRef.current;
+        const updated = [...(curDraft.scenes || [])];
         const prev = updated[index];
         if (!prev) return;
-        if ('mediaUrl' in patch && prev.mediaUrl?.startsWith('blob:') && patch.mediaUrl !== prev.mediaUrl) {
-            URL.revokeObjectURL(prev.mediaUrl);
-        }
+        if ('mediaUrl' in patch && prev.mediaUrl?.startsWith('blob:') && patch.mediaUrl !== prev.mediaUrl) URL.revokeObjectURL(prev.mediaUrl);
         updated[index] = { ...prev, ...patch };
-        onChange({ ...draft, scenes: updated });
-    };
+        onChange({ ...curDraft, scenes: updated });
+    }, [onChange]);
 
-    const setSceneOffset = (sceneIdx: number, nextOffset?: number, snapToStart = false) => {
-        const newScenes = [...scenes];
+    const setSceneOffset = useCallback((sceneIdx: number, nextOffset?: number, snapToStart = false) => {
+        const curDraft = draftRef.current;
+        const newScenes = [...(curDraft.scenes || [])];
         const target = newScenes[sceneIdx];
         if (!target) return;
         const copy = { ...target };
         if (nextOffset === undefined || nextOffset < 0) delete copy.clipStartOffset;
         else copy.clipStartOffset = Math.round(nextOffset * 10) / 10;
         newScenes[sceneIdx] = copy;
-        onChange({ ...draft, scenes: newScenes });
-        if (snapToStart) seekTo(sceneBoundaries[sceneIdx]?.start ?? 0);
-    };
+        onChange({ ...curDraft, scenes: newScenes });
+        if (snapToStart) seekTo(sceneBoundariesRef.current[sceneIdx]?.start ?? 0);
+    }, [onChange, seekTo]);
 
-    const handleAddScene = () => {
-        onChange({ ...draft, scenes: [...scenes, { id: `scene-${crypto.randomUUID().slice(0, 8)}`, title: `KEY ANGLE ${scenes.length + 1}: STRATEGIC ANALYSIS`, subtitle: "Verified intelligence breakdown and future market impact.", duration: 15, mediaType: 'video' }] });
-    };
+    const handleAddScene = useCallback(() => {
+        const curDraft = draftRef.current;
+        const curScenes = curDraft.scenes || [];
+        onChange({ ...curDraft, scenes: [...curScenes, { id: `scene-${crypto.randomUUID().slice(0, 8)}`, title: `KEY ANGLE ${curScenes.length + 1}: STRATEGIC ANALYSIS`, subtitle: "Verified intelligence breakdown and future market impact.", duration: 15, mediaType: 'video' }] });
+    }, [onChange]);
 
     const handleAddReHook = () => {
         const updated = [...scenes];
@@ -119,7 +148,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
     return (
         <aside
             aria-label="Timeline Storyboard"
-            className="tpe-flex-col"
+            className="tpe-flex-col tpe-storyboard-pane"
             style={{
                 width: '420px', minWidth: '360px', maxWidth: '460px',
                 height: '100%', background: 'oklch(from var(--ui-bg) l c h / 0.95)',
@@ -160,7 +189,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                         </div>
                     )}
                     <button type="button" aria-pressed={Boolean(draft.enableOutro)} onClick={() => onChange({ ...draft, enableOutro: !draft.enableOutro })} className="tpe-mode-btn" data-active={draft.enableOutro} style={{ padding: '4px 8px', fontSize: '9px' }} title="Append 5-second branded outro end card">🏁 OUTRO: {draft.enableOutro ? "ON" : "OFF"}</button>
-                    <button type="button" aria-pressed={draft.enableMotion !== false} onClick={() => onChange({ ...draft, enableMotion: draft.enableMotion === false })} className="tpe-mode-btn" data-active={draft.enableMotion !== false} style={{ padding: '4px 8px', fontSize: '9px' }} title="Toggle 2026/2027 editorial kinetic motion on text, metadata, and branding">✨ MOTION: {draft.enableMotion !== false ? "ON" : "OFF"}</button>
+                    <button type="button" aria-pressed={draft.enableAmbientBlur !== false} onClick={() => onChange({ ...draft, enableAmbientBlur: draft.enableAmbientBlur === false })} className="tpe-mode-btn" data-active={draft.enableAmbientBlur !== false} style={{ padding: '4px 8px', fontSize: '9px' }} title="Completely disable 4:5 ambient blur canvases & shaders in code (0% CPU/GPU cost when OFF)">🌫️ BLUR: {draft.enableAmbientBlur !== false ? "ON" : "OFF"}</button>
                     <div ref={masterChecklistRef} style={{ position: 'relative' }}>
                         <button type="button" aria-expanded={showMasterChecklist} aria-haspopup="dialog" onClick={() => setShowMasterChecklist(p => !p)} className="tpe-mode-btn" data-active={showMasterChecklist || masterPassed === masterItems.length} style={{ padding: '4px 8px', fontSize: '9px' }} title="Master 2026/2027 video best-practice checklist">📋 MASTER ({masterPassed}/{masterItems.length})</button>
                         {showMasterChecklist && <MasterChecklistPopover draft={draft} onChange={onChange} onClose={() => setShowMasterChecklist(false)} />}
@@ -181,12 +210,16 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
 
                     const roleColor = getSceneRoleColor(idx, isReHook, isSetup);
                     const rf = sceneFadesList[idx] ?? resolveSceneFadeDurations(scenes, idx);
+                    const effFadeIn = scene.fadeIn ?? (isSetup || isReHook);
+                    const effFadeOut = scene.fadeOut ?? (idx === 0 || isReHook);
                     const cardSubs = sceneSubtitlesList[idx] ?? [];
                     return (
                         <div
                             key={`${scene.id}-${idx}`}
+                            aria-current={isSceneActive ? "step" : undefined}
+                            className={openChecklistIdx === idx ? undefined : "tpe-storyboard-card"}
                             onClick={() => { if (bounds && !isSceneActive) seekTo(bounds.start); }}
-                            style={{ width: '100%', cursor: isSceneActive ? 'default' : 'pointer', background: isSceneActive ? `color-mix(in oklch, ${roleColor} 9%, transparent)` : 'oklch(from var(--ui-text) l c h / 0.02)', borderStyle: 'solid', borderWidth: '1px 1px 1px 3px', borderColor: isSceneActive ? roleColor : `var(--ui-border) var(--ui-border) var(--ui-border) ${roleColor}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: isSceneActive ? `0 0 16px color-mix(in oklch, ${roleColor} 18%, transparent)` : 'none', transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease', position: 'relative' }}
+                            style={{ width: '100%', cursor: isSceneActive ? 'default' : 'pointer', background: isSceneActive ? `color-mix(in oklch, ${roleColor} 9%, transparent)` : 'oklch(from var(--ui-text) l c h / 0.02)', borderStyle: 'solid', borderWidth: '1px 1px 1px 3px', borderColor: isSceneActive ? roleColor : `var(--ui-border) var(--ui-border) var(--ui-border) ${roleColor}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: isSceneActive ? `0 0 16px color-mix(in oklch, ${roleColor} 18%, transparent)` : 'none', transition: 'background-color 0.2s ease, border-color 0.2s ease', position: 'relative' }}
                         >
                             <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
@@ -304,7 +337,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                                 segments={cardSubs}
                                                 draft={draft}
                                                 onChange={onChange}
-                                                onSeekMedia={(ms) => seekTo(idx === 0 ? Math.max(0, ms - (scene.clipStartOffset ?? 0)) : bounds.start + Math.max(0, ms - timelineTimeToMediaTime(draft, bounds.start)))}
+                                                onSeekMedia={(ms) => seekTo(bounds ? resolveSceneSubtitleSeekTime(draft, bounds, scene.duration, ms, preStoryDur, storyOffset) : Math.max(0, ms - (scene.clipStartOffset ?? 0)))}
                                             />
                                         ) : (
                                             <div style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontStyle: 'italic' }}>No speech detected in this angle window.</div>
@@ -322,34 +355,37 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                     duration={scene.duration}
                                     localTime={clamp(currentTime - bounds.start, 0, scene.duration)}
                                     isSceneActive={isSceneActive}
+                                    isPlaying={isPlaying}
                                     keyframes={draft.keyframes}
-                                    fadeInDur={scene.fadeIn ? rf.inDur : 0}
-                                    fadeOutDur={scene.fadeOut ? rf.outDur : 0}
+                                    fadeInDur={effFadeIn ? rf.inDur : 0}
+                                    fadeOutDur={effFadeOut ? rf.outDur : 0}
                                     onSeek={seekTo}
                                 />
                             )}
 
                             {/* Side-by-side Clip Start Trimmer & Fade Control (Hook, Re-Hook & Setup) */}
                             {(idx === 0 || isReHook || isSetup) && (
-                                <div style={{ display: 'grid', gridTemplateColumns: draft.videoUrl ? 'repeat(2, minmax(0, 1fr))' : '1fr', gap: '8px', marginTop: '2px', alignItems: 'stretch' }}>
+                                <div className={draft.videoUrl ? "tpe-storyboard-controls-grid" : undefined} style={draft.videoUrl ? undefined : { display: 'grid', gridTemplateColumns: '1fr', gap: '8px', marginTop: '2px', alignItems: 'stretch' }}>
                                     {!!draft.videoUrl && (
                                         <ClipOffsetTrimmer
+                                            sceneIdx={idx}
                                             mode={idx === 0 ? 'hook' : (isReHook ? 'rehook' : 'setup')}
                                             clipStartOffset={scene.clipStartOffset}
                                             sceneDuration={scene.duration}
-                                            currentMediaTime={currentMediaTime}
+                                            currentMediaTime={scene.clipStartOffset !== undefined ? 0 : currentMediaTime}
                                             isCardActive={isSceneActive}
-                                            onSetOffset={(nextOffset, snap) => setSceneOffset(idx, nextOffset, snap)}
+                                            onSetOffset={setSceneOffset}
                                         />
                                     )}
                                     <FadePresetControl
-                                        fadeInEnabled={scene.fadeIn ?? (isSetup || isReHook)} fadeInPreset={rf.inPreset} fadeInDuration={rf.inDur}
-                                        fadeOutEnabled={scene.fadeOut ?? (idx === 0 || isReHook)} fadeOutPreset={rf.outPreset} fadeOutDuration={rf.outDur}
+                                        sceneIdx={idx}
+                                        fadeInEnabled={effFadeIn} fadeInPreset={rf.inPreset} fadeInDuration={rf.inDur}
+                                        fadeOutEnabled={effFadeOut} fadeOutPreset={rf.outPreset} fadeOutDuration={rf.outDur}
                                         defaultSide={isSetup || isReHook ? 'in' : 'out'}
                                         inHint={rf.inMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}
                                         outHint={rf.outMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}
                                         isCardActive={isSceneActive}
-                                        onUpdate={(patch) => updateScene(idx, patch)} />
+                                        onUpdate={updateScene} />
                                 </div>
                             )}
 
@@ -369,7 +405,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                     />
                                     <label className="tpe-upload-label" style={{ cursor: 'pointer', fontSize: '9px', fontWeight: 800, color: 'var(--ui-accent)', padding: '2px 6px', borderRadius: '4px', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', whiteSpace: 'nowrap' }} title="Upload custom video or photo for this angle">
                                         UPLOAD
-                                        <input type="file" className="tpe-sr-only" accept="video/*,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSceneMediaUpload(idx, f); e.target.value = ''; }} />
+                                        <input type="file" className="tpe-sr-only" accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSceneMediaUpload(idx, f); e.target.value = ''; }} />
                                     </label>
                                     {scene.mediaUrl && (
                                         <button type="button" aria-label="Revert to master clip" onClick={() => updateScene(idx, { mediaUrl: undefined, mediaName: undefined })} className="tpe-asset-btn tpe-asset-btn-danger" style={{ width: '18px', height: '18px', fontSize: '10px', padding: 0 }} title="Revert to master clip">✕</button>

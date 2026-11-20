@@ -42,6 +42,7 @@ export const useEditorialState = () => {
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
         const init = async () => {
             let draft = createDefaultDraft();
             let step = 1;
@@ -52,13 +53,17 @@ export const useEditorialState = () => {
             const savedStep = await get<number>('tpe_current_step');
             if (savedStep) step = savedStep;
 
+            if (cancelled) return;
             setActiveDraft(draft);
             setCurrentStep(step);
             setHistoryState({ stack: [draft], index: 0 });
             setIsMounted(true);
         };
 
-        init();
+        void init();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     useEffect(() => () => {

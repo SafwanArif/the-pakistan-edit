@@ -1,10 +1,25 @@
 import JSZip from "jszip";
-import { toBlob } from "html-to-image";
+import { getFontEmbedCSS, toBlob } from "html-to-image";
 import { Draft, getSlideCount, downloadBlob } from "../../../types/news";
 import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import React from "react";
 import { NewsCard } from "../../../components/templates/instagram/NewsCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
+
+/** Renders a DOM node to a PNG Blob with an explicit timeout guard. */
+export const renderNodeToBlobWithTimeout = (
+    node: HTMLElement,
+    options: Parameters<typeof toBlob>[1],
+    timeoutMs: number,
+    timeoutMessage: string
+): Promise<Blob | null> =>
+    new Promise<Blob | null>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+        toBlob(node, options).then(
+            (b) => { clearTimeout(timer); resolve(b); },
+            (err) => { clearTimeout(timer); reject(err); }
+        );
+    });
 
 /**
  * Institutional Export Engine: Deterministic Asset Generation Pipeline
@@ -38,6 +53,7 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         temp.style.zIndex = "-9999";
         container.appendChild(temp);
         const root = createRoot(temp);
+        let cachedFontEmbedCSS: string | undefined;
 
         try {
             for (const p of platforms) {
@@ -88,16 +104,27 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
                         });
                     });
 
-                    // Final frame paint flush
+                    // Final font & frame paint flush
+                    await document.fonts.ready;
                     await new Promise(r => requestAnimationFrame(r));
-                    
-                    const blob = await toBlob(temp, { 
-                        width: OMNI_CONFIG[p].width, 
-                        height: OMNI_CONFIG[p].height, 
-                        pixelRatio: 2, 
-                        backgroundColor: '#050505',
-                        style: { transform: 'none', transition: 'none' }
-                    });
+                    if (cachedFontEmbedCSS === undefined) {
+                        cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
+                    }
+
+                    const blob = await renderNodeToBlobWithTimeout(
+                        temp,
+                        {
+                            width: OMNI_CONFIG[p].width,
+                            height: OMNI_CONFIG[p].height,
+                            pixelRatio: 2,
+                            cacheBust: false,
+                            fontEmbedCSS: cachedFontEmbedCSS || undefined,
+                            backgroundColor: '#050505',
+                            style: { transform: 'none', transition: 'none' }
+                        },
+                        8000,
+                        `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`
+                    );
 
                     if (!blob || blob.size < 1000) {
                         throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);

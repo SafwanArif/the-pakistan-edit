@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createByteLimitTransform } from "../../../../lib/server/videoMedia";
 
 export const runtime = "nodejs";
 
@@ -75,7 +76,9 @@ export async function GET(request: Request) {
         const contentLength = Number(response.headers.get("content-length") || 0);
         if (contentLength > MAX_IMAGE_BYTES) throw new Error("Image exceeds 25MB limit");
 
-        return new Response(response.body, {
+        const safeBody = response.body ? response.body.pipeThrough(createByteLimitTransform(MAX_IMAGE_BYTES)) : null;
+
+        return new Response(safeBody, {
             headers: {
                 "Content-Type": contentType,
                 "Access-Control-Allow-Origin": "*",

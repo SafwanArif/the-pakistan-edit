@@ -30,11 +30,6 @@ const textareaBaseStyle: React.CSSProperties = {
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
 const pipeStyle: React.CSSProperties = { opacity: 0.35, margin: '0 4px', fontSize: '14px', alignSelf: 'center' };
 const logoBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' };
-const sceneRoleBadgeStyle: React.CSSProperties = {
-    fontSize: '9.5px', fontWeight: 800, color: 'var(--ui-accent)', padding: '3px 8px', borderRadius: '4px',
-    background: 'oklch(from var(--ui-accent) l c h / 0.14)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)',
-    letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0,
-};
 const loadingBadgeStyle: React.CSSProperties = {
     fontSize: '9px', fontWeight: 900, color: '#000', background: 'var(--ui-accent)', padding: '3px 8px',
     borderRadius: '4px', letterSpacing: '0.06em', whiteSpace: 'nowrap', boxShadow: '0 0 12px oklch(from var(--ui-accent) l c h / 0.45)',
@@ -168,10 +163,6 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                 </button>
 
                 {modeSwitcher}
-
-                <span style={sceneRoleBadgeStyle}>
-                    {sceneRoleLabel}
-                </span>
 
                 <div className="tpe-header-main" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
                     <div className="tpe-header-tools" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '4px' }}>

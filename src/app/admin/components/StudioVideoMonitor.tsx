@@ -28,8 +28,6 @@ interface StudioVideoMonitorProps {
     onTimeUpdate?: (current: number, duration: number) => void;
 }
 
-const labelStyle: React.CSSProperties = { fontSize: '9px', fontWeight: 800, color: 'var(--ui-text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' };
-
 /** Program Monitor with viewport auto-fit, platform switcher, scrubber, keyframe controls, and focal tuning. */
 export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate
@@ -342,19 +340,18 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
             {/* Monitor Header */}
             <div className="tpe-flex-row" style={{ padding: '8px 16px', background: 'oklch(from var(--ui-bg) l c h / 0.9)', borderBlockEnd: '1px solid var(--ui-border)', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div className="tpe-flex-row" style={{ gap: '6px', alignItems: 'center' }}>
-                    <span style={{ ...labelStyle, marginInlineEnd: '4px' }}>MONITOR:</span>
                     <div className="tpe-mode-cluster" role="group" aria-label="Target aspect ratio" style={{ background: 'oklch(from var(--ui-accent) l c h / 0.08)', padding: '2px 4px', borderRadius: '6px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', paddingInline: '6px' }}>
                             <Image src="/assets/social/trimmed/tt-primary-white.png" alt="TikTok" width={52} height={14} style={{ height: '14px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                         </span>
-                        <button type="button" aria-pressed={draft.aspectRatio === '9:16'} onClick={() => handleSelectAspectRatio('9:16')} className="tpe-mode-btn" data-active={draft.aspectRatio === '9:16'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 9:16 Full Bleed (1080 × 1920)">
-                            <span>9:16 (FULL BLEED)</span>
+                        <button type="button" aria-pressed={draft.aspectRatio === '9:16'} onClick={() => handleSelectAspectRatio('9:16')} className="tpe-mode-btn" data-active={draft.aspectRatio === '9:16'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 9:16 (1080 × 1920)">
+                            <span>9:16</span>
                         </button>
-                        <button type="button" aria-pressed={draft.aspectRatio === '4:5'} onClick={() => handleSelectAspectRatio('4:5')} className="tpe-mode-btn" data-active={draft.aspectRatio === '4:5'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 4:5 Contain Frame (1080 × 1350)">
-                            <span>4:5 (CONTAIN)</span>
+                        <button type="button" aria-pressed={draft.aspectRatio === '4:5'} onClick={() => handleSelectAspectRatio('4:5')} className="tpe-mode-btn" data-active={draft.aspectRatio === '4:5'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 4:5 (1080 × 1350)">
+                            <span>4:5</span>
                         </button>
-                        <button type="button" aria-pressed={draft.aspectRatio === '16:9'} onClick={() => handleSelectAspectRatio('16:9')} className="tpe-mode-btn" data-active={draft.aspectRatio === '16:9'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 16:9 Landscape (1920 × 1080)">
-                            <span>16:9 (LANDSCAPE)</span>
+                        <button type="button" aria-pressed={draft.aspectRatio === '16:9'} onClick={() => handleSelectAspectRatio('16:9')} className="tpe-mode-btn" data-active={draft.aspectRatio === '16:9'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 16:9 (1920 × 1080)">
+                            <span>16:9</span>
                         </button>
                     </div>
                 </div>

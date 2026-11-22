@@ -1,5 +1,5 @@
 import React from 'react';
-import { TPEVectorLogo } from '../../../components/templates/instagram/TPEVectorLogo';
+import { TPEVectorLogo } from '../../../components/templates/TPEVectorLogo';
 
 interface ExportOverlayProps {
     status: string;

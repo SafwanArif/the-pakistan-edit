@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
     VideoDraft,
     StarSpinCue,
@@ -10,6 +10,7 @@ import {
     DEFAULT_STAR_CUES,
     formatTimecode,
 } from "../../../types/news";
+import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { SnapCap } from "./FramingToolbarPrimitives";
 
@@ -20,6 +21,7 @@ interface MotionControlDeckProps {
     onUpdateDraft: (draft: VideoDraft) => void;
     onSeekTo: (time: number) => void;
     onPreviewStar: () => void;
+    onJumpCue: (dir: 'prev' | 'next') => void;
 }
 
 const SPIN_MODES: { mode: StarSpinMode; val: number; label: string; title: string }[] = [
@@ -53,10 +55,12 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     onUpdateDraft,
     onSeekTo,
     onPreviewStar,
+    onJumpCue,
 }) => {
-    const masterOn = draft.enableMotion !== false;
     const wordmarkOn = draft.motionWordmark !== false;
     const textOn = draft.motionText !== false;
+    const [activeAsset, setActiveAsset] = useState<'logo' | 'wordmark' | 'text' | null>(null);
+    const logoOn = draft.enableLogo !== false;
 
     const rawCues = draft.starCues ?? DEFAULT_STAR_CUES;
     const sortedCues = useMemo(
@@ -109,7 +113,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
 
     return (
         <div
-            className="tpe-flex-col tpe-deck-surface"
+            className="tpe-flex-col"
             style={{
                 width: '100%',
                 maxWidth: '680px',
@@ -118,120 +122,38 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
         >
             {/* Row 1: Scheduled ★ Star Cues (WHEN) + Channel Switches */}
             <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                    {parkedCue ? (
-                        <div
-                            className="tpe-flex-row tpe-tabular-nums"
-                            style={{
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '2px 7px',
-                                borderRadius: '5px',
-                                background: 'oklch(from var(--ui-accent) l c h / 0.16)',
-                                border: '1px solid oklch(from var(--ui-accent) l c h / 0.5)',
-                                fontSize: '8.5px',
-                                fontWeight: 900,
-                                color: 'var(--ui-accent)',
-                            }}
-                        >
-                            <span>★ AT {formatTimecode(parkedCue.time)}</span>
-                            <button
-                                type="button"
-                                aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`}
-                                onClick={() => removeCue(parkedCue.id)}
-                                style={{ background: 'transparent', border: 'none', padding: '0 2px', color: 'var(--ui-danger)', fontWeight: 900, cursor: 'pointer', lineHeight: 1 }}
-                                title="Remove star spin cue at playhead"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={() => addCueAtTime(activeDisplayTime)}
-                            className="tpe-mode-btn tpe-tabular-nums"
-                            style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }}
-                            title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp"
-                        >
-                            + ★ AT {formatTimecode(activeDisplayTime)}
-                        </button>
-                    )}
-
-                    {!hasHookCue && (
-                        <button
-                            type="button"
-                            onClick={() => addCueAtTime(0)}
-                            className="tpe-mode-btn"
-                            style={{ padding: '2px 6px', fontSize: '8px' }}
-                            title="Add star spin cue at 01. Hook start (00:00.0)"
-                        >
-                            + 0s
-                        </button>
-                    )}
-
-                    {storyStart > 0.2 && !hasStoryCue && (
-                        <button
-                            type="button"
-                            onClick={() => addCueAtTime(storyStart)}
-                            className="tpe-mode-btn tpe-tabular-nums"
-                            style={{ padding: '2px 6px', fontSize: '8px' }}
-                            title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}
-                        >
-                            + STORY
-                        </button>
-                    )}
-
+                {/* Independent Motion Assets */}
+                <div
+                    className="tpe-nested-action-row tpe-nested-capsule"
+                    role="group"
+                    aria-label="Motion assets"
+                >
                     <button
                         type="button"
-                        onClick={onPreviewStar}
-                        className="tpe-mode-btn"
-                        style={{
-                            padding: '2px 7px',
-                            fontSize: '8.5px',
-                            fontWeight: 900,
-                            background: 'oklch(from var(--ui-accent) l c h / 0.14)',
-                            border: '1px solid oklch(from var(--ui-accent) l c h / 0.45)',
-                            color: 'var(--ui-accent)',
-                        }}
-                        title="Preview the P. dot → 5-point star → dot animation live right now on the monitor"
+                        aria-expanded={activeAsset === 'logo'}
+                        onClick={() => setActiveAsset(p => p === 'logo' ? null : 'logo')}
+                        className="tpe-mode-btn tpe-nested-action"
+                        data-active={activeAsset === 'logo'}
+                        title="Configure P. logo spin cues and star motion"
                     >
-                        ▶ TEST SPIN
-                    </button>
-                </div>
-
-                {/* Motion Channel Switches */}
-                <div className="tpe-mode-cluster" role="group" aria-label="Motion channels" style={{ padding: '1px', gap: '2px' }}>
-                    <button
-                        type="button"
-                        aria-pressed={masterOn}
-                        onClick={() => onUpdateDraft({ ...draft, enableMotion: !masterOn })}
-                        className="tpe-mode-btn"
-                        data-active={masterOn}
-                        style={{ padding: '2px 6px', fontSize: '8px' }}
-                        title="Master motion switch across brand mark, wordmark wipe, and kinetic headlines"
-                    >
-                        {masterOn ? '✨ ALL: ON' : 'ALL: OFF'}
+                        LOGO
                     </button>
                     <button
                         type="button"
-                        aria-pressed={wordmarkOn}
-                        disabled={!masterOn}
-                        onClick={() => onUpdateDraft({ ...draft, motionWordmark: !wordmarkOn })}
-                        className="tpe-mode-btn"
-                        data-active={masterOn && wordmarkOn}
-                        style={{ padding: '2px 6px', fontSize: '8px', opacity: masterOn ? 1 : 0.45 }}
+                        aria-expanded={activeAsset === 'wordmark'}
+                        onClick={() => setActiveAsset(p => p === 'wordmark' ? null : 'wordmark')}
+                        className="tpe-mode-btn tpe-nested-action"
+                        data-active={activeAsset === 'wordmark'}
                         title="Toggle initial 0.6s PAKISTAN / EDIT wordmark wipe reveal"
                     >
                         WORDMARK
                     </button>
                     <button
                         type="button"
-                        aria-pressed={textOn}
-                        disabled={!masterOn}
-                        onClick={() => onUpdateDraft({ ...draft, motionText: !textOn })}
-                        className="tpe-mode-btn"
-                        data-active={masterOn && textOn}
-                        style={{ padding: '2px 6px', fontSize: '8px', opacity: masterOn ? 1 : 0.45 }}
+                        aria-expanded={activeAsset === 'text'}
+                        onClick={() => setActiveAsset(p => p === 'text' ? null : 'text')}
+                        className="tpe-mode-btn tpe-nested-action"
+                        data-active={activeAsset === 'text'}
                         title="Toggle kinetic headline slide-in and // slash pulse"
                     >
                         TEXT FX
@@ -239,8 +161,102 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                 </div>
             </div>
 
-            {/* Active Star Cue Pills (if any scheduled) */}
-            {sortedCues.length > 0 && (
+            {activeAsset === 'wordmark' && (
+                <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '2px 4px' }}>
+                    <div className="tpe-flex-col" style={{ gap: '2px' }}>
+                        <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>WORDMARK MOTION</span>
+                        <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>0.6s PAKISTAN / EDIT wipe reveal</span>
+                    </div>
+                    <button
+                        type="button"
+                        aria-pressed={wordmarkOn}
+                        onClick={() => {
+                            const nextWordmark = !wordmarkOn;
+                            onUpdateDraft({
+                                ...draft,
+                                motionWordmark: nextWordmark,
+                                enableMotion: nextWordmark || textOn,
+                            });
+                        }}
+                        className="tpe-mode-btn"
+                        data-active={wordmarkOn}
+                        style={{ padding: '3px 8px', fontSize: '8px' }}
+                    >
+                        {wordmarkOn ? 'ON' : 'OFF'}
+                    </button>
+                </div>
+            )}
+
+            {activeAsset === 'text' && (
+                <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '2px 4px' }}>
+                    <div className="tpe-flex-col" style={{ gap: '2px' }}>
+                        <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>TEXT MOTION</span>
+                        <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>Kinetic headline slide-in and // slash pulse</span>
+                    </div>
+                    <button
+                        type="button"
+                        aria-pressed={textOn}
+                        onClick={() => {
+                            const nextText = !textOn;
+                            onUpdateDraft({
+                                ...draft,
+                                motionText: nextText,
+                                enableMotion: nextText || wordmarkOn,
+                            });
+                        }}
+                        className="tpe-mode-btn"
+                        data-active={textOn}
+                        style={{ padding: '3px 8px', fontSize: '8px' }}
+                    >
+                        {textOn ? 'ON' : 'OFF'}
+                    </button>
+                </div>
+            )}
+
+            {activeAsset === 'logo' && (
+                <>
+                    <div className="tpe-flex-col" style={{ gap: '6px', padding: '2px 4px' }}>
+                        <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                            <div className="tpe-flex-col" style={{ gap: '2px' }}>
+                                <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>P. LOGO MOTION</span>
+                                <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>Dot → 5-point star / crescent cues</span>
+                            </div>
+                            <button
+                                type="button"
+                                aria-pressed={logoOn}
+                                onClick={() => onUpdateDraft({ ...draft, enableLogo: !logoOn })}
+                                className="tpe-mode-btn"
+                                data-active={logoOn}
+                                style={{ padding: '3px 8px', fontSize: '8px' }}
+                            >
+                                {logoOn ? 'ON' : 'OFF'}
+                            </button>
+                        </div>
+                        {logoOn && (
+                            <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                                {sortedCues.length > 1 && (
+                                    <div className="tpe-mode-cluster" role="group" aria-label="Navigate star cues">
+                                        <button type="button" aria-label="Jump to previous star cue" onClick={() => onJumpCue('prev')} className="tpe-cycle-arrow" title="Previous star cue"><ChevronLeftIcon /></button>
+                                        <button type="button" aria-label="Jump to next star cue" onClick={() => onJumpCue('next')} className="tpe-cycle-arrow" title="Next star cue"><ChevronRightIcon /></button>
+                                    </div>
+                                )}
+                                {parkedCue ? (
+                                    <div className="tpe-flex-row tpe-tabular-nums" style={{ alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '5px', background: 'oklch(from var(--ui-accent) l c h / 0.16)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.5)', fontSize: '8.5px', fontWeight: 900, color: 'var(--ui-accent)' }}>
+                                        <span>★ AT {formatTimecode(parkedCue.time)}</span>
+                                        <button type="button" aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`} onClick={() => removeCue(parkedCue.id)} style={{ background: 'transparent', border: 'none', padding: '0 2px', color: 'var(--ui-danger)', fontWeight: 900, cursor: 'pointer', lineHeight: 1 }} title="Remove star spin cue at playhead">✕</button>
+                                    </div>
+                                ) : (
+                                    <button type="button" onClick={() => addCueAtTime(activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">+ ★ AT {formatTimecode(activeDisplayTime)}</button>
+                                )}
+                                {!hasHookCue && <button type="button" onClick={() => addCueAtTime(0)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px' }} title="Add star spin cue at 01. Hook start (00:00.0)">+ 0s</button>}
+                                {storyStart > 0.2 && !hasStoryCue && <button type="button" onClick={() => addCueAtTime(storyStart)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 6px', fontSize: '8px' }} title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}>+ STORY</button>}
+                                <button type="button" onClick={onPreviewStar} className="tpe-mode-btn" style={{ padding: '2px 7px', fontSize: '8.5px', fontWeight: 900, background: 'oklch(from var(--ui-accent) l c h / 0.14)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.45)', color: 'var(--ui-accent)' }} title="Preview the P. dot → 5-point star → dot animation live right now on the monitor">▶ TEST SPIN</button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Active Star Cue Pills (if any scheduled) */}
+            {logoOn && sortedCues.length > 0 && (
                 <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
                     <span style={{ fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)', marginInlineEnd: '2px' }}>
                         STAR CUES:
@@ -288,6 +304,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
             )}
 
             {/* Row 2: Sequence, Hold Feel, Spin Style, Morph Speed, Hold Time, Size (HOW) */}
+            {logoOn && (
             <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'flex-end', flexWrap: 'wrap', gap: '8px', paddingBlockStart: '2px', borderBlockStart: '1px solid var(--ui-border)' }}>
                 <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
                     <span style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '0.07em', color: 'var(--ui-text-dim)' }}>SEQUENCE</span>
@@ -355,6 +372,9 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                     onChange={(pct) => onUpdateDraft({ ...draft, starScale: pct })}
                 />
             </div>
+            )}
+                </>
+            )}
         </div>
     );
 });

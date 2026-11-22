@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFadeDurations, isSharedReHookScene } from "../../../types/news";
+import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFadeDurations, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
 import { PowerIcon } from "../../../components/icons/TPEIcons";
 import { detectFaceInHookWindow } from "../utils/autoTrackSubject";
 
@@ -143,7 +143,7 @@ export function getSceneCheckItems(
 
     if (sceneMode === 'hook') {
         const hasAnchorReHook = isSharedReHookScene(draft.scenes, 1);
-        const hasMotionOrCut = hasAnchorReHook || (draft.keyframes || []).some(k => k.time <= 5) || (draft.zoom ?? 0) !== (draft.aspectRatio === '4:5' ? 0 : 100);
+        const hasMotionOrCut = hasAnchorReHook || (draft.keyframes || []).some(k => k.time <= 5) || getDefaultVideoFraming(draft, draft.aspectRatio).zoom !== (draft.aspectRatio === '4:5' ? 0 : 100);
         const faceDone = typeof options?.faceDetected === 'boolean';
         const hasOpenLoop = /\?|:|—|"|'|%|£|\$|\d|\b(why|how|never|only|first|secret|truth|actually|would|could|unless|before)\b/i.test(titleStr);
         const titleLead = titleStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
@@ -166,7 +166,7 @@ export function getSceneCheckItems(
             { ok: hasMotionOrCut, label: 'Pattern interrupt in 5s (Re-Hook cut or camera beat)' },
             { ok: !draft.isMuted && (draft.volume ?? 1) > 0, label: 'Native voice / room audio active (> 0%)' },
             { ok: scene.fadeOut !== false && (hasAnchorReHook ? resolvedHookFade.outMode === 'micro' : resolvedHookFade.outMode === 'editorial'), label: hasAnchorReHook ? `Micro-dip exit (${resolvedHookFade.outDur.toFixed(2)}s — Anchored Hook)` : `Editorial exit dip (${resolvedHookFade.outDur.toFixed(2)}s)`, fix: update ? () => update({ fadeOut: true, fadeOutPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
-            { ok: draft.aspectRatio !== '9:16' || (draft.headlinePreset || 'bottom') !== 'center', label: draft.aspectRatio === '9:16' && draft.headlinePreset === 'center' ? 'Optical Center: verify headline clears speaker eyes' : 'Headline placement clears TikTok native UI' },
+            { ok: draft.aspectRatio !== '9:16' || getVideoHeadingPreset(draft, '9:16') !== 'center', label: draft.aspectRatio === '9:16' && getVideoHeadingPreset(draft, '9:16') === 'center' ? 'Optical Center: verify headline clears speaker eyes' : 'Headline placement clears TikTok native UI' },
         ];
     }
 

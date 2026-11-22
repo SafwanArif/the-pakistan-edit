@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
-import type { VideoDraft } from "../../../../types/news";
+import type { VideoDraft } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 
 const ctxCache = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
@@ -148,7 +148,7 @@ export const useAmbientCanvasPainter = ({
         }
         const video = getActiveVideo();
         if (video) paintAmbientCanvas(video, true);
-    }, [ambientCrop, ambientVisibility, draft.posY, draft.enableAmbientBlur, isPlayingRef, isScrubbingRef, getActiveVideo, paintAmbientCanvas]);
+    }, [ambientCrop, ambientVisibility, draft.zoom, draft.posX, draft.posY, draft.defaultFramingByRatio, draft.aspectRatio, draft.enableAmbientBlur, isPlayingRef, isScrubbingRef, getActiveVideo, paintAmbientCanvas]);
 
     return {
         ambientCropRef,

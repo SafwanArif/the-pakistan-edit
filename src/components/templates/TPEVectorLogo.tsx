@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useId, useLayoutEffect, useRef } from "react";
-import { clamp, DEFAULT_STAR_CUES } from "../../../types/news";
+import { clamp, DEFAULT_STAR_CUES } from "../../types/news";
 import {
     CIRCLE_PATH_R3,
     buildLogoEmblemPath,
@@ -12,7 +12,7 @@ import {
     getLogoEmblemState,
     getStarDotTransform,
     type LogoMotionConfig,
-} from "../../../utils/starMorphMath";
+} from "../../utils/starMorphMath";
 
 export type { LogoMotionConfig };
 
@@ -55,7 +55,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
     useLayoutEffect(() => {
         const previewNonce = motionConfig?.previewNonce ?? 0;
         const dotEl = dotPathRef.current;
-        if (!previewNonce || !dotEl) return;
+        if (!previewNonce || !dotEl || motionConfig?.enableLogo === false) return;
 
         isPreviewingRef.current = true;
         const cfg = motionConfigRef.current;
@@ -90,7 +90,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
             dotEl.setAttribute("d", CIRCLE_PATH_R3);
             dotEl.setAttribute("transform", "translate(32 39)");
         };
-    }, [motionConfig?.previewNonce]);
+    }, [motionConfig?.previewNonce, motionConfig?.enableLogo]);
 
     useLayoutEffect(() => {
         const r1 = rect1Ref.current;
@@ -163,6 +163,11 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         const morphDur = clamp(cfg?.morphDuration ?? 0.45, 0.15, 2.0);
         const holdDur = clamp(cfg?.holdDuration ?? 0.5, 0, 5.0);
         const sequence = cfg?.sequence ?? 'star-crescent';
+        if (cfg?.enableLogo === false && dotEl) {
+            dotEl.setAttribute("d", CIRCLE_PATH_R3);
+            dotEl.setAttribute("transform", "translate(32 39)");
+            return;
+        }
         const cues = cfg?.starCues ?? DEFAULT_STAR_CUES;
         let maxCueTime = 0;
         for (let i = 0; i < cues.length; i++) {

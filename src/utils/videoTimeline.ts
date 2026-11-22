@@ -3,7 +3,7 @@ import type { VideoDraft, VideoKeyframe, TimelineScene } from "../types/news";
 /** Clamps a numeric value inclusively to `[min, max]`. */
 export const clamp = (val: number, min: number, max: number): number => Math.min(Math.max(val, min), max);
 
-/** Parses `MM:SS.d` or raw seconds string into a non-negative number of seconds. */
+/** Parses `MM:SS.ssss`, `MM:SS.d`, or raw seconds into a non-negative number of seconds. */
 export const parseTimeInput = (raw: string): number | null => {
     const clean = raw.trim();
     if (!clean) return null;
@@ -265,12 +265,41 @@ export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = fal
 };
 
 export const formatTimecode = (seconds: number): string => {
-    if (Number.isNaN(seconds) || seconds < 0) return "00:00.0";
-    const tenths = Math.round(seconds * 10);
-    const m = Math.floor(tenths / 600);
-    const s = Math.floor((tenths % 600) / 10);
-    const ds = tenths % 10;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ds}`;
+    if (Number.isNaN(seconds) || seconds < 0) return "00:00.0000";
+    const tenThousandths = Math.round(seconds * 10000);
+    const m = Math.floor(tenThousandths / 600000);
+    const s = Math.floor((tenThousandths % 600000) / 10000);
+    const decimals = tenThousandths % 10000;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${decimals.toString().padStart(4, '0')}`;
+};
+
+/** Moves from an exact manual time to the adjacent source frame in the requested direction. */
+export const nudgeTimeToFrame = (
+    time: number,
+    deltaFrames: number,
+    fps: number,
+    sourceFrameIndex?: import("../types/news").SourceFrameIndex
+): number => {
+    if (sourceFrameIndex && !sourceFrameIndex.cfr && sourceFrameIndex.pts.length > 1) {
+        let nearestIndex = 0;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < sourceFrameIndex.pts.length; index++) {
+            const distance = Math.abs(sourceFrameIndex.pts[index]! - time);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = index;
+            }
+        }
+        const nextIndex = Math.min(sourceFrameIndex.pts.length - 1, Math.max(0, nearestIndex + deltaFrames));
+        return Math.max(0, sourceFrameIndex.pts[nextIndex]!);
+    }
+    const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+    const scaled = Math.max(0, time) * safeFps;
+    const epsilon = 1e-7;
+    const frameIndex = deltaFrames > 0
+        ? Math.floor(scaled + epsilon) + deltaFrames
+        : Math.ceil(scaled - epsilon) + deltaFrames;
+    return Math.max(0, frameIndex / safeFps);
 };
 
 export interface SceneBoundary {

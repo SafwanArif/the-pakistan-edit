@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TPEVectorLogo } from "../components/templates/instagram/TPEVectorLogo";
+import { TPEVectorLogo } from "../components/templates/TPEVectorLogo";
 
 export default function LandingLogo() {
   const [replayCount, setReplayCount] = useState(0);

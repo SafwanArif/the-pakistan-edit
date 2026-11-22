@@ -1,4 +1,6 @@
 import { createDefaultTimelineScenes } from "../utils/videoTimeline";
+import type { VideoAspectRatio } from "../config/omnichannel";
+export type { VideoAspectRatio } from "../config/omnichannel";
 
 // ---------------------------------------------------------------------------
 // 1. Carousel Editorial Domain
@@ -49,8 +51,24 @@ export interface Draft {
 // ---------------------------------------------------------------------------
 
 export type PostMode = 'carousel' | 'video';
-export type VideoAspectRatio = '9:16' | '4:5' | '1:1';
 export type VideoHeadlinePreset = 'bottom' | 'center' | 'top';
+export interface VideoFraming {
+    zoom: number;
+    posX: number;
+    posY: number;
+}
+
+export interface SourceFrameIndex {
+    mediaUrl: string;
+    fps: number;
+    nominalFps: number;
+    startTime: number;
+    duration: number;
+    frameCount: number;
+    cfr: boolean;
+    keyframes: number[];
+    pts: number[];
+}
 export type SubtitleFontId = 'plus-jakarta' | 'onest' | 'dm-sans' | 'geist';
 export type SubtitleBackdropId = 'pill' | 'glass' | 'shadow' | 'none';
 export type FadePresetMode = 'auto' | 'micro' | 'editorial';
@@ -128,6 +146,9 @@ export interface VideoDraft {
     videoUrl: string;
     videoName?: string;
     videoDuration?: number; // Detected native media duration in seconds
+    sourceFps?: number; // Detected source/export frame rate for exact frame nudging
+    sourceFrameLogUrl?: string;
+    sourceFrameIndex?: SourceFrameIndex;
     category: string;
     headline: string;
     subtitle?: string;
@@ -135,8 +156,10 @@ export interface VideoDraft {
     sourcePrefix?: string;
     creditName?: string;
     creditPrefix?: string;
-    aspectRatio: VideoAspectRatio; // '9:16' | '4:5' | '1:1'
+    aspectRatio: VideoAspectRatio; // '9:16' | '4:5' | '16:9'
     headlinePreset: VideoHeadlinePreset; // 'top' (Upper Third) | 'center' (Optical Center) | 'bottom' (Lower Third)
+    headingPresets?: Partial<Record<VideoAspectRatio, VideoHeadlinePreset>>;
+    defaultFramingByRatio?: Partial<Record<VideoAspectRatio, VideoFraming>>;
     zoom?: number;
     posX?: number;
     posY?: number; // 4:5 vertical ceiling (100 = glued to top 0px, 0 = pulled down)
@@ -157,6 +180,7 @@ export interface VideoDraft {
     subtitleFont?: SubtitleFontId;
     subtitleBackdrop?: SubtitleBackdropId;
     enableMotion?: boolean;
+    enableLogo?: boolean;
     motionWordmark?: boolean;
     motionText?: boolean;
     starCues?: StarSpinCue[];
@@ -168,6 +192,24 @@ export interface VideoDraft {
     starHoldFeel?: StarHoldFeel;
     enableAmbientBlur?: boolean;
 }
+
+export const getVideoHeadingPreset = (
+    draft: Pick<VideoDraft, 'headlinePreset' | 'headingPresets'>,
+    aspectRatio: VideoAspectRatio
+): VideoHeadlinePreset => draft.headingPresets?.[aspectRatio] ?? draft.headlinePreset ?? 'bottom';
+
+export const getDefaultVideoFraming = (
+    draft: Pick<VideoDraft, 'aspectRatio' | 'defaultFramingByRatio' | 'zoom' | 'posX' | 'posY'>,
+    aspectRatio: VideoAspectRatio = draft.aspectRatio
+): VideoFraming => {
+    const stored = draft.defaultFramingByRatio?.[aspectRatio];
+    const usesLegacyValues = aspectRatio === draft.aspectRatio;
+    return {
+        zoom: stored?.zoom ?? (usesLegacyValues ? draft.zoom : undefined) ?? (aspectRatio === '4:5' ? 0 : 100),
+        posX: stored?.posX ?? (usesLegacyValues ? draft.posX : undefined) ?? 50,
+        posY: stored?.posY ?? (usesLegacyValues ? draft.posY : undefined) ?? 100,
+    };
+};
 
 // ---------------------------------------------------------------------------
 // 4. Pure Framing Helpers, Constants, Barrel Re-Exports & Draft Factories
@@ -236,6 +278,11 @@ export const createDefaultVideoDraft = (): VideoDraft => {
         creditPrefix: "FOOTAGE:",
         aspectRatio: '9:16',
         headlinePreset: 'bottom',
+        defaultFramingByRatio: {
+            '9:16': { zoom: 100, posX: 50, posY: 100 },
+            '4:5': { zoom: 0, posX: 50, posY: 100 },
+            '16:9': { zoom: 100, posX: 50, posY: 100 },
+        },
         zoom: 100,
         posX: 50,
         posY: 100,
@@ -246,6 +293,7 @@ export const createDefaultVideoDraft = (): VideoDraft => {
         outroDuration: 5,
         outroCta: "FOLLOW @THEPAKISTANEDIT FOR VERIFIED INSTITUTIONAL INTELLIGENCE",
         enableAmbientBlur: true,
+        enableLogo: true,
         starCues: [{ id: 'star-0', time: 0 }],
         starMorphDuration: 0.45,
         starHoldDuration: 0.5,

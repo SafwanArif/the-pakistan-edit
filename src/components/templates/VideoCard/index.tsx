@@ -2,11 +2,11 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene } from "../../../../types/news";
-import { Platform, OMNI_CONFIG, VIDEO_PLATFORM_CONFIGS } from "../../../../config/omnichannel";
+import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
+import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { TPEVectorLogo, type LogoMotionConfig } from "../TPEVectorLogo";
 import { HighlightedText } from "../NewsCard/HighlightedText";
-import { PlayIcon } from "../../../icons/TPEIcons";
+import { PlayIcon } from "../../icons/TPEIcons";
 import { VideoOutroCard } from "./VideoOutroCard";
 import { AmbientBlurStack } from "./AmbientBlurStack";
 import { useVideoElementSync } from "./useVideoElementSync";
@@ -42,7 +42,6 @@ const getCaptionSpanStyle = (backdrop: string, fontFamily: string, fontSize: num
 
 interface VideoCardProps {
     draft: VideoDraft;
-    platform?: Platform;
     isPlaying?: boolean;
     isScrubbing?: boolean;
     playbackMode?: 'play-all' | 'loop-angle';
@@ -57,10 +56,9 @@ interface VideoCardProps {
     starPreviewNonce?: number;
 }
 
-/** Unified video renderer supporting 4:5 Contain, 9:16 Full-Bleed, keyframe zoom/pan, and 5s outro stinger. */
+/** Unified video renderer supporting 4:5 Contain, 9:16 Full-Bleed, and 16:9 Landscape formats. */
 export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     draft,
-    platform = "tiktok",
     isPlaying = false,
     isScrubbing = false,
     playbackMode = 'play-all',
@@ -74,9 +72,9 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     pausedFramingOverride,
     starPreviewNonce = 0
 }) => {
-    const dimensions = VIDEO_PLATFORM_CONFIGS[platform] || OMNI_CONFIG[platform];
-    const is916 = platform === 'tiktok' || dimensions.height === 1920;
-    const is45 = platform === 'instagram' || (dimensions.width === 1080 && dimensions.height === 1350);
+    const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
+    const is916 = draft.aspectRatio === '9:16';
+    const is45 = draft.aspectRatio === '4:5';
     const [mediaNaturalAspect, setMediaNaturalAspect] = useState<number>(16 / 9);
 
     const { scene: activeScene, isOutro, sceneIndex } = getActiveSceneAtTime(draft, currentTime);
@@ -97,11 +95,15 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const isLiveMediaLoop = isLiveLoopActive && !isOutro;
     const staticFramingTime = isPlaying && !isScrubbing && !overlayOnly ? sceneStart : currentTime;
 
+    const defaultFraming = useMemo(
+        () => getDefaultVideoFraming(draft, draft.aspectRatio),
+        [draft]
+    );
     const cardFraming = useMemo(
         () => pausedFramingOverride ?? (draft.keyframes?.length
-            ? interpolateKeyframe(draft.keyframes, staticFramingTime, { zoom: draft.zoom, posX: draft.posX, posY: draft.posY })
-            : { zoom: draft.zoom ?? (is45 ? 0 : 100), posX: draft.posX ?? 50, posY: draft.posY ?? 100 }),
-        [pausedFramingOverride, draft.keyframes, draft.zoom, draft.posX, draft.posY, staticFramingTime, is45]
+            ? interpolateKeyframe(draft.keyframes, staticFramingTime, defaultFraming)
+            : defaultFraming),
+        [pausedFramingOverride, draft.keyframes, defaultFraming, staticFramingTime]
     );
 
     const { effectiveScale, containerHeightPx, H_contain } = useMemo(() => {
@@ -185,6 +187,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const textScene = isSharedReHook ? draft.scenes![0]! : activeScene;
     const animateWordmark = isPlaying && !overlayOnly && draft.enableMotion !== false;
     const logoMotionConfig = useMemo<LogoMotionConfig>(() => ({
+        enableLogo: draft.enableLogo !== false,
         enableWordmark: draft.motionWordmark !== false,
         starCues: draft.starCues,
         morphDuration: draft.starMorphDuration,
@@ -194,7 +197,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         sequence: draft.starSequence,
         holdFeel: draft.starHoldFeel,
         previewNonce: starPreviewNonce,
-    }), [draft.motionWordmark, draft.starCues, draft.starMorphDuration, draft.starHoldDuration, draft.starScale, draft.starSpinMode, draft.starSequence, draft.starHoldFeel, starPreviewNonce]);
+    }), [draft.enableLogo, draft.motionWordmark, draft.starCues, draft.starMorphDuration, draft.starHoldDuration, draft.starScale, draft.starSpinMode, draft.starSequence, draft.starHoldFeel, starPreviewNonce]);
     const outroMotionConfig = useMemo<LogoMotionConfig>(() => ({
         ...logoMotionConfig,
         starCues: [{ id: 'outro-star', time: 0 }],
@@ -216,12 +219,18 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         return findSubtitleAtMediaTime(draft.subtitles, wrapMediaTime(draft, currentTime, draft.videoDuration || 0));
     }, [draft, activeScene?.showSubtitles, currentTime]);
 
-    const preset = draft.headlinePreset || 'bottom';
-    const presetLayout = preset === 'center'
-        ? { justify: 'center', top: is916 ? '200px' : '100px', bottom: is916 ? '200px' : '100px' }
-        : preset === 'top'
-            ? { justify: 'flex-start', top: is916 ? '390px' : '260px', bottom: '140px' }
-            : { justify: 'flex-end', top: is916 ? '200px' : '120px', bottom: is916 ? '460px' : (platform === 'square' ? '140px' : '160px') };
+    const preset = getVideoHeadingPreset(draft, draft.aspectRatio);
+    const presetLayout = is45
+        ? preset === 'center'
+            ? { justify: 'center', top: '200px', bottom: '200px' }
+            : preset === 'top'
+                ? { justify: 'flex-start', top: '200px', bottom: '160px' }
+                : { justify: 'flex-end', top: '160px', bottom: '200px' }
+        : preset === 'center'
+            ? { justify: 'center', top: is916 ? '200px' : '100px', bottom: is916 ? '200px' : '100px' }
+            : preset === 'top'
+                ? { justify: 'flex-start', top: is916 ? '390px' : '260px', bottom: '140px' }
+                : { justify: 'flex-end', top: is916 ? '200px' : '120px', bottom: is916 ? '460px' : '160px' };
 
     const footerBottom = is45 ? '50px' : (is916 ? '140px' : '80px');
     const topBoxMediaStyle: React.CSSProperties = {
@@ -241,7 +250,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         <div
             className="tpe-news-card"
             data-slide-type="bulletin"
-            data-platform={platform}
+            data-platform="tiktok"
             data-motion={draft.enableMotion === false || draft.motionText === false || isScrubbing ? 'off' : 'on'}
             data-overlay-only={overlayOnly ? "true" : undefined}
             data-step={1}
@@ -411,7 +420,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
 
                 {/* Narrative Layer */}
                 {is45 ? (
-                    <div style={{ position: 'absolute', top: '640px', bottom: '110px', left: '60px', right: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px', pointerEvents: 'none', zIndex: 10 }}>
+                    <div style={{ position: 'absolute', top: presetLayout.top, bottom: presetLayout.bottom, left: '60px', right: '140px', display: 'flex', flexDirection: 'column', justifyContent: presetLayout.justify, gap: '16px', pointerEvents: 'none', zIndex: 10 }}>
                         {headlineText && (
                             <div key={`headline-${textKey}`} dir="auto" className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: '64px', lineHeight: 1.08, letterSpacing: '-0.02em', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
                                 <HighlightedText text={headlineText} />
@@ -430,12 +439,12 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                             <div className="tpe-news-inner tpe-flex-col tpe-full-absolute" style={{ pointerEvents: 'none', justifyContent: presetLayout.justify, paddingBlockStart: presetLayout.top, paddingBlockEnd: presetLayout.bottom, paddingInlineStart: '60px', paddingInlineEnd: '140px', zIndex: 10 }}>
                                 <div className="tpe-bulletin-group" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBlockStart: 0, marginBlockEnd: 0 }}>
                                     {headlineText && (
-                                        <div key={`headline-full-${textKey}`} dir="auto" className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: is916 ? '76px' : (platform === 'square' ? '58px' : '64px'), lineHeight: 1.05, textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                        <div key={`headline-full-${textKey}`} dir="auto" className="tpe-news-h1 tpe-kinetic-in" style={{ fontSize: is916 ? '76px' : '64px', lineHeight: 1.05, textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
                                             <HighlightedText text={headlineText} />
                                         </div>
                                     )}
                                     {subtitleText && (
-                                        <div key={`subtitle-full-${textKey}`} dir="auto" className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: is916 ? '34px' : (platform === 'square' ? '28px' : '32px'), fontWeight: 500, lineHeight: 1.3, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
+                                        <div key={`subtitle-full-${textKey}`} dir="auto" className="tpe-kinetic-in-delayed" style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: is916 ? '34px' : '32px', fontWeight: 500, lineHeight: 1.3, color: 'oklch(from var(--ui-text) l c h / 0.95)', textShadow: keyLightShadow, whiteSpace: 'pre-line' }}>
                                             <HighlightedText text={subtitleText} />
                                         </div>
                                     )}

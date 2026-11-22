@@ -3,7 +3,7 @@ import { getFontEmbedCSS, toBlob } from "html-to-image";
 import { Draft, getSlideCount, downloadBlob } from "../../../types/news";
 import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import React from "react";
-import { NewsCard } from "../../../components/templates/instagram/NewsCard/index";
+import { NewsCard } from "../../../components/templates/NewsCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
 
 /** Renders a DOM node to a PNG Blob with an explicit timeout guard. */

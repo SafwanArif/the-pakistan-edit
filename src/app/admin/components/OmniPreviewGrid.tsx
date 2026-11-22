@@ -2,7 +2,7 @@
 
 import React, { useMemo, useDeferredValue } from "react";
 import { Draft } from "../../../types/news";
-import { NewsCard } from "../../../components/templates/instagram/NewsCard/index";
+import { NewsCard } from "../../../components/templates/NewsCard/index";
 import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
 import { TikTokIcon, InstagramIcon, XIcon } from "../../../components/icons/TPEIcons";
 import { useContainerScale } from "../hooks/useContainerScale";

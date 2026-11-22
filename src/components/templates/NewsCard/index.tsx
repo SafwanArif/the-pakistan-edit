@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { Draft } from "../../../../types/news";
-import { Platform } from "../../../../config/omnichannel";
-import { useNewsCardState } from "../../../../app/admin/hooks/useNewsCardState";
+import { Draft } from "../../../types/news";
+import { Platform } from "../../../config/omnichannel";
+import { useNewsCardState } from "../../../app/admin/hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
 import { TPEVectorLogo } from "../TPEVectorLogo";
-import { OMNI_CONFIG } from "../../../../config/omnichannel";
+import { OMNI_CONFIG } from "../../../config/omnichannel";
 
 interface NewsCardProps {
     draft: Draft;

@@ -1,4 +1,4 @@
-import { VideoDraft, getTimelineStructure } from "../../../../types/news";
+import { VideoDraft, getTimelineStructure } from "../../../types/news";
 
 /** Returns true when a timeline has non-contiguous clip offsets (Hook/Re-Hook/Story jumps) that benefit from a pre-parked standby deck. */
 export const hasNonContiguousVideoCuts = (draft: VideoDraft): boolean => {

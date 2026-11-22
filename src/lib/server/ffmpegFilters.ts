@@ -8,6 +8,7 @@ import {
     timelineTimeToMediaTime,
     wrapMediaTime,
     getDefaultSubtitleFontSize,
+    getDefaultVideoFraming,
     findSubtitleAtMediaTime,
 } from "../../types/news";
 
@@ -89,7 +90,7 @@ const buildPiecewiseKeyframeExpr = (
     selectValue: (f: { zoom: number; posX: number; posY: number }) => number,
     minDelta: number
 ): { isConstant: boolean; expr: string; minV: number; maxV: number } => {
-    const fallback = { zoom: draft.zoom, posX: draft.posX, posY: draft.posY };
+    const fallback = getDefaultVideoFraming(draft, draft.aspectRatio);
     const boundaries: number[] = [0];
     const sortedKfs = [...(draft.keyframes || [])].sort((a, b) => a.time - b.time);
     for (const kf of sortedKfs) {
@@ -166,7 +167,7 @@ export const buildPosXNormExpr = (
 
 /**
  * Builds a piecewise FFmpeg `t` expression for `zoomFactor` (`>= 1.0`) when zoom keyframes
- * vary across a 9:16/1:1 scene, or returns `null` when zoom is constant.
+ * vary across a 9:16/16:9 scene, or returns `null` when zoom is constant.
  */
 export const buildZoomFactorExpr = (
     draft: VideoDraft,

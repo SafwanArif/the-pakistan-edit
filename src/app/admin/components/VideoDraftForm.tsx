@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { set } from "idb-keyval";
 import { VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "../../../types/news";
-import { TPEVectorLogo } from "../../../components/templates/instagram/TPEVectorLogo";
+import { TPEVectorLogo } from "../../../components/templates/TPEVectorLogo";
 import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { probeVideoMetadata } from "../hooks/useVideoDraftState";
@@ -336,7 +336,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                 onClick={() => { setIsExportMenuOpen(false); onExportOverlay(); }}
                                 className="tpe-nav-btn tpe-btn-gold"
                                 style={exportMenuBtnStyle}
-                                title="Export transparent 9:16, 4:5, and 1:1 PNG overlay ZIP"
+                                title="Export transparent TikTok 9:16, 4:5, and 16:9 PNG overlay ZIP"
                             >
                                 🖼️ PNG OVERLAYS (.ZIP)
                             </button>

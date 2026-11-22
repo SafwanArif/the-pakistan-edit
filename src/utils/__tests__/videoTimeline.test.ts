@@ -13,6 +13,8 @@ import {
     isSharedReHookScene,
     mediaTimeToTimelineTime,
     parseTimeInput,
+    formatTimecode,
+    nudgeTimeToFrame,
     timelineTimeToMediaTime,
     wrapMediaTime,
 } from "../videoTimeline";
@@ -53,6 +55,42 @@ describe("parseTimeInput", () => {
         expect(parseTimeInput("19.7")).toBe(19.7);
         expect(parseTimeInput("01:15.5")).toBe(75.5);
         expect(parseTimeInput("  00:04  ")).toBe(4);
+    });
+
+    describe("keyframe timecode precision", () => {
+        it("formats timecodes to four decimal places", () => {
+            expect(formatTimecode(0)).toBe("00:00.0000");
+            expect(formatTimecode(75.5)).toBe("01:15.5000");
+            expect(formatTimecode(75.5166666667)).toBe("01:15.5167");
+        });
+
+        it("nudge values at 30 fps remain frame quantized", () => {
+            const nudged = Math.round((75.5 + 1 / 30) * 30) / 30;
+            expect(nudged).toBeCloseTo(75.53333333333333, 10);
+        });
+
+        it("keeps manual microsecond edits exact until a frame nudge is used", () => {
+            const manual = Math.round(75.5166 * 10000) / 10000;
+            expect(manual).toBe(75.5166);
+            expect(nudgeTimeToFrame(manual, -1, 60)).toBeCloseTo(75.5, 10);
+            expect(nudgeTimeToFrame(manual, 1, 60)).toBeCloseTo(75.51666666666667, 10);
+        });
+
+        it("uses exact PTS values when nudging VFR source frame indices", () => {
+            const vfrIndex = {
+                mediaUrl: "/api/video/ingest?id=media-test.mp4",
+                fps: 60,
+                nominalFps: 60,
+                startTime: 0,
+                duration: 2,
+                frameCount: 5,
+                cfr: false,
+                keyframes: [0, 3],
+                pts: [0, 0.034, 0.083, 0.142, 0.200],
+            };
+            expect(nudgeTimeToFrame(0.083, -1, 60, vfrIndex)).toBeCloseTo(0.034, 10);
+            expect(nudgeTimeToFrame(0.083, 1, 60, vfrIndex)).toBeCloseTo(0.142, 10);
+        });
     });
 
     it("rejects empty or invalid strings", () => {

@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import type { VideoDraft } from "../../../../types/news";
 import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "../../../../types/news";
-import { OMNI_CONFIG, VIDEO_PLATFORM_CONFIGS, aspectRatioToPlatform } from "../../../../config/omnichannel";
+import { VIDEO_FORMAT_CONFIGS } from "../../../../config/omnichannel";
 import { assertDiskHeadroom, CACHE_DIR, createFileWebStream, fileExists, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
 import { buildAssSubtitles, escapeFfmpegFilterPath } from "../../../../lib/server/ffmpegFilters";
 import { buildSceneFilterStages } from "../../../../lib/server/ffmpegSceneGraph";
@@ -82,6 +82,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing draft payload" }, { status: 400 });
         }
         const draft = JSON.parse(draftRaw) as VideoDraft;
+        const format = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
+        if (!format) {
+            return NextResponse.json({ error: "Unsupported video aspect ratio" }, { status: 400 });
+        }
         const scenes = draft.scenes?.length ? draft.scenes : [];
         if (!scenes.length) {
             return NextResponse.json({ error: "No timeline scenes to export" }, { status: 400 });
@@ -98,10 +102,9 @@ export async function POST(request: Request) {
         await assertDiskHeadroom();
         const masterInfo = await probeVideoInfo(masterPath, request.signal);
 
-        const targetPlatform = aspectRatioToPlatform(draft.aspectRatio);
-        const { width: W, height: H } = VIDEO_PLATFORM_CONFIGS[targetPlatform] || OMNI_CONFIG[targetPlatform];
-        const is45 = targetPlatform === "instagram";
-        const is916 = targetPlatform === "tiktok";
+        const { width: W, height: H } = format;
+        const is45 = draft.aspectRatio === "4:5";
+        const is916 = draft.aspectRatio === "9:16";
         const targetFps = masterInfo.fps || 30;
         const bounds = getSceneBoundaries(scenes);
         const { hasReHook, storyIdx: setupIdx, storyOffset: setupOffset } = getTimelineStructure(scenes);

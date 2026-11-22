@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, type SyntheticEvent } from "react";
-import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, getHookTransitionFade, getBreathDipAudioGain, getTimelineStructure, clamp } from "../../../../types/news";
+import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, getHookTransitionFade, getBreathDipAudioGain, getTimelineStructure, clamp } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 import { getNextCutMediaTarget, isStandbyReadyAt, preParkStandbyDeck } from "./dualDeckHelpers";
 import { useAmbientCanvasPainter } from "./useAmbientCanvasPainter";

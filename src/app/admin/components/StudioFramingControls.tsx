@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { DEFAULT_STAR_CUES, type VideoDraft } from "../../../types/news";
-import type { Platform } from "../../../config/omnichannel";
+import { DEFAULT_STAR_CUES, getVideoHeadingPreset, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
 import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
+import { ScrubPillSlider } from "./ScrubPillSlider";
+import { SnapCap } from "./FramingToolbarPrimitives";
 import { SubtitleEditorTray } from "./SubtitleEditorTray";
 import { MotionControlDeck } from "./MotionControlDeck";
 import { KeyframeEditorCapsule } from "./KeyframeEditorCapsule";
@@ -15,10 +16,44 @@ const HEADLINE_PRESETS = [
     { id: 'bottom' as const, label: 'LOWER THIRD', title: 'Lower Third: Broadcast lower third; positioned safely above native TikTok caption UI' }
 ];
 
+const CONTAIN_ZOOM_OPTIONS = [
+    { label: 'CONTAIN', val: 0, title: 'Contain: preserve the full 4:5 frame' },
+    { label: 'FILL', val: 100, title: 'Fill: cover the 4:5 frame edge to edge' },
+];
+const PAN_SNAP_OPTIONS = [
+    { label: 'LEFT', val: 0, title: 'Snap Pan Left' },
+    { label: 'CTR', val: 50, title: 'Snap Pan Center' },
+    { label: 'RIGHT', val: 100, title: 'Snap Pan Right' },
+];
+const POS_Y_SNAP_OPTIONS = [
+    { label: 'TOP', val: 100, title: 'Snap to Top edge' },
+    { label: 'CTR', val: 50, title: 'Snap to Vertical Center' },
+    { label: 'BTM', val: 0, title: 'Snap to Bottom edge' },
+];
+
+type ActiveToolTab = 'layout' | 'keyframes' | 'subtitles' | 'motion';
+
+interface ToolTabItem {
+    tab: ActiveToolTab;
+    label: string;
+    count?: number;
+    navCount?: number;
+    isActive: boolean;
+    onJump?: (dir: 'prev' | 'next') => void;
+    prevLabel?: string;
+    nextLabel?: string;
+    prevTitle?: string;
+    nextTitle?: string;
+    title: string;
+}
+
 interface StudioFramingControlsProps {
     draft: VideoDraft;
+    sourceFps: number;
+    sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
     isPlaying?: boolean;
-    activePlatform: Platform;
+    aspectRatio: VideoAspectRatio;
+    defaultFraming: VideoFraming;
     isTopBox45: boolean;
     isLetterboxActive: boolean;
     activeFraming: { zoom: number; posX: number; posY: number };
@@ -31,8 +66,8 @@ interface StudioFramingControlsProps {
     kfEditSide: 'post' | 'pre';
     activeDisplayTime: number;
     storyStart: number;
-    activeToolTab: 'keyframes' | 'subtitles' | 'motion' | null;
-    onToggleToolTab: (tab: 'keyframes' | 'subtitles' | 'motion') => void;
+    activeToolTab: ActiveToolTab | null;
+    onToggleToolTab: (tab: ActiveToolTab) => void;
     onCloseToolTab: () => void;
     seekTo: (time: number) => void;
     onUpdateDraft: (draft: VideoDraft) => void;
@@ -43,20 +78,21 @@ interface StudioFramingControlsProps {
     activeSubtitleCount: number;
     onAddOrUpdateKeyframe: (kind: 'smooth' | 'snap') => void;
     onRemoveKeyframe: () => void;
-    onUpdateKeyframeTime?: (nextTime: number, side?: 'pre' | 'post') => void;
+    onUpdateKeyframeTime?: (nextTime: number, side?: 'pre' | 'post', quantizeToFrame?: boolean) => void;
     onSetKfEditSide: (side: 'post' | 'pre') => void;
     onToggleEasing: () => void;
     onClearAllKeyframes: () => void;
     onFramingSliderChange: (field: 'zoom' | 'posX' | 'posY', val: number) => void;
+    onDefaultFramingChange: (field: 'zoom' | 'posX' | 'posY', val: number) => void;
 }
 
-/** Centred Keyframe & Framing Toolbar with ‹ KEYFRAMES › header, SNAP | GLIDE switcher, PRE/POST chips, and Fused Scrub-Bars. */
+/** Video editing toolbar for layout, captions, motion, and keyframe framing. */
 export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React.memo(({
-    draft, activePlatform, isTopBox45, isLetterboxActive, activeFraming, zoomMin, zoomMax,
+    draft, sourceFps, sourceFrameIndex, aspectRatio, defaultFraming, isTopBox45, isLetterboxActive, activeFraming, zoomMin, zoomMax,
     existingKeyframeIndex, activePreTime, activePostTime, activeKeyframeEasing, kfEditSide,
     activeDisplayTime, storyStart, activeToolTab, onToggleToolTab, onCloseToolTab, seekTo,
     onUpdateDraft, onJumpKeyframe, onJumpSubtitle, onJumpStarCue, onPreviewStar, activeSubtitleCount, onAddOrUpdateKeyframe, onRemoveKeyframe, onUpdateKeyframeTime,
-    onSetKfEditSide, onToggleEasing, onClearAllKeyframes, onFramingSliderChange,
+    onSetKfEditSide, onToggleEasing, onClearAllKeyframes, onFramingSliderChange, onDefaultFramingChange,
 }) => {
     const closeIfOpen = useCallback(() => {
         if (activeToolTab !== null) onCloseToolTab();
@@ -64,28 +100,27 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     const toolbarRef = useClickOutside(closeIfOpen, '[data-keep-tool-tab]', activeToolTab !== null);
 
     const isExpanded = activeToolTab === 'keyframes';
+    const isLayoutOpen = activeToolTab === 'layout';
     const isSubtitlesOpen = activeToolTab === 'subtitles';
     const isMotionOpen = activeToolTab === 'motion';
     const isParked = existingKeyframeIndex >= 0;
+    const isDefaultLetterboxActive = aspectRatio === '4:5' && Math.round(defaultFraming.zoom) < 100;
     const kfCount = draft.keyframes?.length ?? 0;
     const subCount = draft.subtitles?.length ?? 0;
-    const starCueCount = (draft.starCues ?? DEFAULT_STAR_CUES).length;
+    const headingPreset = getVideoHeadingPreset(draft, aspectRatio);
+    const hasUploadedVideo = Boolean(draft.videoUrl.trim());
 
     return (
         <div ref={toolbarRef} className="tpe-flex-col" style={{ alignItems: 'center', gap: '6px', width: 'fit-content', maxWidth: '100%', alignSelf: 'center' }}>
-            {/* Top Centred Keyframes Header */}
+            {/* Editing tool tabs */}
             <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                {activePlatform === 'tiktok' && (
-                    <div className="tpe-mode-cluster" role="group" aria-label="Headline position preset">
-                        {HEADLINE_PRESETS.map(p => (
-                            <button key={p.id} type="button" aria-pressed={(draft.headlinePreset || 'bottom') === p.id} className="tpe-mode-btn" data-active={(draft.headlinePreset || 'bottom') === p.id} onClick={() => onUpdateDraft({ ...draft, headlinePreset: p.id })} title={p.title} style={{ padding: '2px 6px', fontSize: '8px' }}>
-                                {p.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {[
+                {([
+                    {
+                        tab: 'layout' as const,
+                        label: 'LAYOUT',
+                        isActive: isLayoutOpen,
+                        title: isLayoutOpen ? 'Collapse Layout drawer' : 'Expand Layout drawer',
+                    },
                     {
                         tab: 'keyframes' as const,
                         label: 'KEYFRAMES',
@@ -115,20 +150,13 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                     {
                         tab: 'motion' as const,
                         label: 'MOTION',
-                        count: starCueCount,
-                        navCount: starCueCount,
                         isActive: isMotionOpen,
-                        onJump: onJumpStarCue,
-                        prevLabel: 'Jump to previous star cue',
-                        nextLabel: 'Jump to next star cue',
-                        prevTitle: 'Previous star cue',
-                        nextTitle: 'Next star cue',
                         title: isMotionOpen ? 'Collapse Motion Control Deck (M)' : 'Expand Motion Control Deck (M): on-demand P. dot → star cues & channels',
                     },
-                ].filter((item) => activeToolTab === null || activeToolTab === item.tab).map((item) => (
+                ] satisfies ToolTabItem[]).filter((item) => activeToolTab === null || activeToolTab === item.tab).map((item) => (
                     <div key={item.tab} className="tpe-mode-cluster" style={{ padding: '2px', gap: '2px', alignItems: 'center' }}>
-                        {item.navCount > 0 && (
-                            <button type="button" aria-label={item.prevLabel} onMouseDown={(e) => e.preventDefault()} onClick={() => item.onJump('prev')} className="tpe-cycle-arrow" title={item.prevTitle}>
+                        {(item.navCount ?? 0) > 0 && item.onJump && (
+                            <button type="button" aria-label={item.prevLabel} onMouseDown={(e) => e.preventDefault()} onClick={() => item.onJump?.('prev')} className="tpe-cycle-arrow" title={item.prevTitle}>
                                 <ChevronLeftIcon />
                             </button>
                         )}
@@ -140,17 +168,159 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                             className="tpe-tab-btn tpe-tabular-nums"
                             data-active={item.isActive}
                             title={item.title}
+                            style={{ inlineSize: '84px', justifyContent: 'center' }}
                         >
-                            {item.label}{item.count > 0 ? ` (${item.count})` : ''}
+                            {item.label}{(item.count ?? 0) > 0 ? ` (${item.count})` : ''}
                         </button>
-                        {item.navCount > 0 && (
-                            <button type="button" aria-label={item.nextLabel} onMouseDown={(e) => e.preventDefault()} onClick={() => item.onJump('next')} className="tpe-cycle-arrow" title={item.nextTitle}>
+                        {(item.navCount ?? 0) > 0 && item.onJump && (
+                            <button type="button" aria-label={item.nextLabel} onMouseDown={(e) => e.preventDefault()} onClick={() => item.onJump?.('next')} className="tpe-cycle-arrow" title={item.nextTitle}>
                                 <ChevronRightIcon />
                             </button>
                         )}
                     </div>
                 ))}
             </div>
+
+            {/* Nested Layout Drawer */}
+            {isLayoutOpen && (
+                <div className="tpe-deck-surface tpe-flex-col" style={{ width: '100%', maxWidth: '640px', padding: '8px 10px', gap: '6px' }}>
+                    <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>
+                        HEADING PLACEMENT · {aspectRatio}
+                    </span>
+                    <div className="tpe-nested-action-row tpe-nested-capsule" role="group" aria-label={`Headings placement for ${aspectRatio}`}>
+                        {HEADLINE_PRESETS.map(p => (
+                            <button
+                                key={p.id}
+                                type="button"
+                                aria-pressed={headingPreset === p.id}
+                                className="tpe-mode-btn tpe-nested-action"
+                                data-active={headingPreset === p.id}
+                                onClick={() => onUpdateDraft({
+                                    ...draft,
+                                    headingPresets: { ...draft.headingPresets, [aspectRatio]: p.id },
+                                })}
+                                title={p.title}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    {hasUploadedVideo && (
+                        <>
+                            <div className="tpe-flex-col" style={{ gap: '6px', paddingBlockStart: '6px', borderBlockStart: '1px solid var(--ui-border)' }}>
+                                <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>
+                                    DEFAULT FRAMING · {aspectRatio}
+                                </span>
+                                <div className="tpe-flex-row" style={{ alignItems: 'flex-end', justifyContent: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                    {aspectRatio === '4:5' && (
+                                        <div className="tpe-flex-col" style={{ alignItems: 'center', gap: '4px', width: '112px' }}>
+                                            <SnapCap
+                                                ariaLabel="4:5 contain or fill"
+                                                value={defaultFraming.zoom}
+                                                options={CONTAIN_ZOOM_OPTIONS}
+                                                onSelect={(value) => onDefaultFramingChange('zoom', value)}
+                                            />
+                                            <ScrubPillSlider
+                                                label="ZOOM"
+                                                value={defaultFraming.zoom}
+                                                min={zoomMin}
+                                                max={zoomMax}
+                                                accentColor="var(--ui-accent)"
+                                                width="112px"
+                                                height="20px"
+                                                title="Default zoom for this aspect ratio; keyframes override it where present"
+                                                onChange={(value) => onDefaultFramingChange('zoom', value)}
+                                            />
+                                        </div>
+                                    )}
+                                    {aspectRatio !== '4:5' && (
+                                        <div className="tpe-flex-col" style={{ alignItems: 'center', gap: '4px', width: '112px' }}>
+                                            <div aria-hidden="true" style={{ height: '20px' }} />
+                                            <ScrubPillSlider
+                                                label="ZOOM"
+                                                value={defaultFraming.zoom}
+                                                min={zoomMin}
+                                                max={zoomMax}
+                                                accentColor="var(--ui-accent)"
+                                                width="112px"
+                                                height="20px"
+                                                title="Default zoom for this aspect ratio; keyframes override it where present"
+                                                onChange={(value) => onDefaultFramingChange('zoom', value)}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="tpe-flex-col" style={{ alignItems: 'center', gap: '4px', width: '112px' }}>
+                                        <SnapCap
+                                            ariaLabel="Default horizontal pan"
+                                            value={defaultFraming.posX}
+                                            options={PAN_SNAP_OPTIONS}
+                                            onSelect={(value) => onDefaultFramingChange('posX', value)}
+                                        />
+                                        <ScrubPillSlider
+                                            label="PAN X"
+                                            value={defaultFraming.posX}
+                                            min={0}
+                                            max={100}
+                                            accentColor="var(--ui-accent)"
+                                            width="112px"
+                                            height="20px"
+                                            title="Default horizontal pan for this aspect ratio"
+                                            onChange={(value) => onDefaultFramingChange('posX', value)}
+                                        />
+                                    </div>
+                                    {isDefaultLetterboxActive && (
+                                        <div className="tpe-flex-col" style={{ alignItems: 'center', gap: '4px', width: '112px' }}>
+                                            <SnapCap
+                                                ariaLabel="Default vertical position"
+                                                value={defaultFraming.posY}
+                                                options={POS_Y_SNAP_OPTIONS}
+                                                onSelect={(value) => onDefaultFramingChange('posY', value)}
+                                            />
+                                            <ScrubPillSlider
+                                                label="POS Y"
+                                                value={defaultFraming.posY}
+                                                min={0}
+                                                max={100}
+                                                accentColor="var(--ui-accent)"
+                                                width="112px"
+                                                height="20px"
+                                                title="Default 4:5 vertical position; 100% is the top edge"
+                                                onChange={(value) => onDefaultFramingChange('posY', value)}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                                <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>
+                                    Sets framing without creating keyframes. Existing keyframes override it where they apply.
+                                </span>
+                            </div>
+                            {aspectRatio === '4:5' && (
+                                <div className="tpe-flex-col" style={{ gap: '5px', paddingBlockStart: '6px', borderBlockStart: '1px solid var(--ui-border)' }}>
+                                    <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>
+                                        4:5 BACKGROUND TREATMENT
+                                    </span>
+                                    <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                        <button
+                                            type="button"
+                                            aria-pressed={draft.enableAmbientBlur !== false}
+                                            onClick={() => onUpdateDraft({ ...draft, enableAmbientBlur: draft.enableAmbientBlur === false })}
+                                            className="tpe-mode-btn"
+                                            data-active={draft.enableAmbientBlur !== false}
+                                            title="Toggle the ambient video blur behind the TikTok 4:5 contain frame"
+                                            style={{ padding: '3px 7px', fontSize: '8px' }}
+                                        >
+                                            AMBIENT BLUR
+                                        </button>
+                                        <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>
+                                            Disabled removes the background blur layers.
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
 
             {/* Nested Subtitles Drawer */}
             {isSubtitlesOpen && (
@@ -168,12 +338,15 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                     onUpdateDraft={onUpdateDraft}
                     onSeekTo={seekTo}
                     onPreviewStar={onPreviewStar}
+                    onJumpCue={onJumpStarCue}
                 />
             )}
 
             {/* Nested Keyframes Editor Drawer */}
             {isExpanded && (
                 <KeyframeEditorCapsule
+                    sourceFps={sourceFps}
+                    sourceFrameIndex={sourceFrameIndex}
                     isParked={isParked}
                     kfCount={kfCount}
                     isTopBox45={isTopBox45}
@@ -199,17 +372,20 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
 }, (prev, next) => {
     if (prev.activeToolTab !== next.activeToolTab) return false;
     if (next.activeToolTab === null) {
-        return prev.activePlatform === next.activePlatform
-            && prev.draft.headlinePreset === next.draft.headlinePreset
+        return prev.aspectRatio === next.aspectRatio
+            && getVideoHeadingPreset(prev.draft, prev.aspectRatio) === getVideoHeadingPreset(next.draft, next.aspectRatio)
             && prev.draft.enableMotion === next.draft.enableMotion
             && (prev.draft.keyframes?.length ?? 0) === (next.draft.keyframes?.length ?? 0)
             && (prev.draft.subtitles?.length ?? 0) === (next.draft.subtitles?.length ?? 0)
             && (prev.draft.starCues ?? DEFAULT_STAR_CUES).length === (next.draft.starCues ?? DEFAULT_STAR_CUES).length
             && prev.activeSubtitleCount === next.activeSubtitleCount;
     }
+    if (next.activeToolTab === 'layout') {
+        return prev.draft === next.draft
+            && prev.aspectRatio === next.aspectRatio;
+    }
     if (next.activeToolTab === 'subtitles') {
         return prev.draft === next.draft
-            && prev.activePlatform === next.activePlatform
             && prev.activeSubtitleCount === next.activeSubtitleCount;
     }
     if (next.activeToolTab === 'motion') {
@@ -219,7 +395,7 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     }
     return prev.draft === next.draft
         && prev.isPlaying === next.isPlaying
-        && prev.activePlatform === next.activePlatform
+        && prev.aspectRatio === next.aspectRatio
         && prev.isTopBox45 === next.isTopBox45
         && prev.isLetterboxActive === next.isLetterboxActive
         && prev.existingKeyframeIndex === next.existingKeyframeIndex

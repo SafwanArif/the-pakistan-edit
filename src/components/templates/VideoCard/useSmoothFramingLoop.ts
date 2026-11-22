@@ -6,9 +6,10 @@ import {
     getHookTransitionFade,
     getTopBoxOffsetY,
     getTotalVideoDuration,
+    getDefaultVideoFraming,
     interpolateKeyframe,
     mediaTimeToTimelineTime,
-} from "../../../../types/news";
+} from "../../../types/news";
 
 export interface AmbientCropRect {
     xFrac: number;
@@ -52,7 +53,7 @@ interface SmoothFramingLoopOptions {
 
 /**
  * Drives GPU-composited camera glides (zoom, pan X, pos Y), 4:5 clip-path, ambient translate3d,
- * 9:16/1:1 GPU pan, Photo Ken Burns, cosine fade overlay, 120Hz audio breath-dip, and progress bar
+ * 9:16/16:9 GPU pan, Photo Ken Burns, cosine fade overlay, 120Hz audio breath-dip, and progress bar
  * at full display VSync (120Hz/144Hz+) with zero React re-renders and zero layout reflows.
  */
 export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
@@ -208,13 +209,10 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
             const mediaEl = o.isImage ? o.imageRef.current : video;
             if (!mediaEl) return;
 
+            const defaultFraming = getDefaultVideoFraming(o.draft, o.draft.aspectRatio);
             const f = o.draft.keyframes?.length
-                ? interpolateKeyframe(o.draft.keyframes, liveT, {
-                    zoom: o.draft.zoom,
-                    posX: o.draft.posX,
-                    posY: o.draft.posY,
-                })
-                : { zoom: o.draft.zoom, posX: o.draft.posX, posY: o.draft.posY };
+                ? interpolateKeyframe(o.draft.keyframes, liveT, defaultFraming)
+                : defaultFraming;
 
             const kenBurnsMul = o.isImage
                 ? 1 + 0.04 * clamp((liveT - o.sceneStart) / Math.max(o.sceneDuration, 0.1), 0, 1)

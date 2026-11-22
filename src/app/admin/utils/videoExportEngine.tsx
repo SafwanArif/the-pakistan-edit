@@ -1,16 +1,16 @@
 import JSZip from "jszip";
 import { getFontEmbedCSS } from "html-to-image";
-import { VideoDraft, getSceneBoundaries, isSharedReHookScene, downloadBlob } from "../../../types/news";
-import { OMNI_CONFIG, Platform, VIDEO_PLATFORM_CONFIGS, aspectRatioToPlatform } from "../../../config/omnichannel";
+import { VideoDraft, VideoAspectRatio, getSceneBoundaries, isSharedReHookScene, downloadBlob } from "../../../types/news";
+import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import React from "react";
-import { VideoCard } from "../../../components/templates/instagram/VideoCard/index";
+import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
 import { renderNodeToBlobWithTimeout } from "./exportEngine";
 
-/** Exports transparent PNG overlays for 9:16, 4:5, and 1:1 canvases. */
+/** Exports transparent PNG overlays for TikTok 9:16, 4:5, and 16:9 canvases. */
 export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
     onStatus("Initializing Institutional Overlay Pipeline...");
-    const platforms: Platform[] = ["tiktok", "instagram", "square"];
+    const aspectRatios: VideoAspectRatio[] = ["9:16", "4:5", "16:9"];
     const zip = new JSZip();
 
     try {
@@ -28,17 +28,17 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
         let cachedFontEmbedCSS: string | undefined;
 
         try {
-            for (let i = 0; i < platforms.length; i++) {
-                const p = platforms[i]!;
-                const dimensions = VIDEO_PLATFORM_CONFIGS[p] || OMNI_CONFIG[p];
-                onStatus(`[${i + 1}/${platforms.length}] Rendering ${p} Overlay...`);
-                temp.style.width = `${dimensions.width}px`;
-                temp.style.height = `${dimensions.height}px`;
+            for (let i = 0; i < aspectRatios.length; i++) {
+                const aspectRatio = aspectRatios[i]!;
+                const format = VIDEO_FORMAT_CONFIGS[aspectRatio];
+                onStatus(`[${i + 1}/${aspectRatios.length}] Rendering ${format.label} Overlay...`);
+                temp.style.width = `${format.width}px`;
+                temp.style.height = `${format.height}px`;
 
                 root.render(
                     <div id="export-freeze-frame" style={{ background: 'transparent' }}>
                         <style>{`* { transition: none !important; animation: none !important; }`}</style>
-                        <VideoCard draft={draft} platform={p} overlayOnly={true} />
+                        <VideoCard draft={{ ...draft, aspectRatio }} overlayOnly={true} />
                     </div>
                 );
 
@@ -51,8 +51,8 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
                 const blob = await renderNodeToBlobWithTimeout(
                     temp,
                     {
-                        width: dimensions.width,
-                        height: dimensions.height,
+                        width: format.width,
+                        height: format.height,
                         pixelRatio: 1,
                         quality: 1,
                         cacheBust: false,
@@ -61,9 +61,9 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
                         skipAutoScale: true,
                     },
                     8000,
-                    `Overlay render timed out for ${p}.`
+                    `Overlay render timed out for ${format.label}.`
                 );
-                if (blob) zip.file(`overlay_${p}_${dimensions.width}x${dimensions.height}_${sanitize(anchorKW)}.png`, blob);
+                if (blob) zip.file(`overlay_tiktok_${aspectRatio.replace(':', 'x')}_${format.width}x${format.height}_${sanitize(anchorKW)}.png`, blob);
             }
         } finally {
             root.unmount();
@@ -84,8 +84,7 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
 
 /** Exports a broadcast-grade H.264 / 48kHz AAC MP4 via native server-side FFmpeg compositing. */
 export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
-    const targetPlatform = aspectRatioToPlatform(draft.aspectRatio);
-    const dimensions = VIDEO_PLATFORM_CONFIGS[targetPlatform] || OMNI_CONFIG[targetPlatform];
+    const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
     const { width, height } = dimensions;
     const scenes = draft.scenes?.length ? draft.scenes : [];
 
@@ -111,7 +110,7 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
             root.render(
                 <div style={{ background: 'transparent' }}>
                     <style>{`* { transition: none !important; animation: none !important; }`}</style>
-                    <VideoCard draft={{ ...overrideDraft, showSubtitles: false }} platform={targetPlatform} overlayOnly={true} currentTime={currentTime} />
+                    <VideoCard draft={{ ...overrideDraft, showSubtitles: false }} overlayOnly={true} currentTime={currentTime} />
                 </div>
             );
             await document.fonts.ready;

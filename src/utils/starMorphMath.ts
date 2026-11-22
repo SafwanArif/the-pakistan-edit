@@ -10,6 +10,7 @@ import {
 export type EmblemShape = "dot" | "star" | "crescent";
 
 export interface LogoMotionConfig {
+    enableLogo?: boolean;
     enableWordmark?: boolean;
     starCues?: readonly StarSpinCue[];
     morphDuration?: number;

@@ -62,7 +62,8 @@ export const KeyframeTimeChip: React.FC<{
     title: string;
     onSelect?: () => void;
     onCommitTime?: (nextTime: number) => void;
-}> = React.memo(({ prefix, time, active, accentColor, title, onSelect, onCommitTime }) => {
+    onNudgeTime?: (deltaFrames: number) => void;
+}> = React.memo(({ prefix, time, active, accentColor, title, onSelect, onCommitTime, onNudgeTime }) => {
     const [editingText, setEditingText] = useState<string | null>(null);
 
     if (editingText !== null && onCommitTime) {
@@ -85,7 +86,7 @@ export const KeyframeTimeChip: React.FC<{
                     if (e.key === 'Enter') e.currentTarget.blur();
                     if (e.key === 'Escape') setEditingText(null);
                 }}
-                style={{ width: '56px', height: '20px', textAlign: 'center', fontSize: '9px', fontFamily: 'monospace', fontWeight: 900, color: '#050505', background: accentColor, border: '1px solid #fff', borderRadius: '4px', padding: '0 4px' }}
+                style={{ width: '84px', height: '20px', textAlign: 'center', fontSize: '9px', fontFamily: 'monospace', fontWeight: 900, color: '#050505', background: accentColor, border: '1px solid #fff', borderRadius: '4px', padding: '0 4px' }}
             />
         );
     }
@@ -119,6 +120,12 @@ export const KeyframeTimeChip: React.FC<{
             >
                 {formatTimecode(time)}
             </button>
+            {onNudgeTime && (
+                <>
+                    <button type="button" aria-label={`Nudge ${prefix} keyframe back one frame`} onClick={() => onNudgeTime(-1)} title="Nudge back one frame" style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', lineHeight: 1, cursor: 'pointer' }}>‹</button>
+                    <button type="button" aria-label={`Nudge ${prefix} keyframe forward one frame`} onClick={() => onNudgeTime(1)} title="Nudge forward one frame" style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', lineHeight: 1, cursor: 'pointer' }}>›</button>
+                </>
+            )}
         </div>
     );
 });

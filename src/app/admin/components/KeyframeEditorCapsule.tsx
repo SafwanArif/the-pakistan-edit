@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { nudgeTimeToFrame } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { KeyDiamondGlyph, SnapCap, KeyframeTimeChip } from "./FramingToolbarPrimitives";
@@ -25,6 +26,8 @@ const POS_Y_SNAP_OPTIONS = [
 ];
 
 export interface KeyframeEditorCapsuleProps {
+    sourceFps: number;
+    sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
     isParked: boolean;
     kfCount: number;
     isTopBox45: boolean;
@@ -38,7 +41,7 @@ export interface KeyframeEditorCapsuleProps {
     kfEditSide: 'post' | 'pre';
     onAddOrUpdateKeyframe: (kind: 'smooth' | 'snap') => void;
     onRemoveKeyframe: () => void;
-    onUpdateKeyframeTime?: (nextTime: number, side?: 'pre' | 'post') => void;
+    onUpdateKeyframeTime?: (nextTime: number, side?: 'pre' | 'post', quantizeToFrame?: boolean) => void;
     onSetKfEditSide: (side: 'post' | 'pre') => void;
     onToggleEasing: () => void;
     onClearAllKeyframes: () => void;
@@ -47,6 +50,8 @@ export interface KeyframeEditorCapsuleProps {
 
 /** Nested keyframe creation bar and active PRE/POST framing editor capsule. */
 export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React.memo(({
+    sourceFps,
+    sourceFrameIndex,
     isParked,
     kfCount,
     isTopBox45,
@@ -90,20 +95,15 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
     if (!isParked) {
         return (
             <div
-                className="tpe-flex-row"
-                style={{
-                    justifyContent: 'center', gap: '6px', alignItems: 'center',
-                    padding: '4px 10px', borderRadius: '7px',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)',
-                }}
+                className="tpe-nested-action-row tpe-nested-capsule"
             >
-                <button type="button" onClick={() => onAddOrUpdateKeyframe('snap')} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8.5px', gap: '5px' }} title="Insert a Snap Keyframe (with PRE & POST states) at playhead">
+                <button type="button" onClick={() => onAddOrUpdateKeyframe('snap')} className="tpe-mode-btn tpe-nested-action" title="Insert a Snap Keyframe (with PRE & POST states) at playhead">
                     <KeyDiamondGlyph kind="snap" />
-                    <span>+ SNAP</span>
+                    <span>SNAP</span>
                 </button>
-                <button type="button" onClick={() => onAddOrUpdateKeyframe('smooth')} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8.5px', gap: '5px' }} title="Insert a Smooth Camera Glide keyframe at playhead">
+                <button type="button" onClick={() => onAddOrUpdateKeyframe('smooth')} className="tpe-mode-btn tpe-nested-action" title="Insert a Smooth Camera Glide keyframe at playhead">
                     <KeyDiamondGlyph kind="glide" />
-                    <span>+ GLIDE</span>
+                    <span>GLIDE</span>
                 </button>
             </div>
         );
@@ -138,6 +138,7 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                             title="Select & preview incoming PRE framing"
                             onSelect={() => onSetKfEditSide('pre')}
                             onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'pre') : undefined}
+                            onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePreTime ?? activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'pre', true) : undefined}
                         />
                         <KeyframeTimeChip
                             prefix="◧ POST"
@@ -147,6 +148,7 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                             title="Select & preview outgoing POST framing"
                             onSelect={() => onSetKfEditSide('post')}
                             onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'post') : undefined}
+                            onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'post', true) : undefined}
                         />
                     </div>
                 ) : (
@@ -157,6 +159,7 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                         accentColor="var(--ui-accent)"
                         title="Smooth glide keyframe"
                         onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'post') : undefined}
+                        onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'post', true) : undefined}
                     />
                 )}
             </div>

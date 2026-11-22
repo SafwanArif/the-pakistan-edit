@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
     VideoDraft,
+    VideoAspectRatio,
     createDefaultVideoDraft,
     getTotalVideoDuration,
     calculatePsychologyPacedScenes,
     ensureUniqueSceneIds,
     getSceneBoundaries,
+    type VideoFraming,
 } from '../../../types/news';
 import { get, set } from 'idb-keyval';
 
@@ -13,7 +15,7 @@ const uploadWithTelemetry = (
     formData: FormData,
     onStatus: (msg: string) => void,
     signal?: AbortSignal
-): Promise<string> =>
+): Promise<{ url: string; fps: number; frameIndexUrl?: string }> =>
     new Promise((resolve, reject) => {
         if (signal?.aborted) {
             reject(new Error("Upload aborted"));
@@ -22,6 +24,8 @@ const uploadWithTelemetry = (
         const xhr = new XMLHttpRequest();
         let parsedOffset = 0;
         let finalUrl = "";
+        let finalFps = 30;
+        let finalFrameIndexUrl: string | undefined;
         let settled = false;
 
         const finishReject = (err: Error) => {
@@ -43,13 +47,18 @@ const uploadWithTelemetry = (
                 for (const line of lines.slice(0, -1)) {
                     if (!line.trim()) continue;
                     try {
-                        const evt = JSON.parse(line) as { stage?: string; url?: string; error?: string };
+                        const evt = JSON.parse(line) as { stage?: string; url?: string; fps?: string; frameIndexUrl?: string; error?: string };
                         if (evt.error) {
                             finishReject(new Error(evt.error));
                             return;
                         }
                         if (evt.stage) onStatus(evt.stage);
                         if (evt.url) finalUrl = evt.url;
+                        if (evt.frameIndexUrl) finalFrameIndexUrl = evt.frameIndexUrl;
+                        if (evt.fps) {
+                            const parsedFps = Number(evt.fps);
+                            if (Number.isFinite(parsedFps) && parsedFps > 0) finalFps = parsedFps;
+                        }
                     } catch { /* wait for complete line */ }
                 }
             }
@@ -70,7 +79,7 @@ const uploadWithTelemetry = (
             signal?.removeEventListener("abort", onAbort);
             if (xhr.status >= 200 && xhr.status < 300 && finalUrl) {
                 settled = true;
-                resolve(finalUrl);
+                resolve({ url: finalUrl, fps: finalFps, frameIndexUrl: finalFrameIndexUrl });
             } else {
                 settled = true;
                 reject(new Error(`Ingest failed (${xhr.status})`));
@@ -80,12 +89,12 @@ const uploadWithTelemetry = (
         xhr.send(formData);
     });
 
-export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: '9:16' | '4:5'; duration: number } | null> =>
+export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: VideoAspectRatio; duration: number } | null> =>
     new Promise((resolve) => {
         const vid = document.createElement('video');
         vid.preload = 'metadata';
         let settled = false;
-        const finish = (result: { aspectRatio: '9:16' | '4:5'; duration: number } | null) => {
+        const finish = (result: { aspectRatio: VideoAspectRatio; duration: number } | null) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
@@ -97,8 +106,13 @@ export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: '9:16' |
         };
         const timer = setTimeout(() => finish(null), 8000);
         vid.onloadedmetadata = () => {
-            const aspectRatio: '9:16' | '4:5' =
-                vid.videoWidth && vid.videoHeight && (vid.videoHeight / vid.videoWidth) >= 1.5 ? '9:16' : '4:5';
+            const aspectRatio: VideoAspectRatio = vid.videoWidth && vid.videoHeight
+                ? (vid.videoHeight / vid.videoWidth >= 1.5
+                    ? '9:16'
+                    : vid.videoWidth / vid.videoHeight >= 1.5
+                        ? '16:9'
+                        : '4:5')
+                : '4:5';
             const duration = vid.duration && !Number.isNaN(vid.duration) && vid.duration > 0 ? vid.duration : 60;
             finish({ aspectRatio, duration });
         };
@@ -108,10 +122,31 @@ export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: '9:16' |
 
 /** Normalizes hydrated IndexedDB drafts by restoring missing/duplicate scenes and sorting keyframes and star cues ascending by time. */
 export const normalizeHydratedVideoDraft = (
-    savedDraft: Partial<VideoDraft>,
+    savedDraft: Omit<Partial<VideoDraft>, 'aspectRatio'> & { aspectRatio?: VideoAspectRatio | '1:1' },
     baseDraft: VideoDraft = createDefaultVideoDraft()
 ): VideoDraft => {
-    const draft: VideoDraft = { ...baseDraft, ...savedDraft };
+    const draft: VideoDraft = {
+        ...baseDraft,
+        ...savedDraft,
+        aspectRatio: savedDraft.aspectRatio === '1:1' ? '16:9' : (savedDraft.aspectRatio ?? baseDraft.aspectRatio),
+    };
+    const defaultFramingByRatio: Partial<Record<VideoAspectRatio, VideoFraming>> = {
+        ...baseDraft.defaultFramingByRatio,
+        ...savedDraft.defaultFramingByRatio,
+    };
+    const hasLegacyFraming = savedDraft.zoom !== undefined || savedDraft.posX !== undefined || savedDraft.posY !== undefined;
+    if (!savedDraft.defaultFramingByRatio?.[draft.aspectRatio] && hasLegacyFraming) {
+        const ratioDefaults = draft.aspectRatio === '4:5'
+            ? { zoom: 0, posX: 50, posY: 100 }
+            : { zoom: 100, posX: 50, posY: 100 };
+        const base = baseDraft.defaultFramingByRatio?.[draft.aspectRatio] ?? ratioDefaults;
+        defaultFramingByRatio[draft.aspectRatio] = {
+            zoom: savedDraft.zoom ?? base.zoom,
+            posX: savedDraft.posX ?? base.posX,
+            posY: savedDraft.posY ?? base.posY,
+        };
+    }
+    draft.defaultFramingByRatio = defaultFramingByRatio;
     if (!draft.scenes || draft.scenes.length === 0) {
         draft.scenes = baseDraft.scenes;
     } else {
@@ -212,7 +247,8 @@ export const useVideoDraftState = () => {
             const formData = new FormData();
             formData.append('file', blob, displayName);
 
-            const url = await uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal);
+            const upload = await uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal);
+            const url = upload.url;
             setIngestStatus("PROBING ASPECT RATIO & DURATION...");
             const meta = await probeVideoMetadata(url);
             const current = videoDraftRef.current;
@@ -225,11 +261,27 @@ export const useVideoDraftState = () => {
                 ? current.scenes
                 : calculatePsychologyPacedScenes(clipDuration, current.scenes);
 
+            let sourceFrameIndex = undefined;
+            if (upload.frameIndexUrl) {
+                try {
+                    const frameIndexResponse = await fetch(upload.frameIndexUrl, { signal: controller.signal });
+                    if (frameIndexResponse.ok) {
+                        sourceFrameIndex = await frameIndexResponse.json();
+                    }
+                } catch (err) {
+                    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                    console.warn("SOURCE_FRAME_INDEX_LOAD_FAILED", err);
+                }
+            }
+
             const nextDraft: VideoDraft = {
                 ...current,
                 videoUrl: url,
                 videoName: displayName,
                 videoDuration: clipDuration,
+                sourceFps: upload.fps,
+                sourceFrameLogUrl: upload.frameIndexUrl,
+                sourceFrameIndex,
                 aspectRatio: nextRatio,
                 scenes: nextScenes,
             };

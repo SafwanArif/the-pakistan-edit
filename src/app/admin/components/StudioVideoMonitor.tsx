@@ -2,9 +2,9 @@
 
 import React, { useMemo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp } from "../../../types/news";
-import { VideoCard } from "../../../components/templates/instagram/VideoCard/index";
-import { Platform, VIDEO_PLATFORM_CONFIGS, OMNI_CONFIG, aspectRatioToPlatform } from "../../../config/omnichannel";
+import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
+import { VideoCard } from "../../../components/templates/VideoCard/index";
+import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { PlayIcon, PauseIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
 import { useFitScale } from "../hooks/useFitScale";
 import { useStudioShortcuts } from "../hooks/useStudioShortcuts";
@@ -37,17 +37,19 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const [isScrubbing, setIsScrubbing] = useState(false);
     const [scrubTime, setScrubTime] = useState<number | null>(null);
     const [timeDraftText, setTimeDraftText] = useState<string | null>(null);
-    const [activeToolTab, setActiveToolTab] = useState<'keyframes' | 'subtitles' | 'motion' | null>(null);
+    const [activeToolTab, setActiveToolTab] = useState<'layout' | 'keyframes' | 'subtitles' | 'motion' | null>(null);
     const [kfEditSide, setKfEditSide] = useState<'post' | 'pre'>('pre');
     const [starPreviewNonce, setStarPreviewNonce] = useState(0);
     const wasPlayingBeforeScrubRef = useRef(false);
 
-    const activePlatform: Platform = useMemo(() => aspectRatioToPlatform(draft.aspectRatio), [draft.aspectRatio]);
-
-    const dimensions = VIDEO_PLATFORM_CONFIGS[activePlatform] || OMNI_CONFIG[activePlatform];
+    const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
     const { containerRef, scale } = useFitScale(dimensions.width, dimensions.height);
 
     const activeDisplayTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
+    const defaultFraming = useMemo(
+        () => getDefaultVideoFraming(draft, draft.aspectRatio),
+        [draft]
+    );
     const existingKeyframeIndex = useMemo(
         () => ((!isPlaying || isScrubbing) && draft.keyframes
             ? draft.keyframes.findIndex(k => Math.abs(k.time - activeDisplayTime) < 0.05 || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - activeDisplayTime) < 0.05))
@@ -59,24 +61,25 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const effectiveEditSide: 'post' | 'pre' = isCutKeyframe ? kfEditSide : 'post';
 
     const activeFraming = useMemo(() => {
-        const fb = { zoom: draft.zoom, posX: draft.posX, posY: draft.posY };
+        const fb = defaultFraming;
         if (activeKf && effectiveEditSide === 'pre') {
             if (activeKf.easing === 'snap' && activeKf.pre) {
-                return { zoom: activeKf.pre.zoom, posX: activeKf.pre.posX, posY: activeKf.pre.posY ?? (draft.posY ?? 100) };
+                return { zoom: activeKf.pre.zoom, posX: activeKf.pre.posX, posY: activeKf.pre.posY ?? defaultFraming.posY };
             }
             return interpolateKeyframe(draft.keyframes, Math.max(0, activeKf.time - 0.001), fb);
         }
         return interpolateKeyframe(draft.keyframes, activeDisplayTime, fb);
-    }, [draft.keyframes, activeDisplayTime, draft.zoom, draft.posX, draft.posY, activeKf, effectiveEditSide]);
+    }, [draft.keyframes, activeDisplayTime, defaultFraming, activeKf, effectiveEditSide]);
 
-    const isTopBox45 = activePlatform === 'instagram';
+    const isTopBox45 = draft.aspectRatio === '4:5';
     const isLetterboxActive = isTopBox45 && Math.round(activeFraming.zoom) < 100;
     const zoomMin = isTopBox45 ? 0 : 50;
     const zoomMax = 200;
 
     const handleAddOrUpdateKeyframe = (kind: 'smooth' | 'snap' = 'snap') => {
         const keyframes: VideoKeyframe[] = draft.keyframes ? [...draft.keyframes] : [];
-        const roundedTime = Math.round(activeDisplayTime * 20) / 20;
+        const sourceFps = draft.sourceFps ?? 30;
+        const roundedTime = Math.round(activeDisplayTime * sourceFps) / sourceFps;
         const nextPosY = isLetterboxActive ? activeFraming.posY : undefined;
         if (existingKeyframeIndex >= 0) {
             const curr = keyframes[existingKeyframeIndex]!;
@@ -98,15 +101,18 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         if (existingKeyframeIndex >= 0 && draft.keyframes) updateDraft({ ...draft, keyframes: draft.keyframes.filter((_, i) => i !== existingKeyframeIndex) });
     };
 
-    const handleUpdateKeyframeTime = (nextRawTime: number, side?: 'pre' | 'post') => {
+    const handleUpdateKeyframeTime = (nextRawTime: number, side?: 'pre' | 'post', quantizeToFrame = false) => {
         if (existingKeyframeIndex < 0 || !draft.keyframes) return;
         const maxT = duration > 0 ? duration : Math.max(nextRawTime, 60);
-        const clamped = clamp(Math.round(nextRawTime * 20) / 20, 0, maxT);
+        const sourceFps = draft.sourceFps ?? 30;
+        const clamped = quantizeToFrame
+            ? clamp(Math.round(nextRawTime * sourceFps) / sourceFps, 0, maxT)
+            : clamp(Math.round(nextRawTime * 10000) / 10000, 0, maxT);
         const keyframes = [...draft.keyframes];
         const curr = keyframes[existingKeyframeIndex]!;
         if (curr.easing === 'snap' && (side ?? effectiveEditSide) === 'pre') {
             const preClamped = Math.min(curr.time, clamped);
-            const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), { zoom: draft.zoom, posX: draft.posX, posY: draft.posY });
+            const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), defaultFraming);
             keyframes[existingKeyframeIndex] = { ...curr, easing: 'snap', pre: { ...basePre, time: preClamped } };
             updateDraft({ ...draft, keyframes });
             seekTo(preClamped);
@@ -192,15 +198,14 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
     const handleFramingSliderChange = (field: 'zoom' | 'posX' | 'posY', val: number) => {
         if (field === 'posY' && !isLetterboxActive) return;
-        const nextDraft: VideoDraft = { ...draft, [field]: val };
-        if (field === 'zoom' && val >= 100) nextDraft.posY = 100;
+        if (existingKeyframeIndex < 0 || !draft.keyframes?.[existingKeyframeIndex]) return;
         const keyframes: VideoKeyframe[] = draft.keyframes ? [...draft.keyframes] : [];
-        if (existingKeyframeIndex >= 0 && keyframes[existingKeyframeIndex]) {
+        if (keyframes[existingKeyframeIndex]) {
             const nextZoom = field === 'zoom' ? val : activeFraming.zoom;
             const fillAfterChange = !isTopBox45 || Math.round(nextZoom) >= 100;
             const curr = keyframes[existingKeyframeIndex]!;
             if (curr.easing === 'snap' && effectiveEditSide === 'pre') {
-                const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), { zoom: draft.zoom, posX: draft.posX, posY: draft.posY });
+                const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), defaultFraming);
                 const postMatchesPre = curr.zoom === basePre.zoom && curr.posX === basePre.posX && (curr.posY ?? 100) === (basePre.posY ?? 100);
                 const nextPre = { ...basePre, [field]: val };
                 const finalPre = fillAfterChange ? { time: curr.pre?.time, zoom: nextPre.zoom, posX: nextPre.posX } : nextPre;
@@ -211,21 +216,46 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 const updated: VideoKeyframe = { ...curr, [field]: val };
                 keyframes[existingKeyframeIndex] = fillAfterChange ? { ...updated, posY: undefined } : updated;
             }
-            nextDraft.keyframes = keyframes;
         }
-        updateDraft(nextDraft);
+        updateDraft({ ...draft, keyframes });
     };
 
-    const handleSelectPlatform = (_platform: Platform, ratio: '9:16' | '4:5' | '1:1') => {
+    const handleDefaultFramingChange = (field: 'zoom' | 'posX' | 'posY', val: number) => {
+        if (field === 'posY' && !(isTopBox45 && Math.round(defaultFraming.zoom) < 100)) return;
+        const nextFraming = { ...defaultFraming, [field]: val };
+        if (field === 'zoom' && val >= 100) nextFraming.posY = 100;
+        updateDraft({
+            ...draft,
+            ...nextFraming,
+            defaultFramingByRatio: {
+                ...draft.defaultFramingByRatio,
+                [draft.aspectRatio]: nextFraming,
+            },
+        });
+    };
+
+    const handleSelectAspectRatio = (ratio: VideoAspectRatio) => {
         if (draft.aspectRatio === ratio) return;
         const was45 = draft.aspectRatio === '4:5';
         const isNext45 = ratio === '4:5';
+        const currentFraming = getDefaultVideoFraming(draft, draft.aspectRatio);
+        const framingByRatio = {
+            ...draft.defaultFramingByRatio,
+            [draft.aspectRatio]: currentFraming,
+        };
+        const nextFraming = getDefaultVideoFraming({ ...draft, defaultFramingByRatio: framingByRatio }, ratio);
         const nextKeyframes = draft.keyframes?.map(kf => {
             if (was45 && !isNext45) return { ...kf, zoom: kf.zoom > 100 ? Math.min(200, kf.zoom) : 100, posY: undefined };
             if (!was45 && isNext45) return { ...kf, zoom: kf.zoom > 100 ? Math.min(200, kf.zoom) : 0 };
             return kf;
         });
-        updateDraft({ ...draft, aspectRatio: ratio, zoom: isNext45 ? 0 : 100, posY: 100, keyframes: nextKeyframes });
+        updateDraft({
+            ...draft,
+            aspectRatio: ratio,
+            ...nextFraming,
+            defaultFramingByRatio: { ...framingByRatio, [ratio]: nextFraming },
+            keyframes: nextKeyframes,
+        });
     };
 
     const handleScrubberPointerDown = useCallback(() => {
@@ -262,7 +292,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         [sceneBounds, draft.scenes, duration, timelineStruct.hasReHook, timelineStruct.storyIdx]
     );
 
-    const handleToggleToolTab = useCallback((tab: 'keyframes' | 'subtitles' | 'motion') => {
+    const handleToggleToolTab = useCallback((tab: 'layout' | 'keyframes' | 'subtitles' | 'motion') => {
         setActiveToolTab(p => (p === tab ? null : tab));
     }, []);
 
@@ -318,26 +348,16 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                         <span style={{ display: 'flex', alignItems: 'center', paddingInline: '6px' }}>
                             <Image src="/assets/social/trimmed/tt-primary-white.png" alt="TikTok" width={52} height={14} style={{ height: '14px', width: 'auto', display: 'block', objectFit: 'contain' }} />
                         </span>
-                        <button type="button" aria-pressed={activePlatform === 'tiktok'} onClick={() => handleSelectPlatform('tiktok', '9:16')} className="tpe-mode-btn" data-active={activePlatform === 'tiktok'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 9:16 Full Bleed (1080 × 1920)">
+                        <button type="button" aria-pressed={draft.aspectRatio === '9:16'} onClick={() => handleSelectAspectRatio('9:16')} className="tpe-mode-btn" data-active={draft.aspectRatio === '9:16'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 9:16 Full Bleed (1080 × 1920)">
                             <span>9:16 (FULL BLEED)</span>
                         </button>
-                        <button type="button" aria-pressed={activePlatform === 'instagram'} onClick={() => handleSelectPlatform('instagram', '4:5')} className="tpe-mode-btn" data-active={activePlatform === 'instagram'} style={{ padding: '4px 10px', fontSize: '10px' }} title="4:5 Contain Frame (1080 × 1350)">
+                        <button type="button" aria-pressed={draft.aspectRatio === '4:5'} onClick={() => handleSelectAspectRatio('4:5')} className="tpe-mode-btn" data-active={draft.aspectRatio === '4:5'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 4:5 Contain Frame (1080 × 1350)">
                             <span>4:5 (CONTAIN)</span>
                         </button>
-                    </div>
-                    {activePlatform === 'instagram' && (
-                        <button
-                            type="button"
-                            aria-pressed={draft.enableAmbientBlur !== false}
-                            onClick={() => updateDraft({ ...draft, enableAmbientBlur: draft.enableAmbientBlur === false })}
-                            className="tpe-mode-btn"
-                            data-active={draft.enableAmbientBlur !== false}
-                            style={{ padding: '4px 9px', fontSize: '9.5px' }}
-                            title="Completely unmount & disable 4:5 ambient blur in code (0% CPU/GPU cost when OFF)"
-                        >
-                            <span>🌫️ BLUR: {draft.enableAmbientBlur !== false ? 'ON' : 'OFF'}</span>
+                        <button type="button" aria-pressed={draft.aspectRatio === '16:9'} onClick={() => handleSelectAspectRatio('16:9')} className="tpe-mode-btn" data-active={draft.aspectRatio === '16:9'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 16:9 Landscape (1920 × 1080)">
+                            <span>16:9 (LANDSCAPE)</span>
                         </button>
-                    )}
+                    </div>
                 </div>
 
                 <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
@@ -345,9 +365,9 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                         {dimensions.width} × {dimensions.height}
                     </div>
                     <div style={{ padding: '3px 8px', borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                        {activePlatform === 'instagram'
+                        {isTopBox45
                             ? (Math.round(activeFraming.zoom) === 0 ? '📺 CONTAIN (0%)' : Math.round(activeFraming.zoom) === 100 ? '📱 FILL (100%)' : `🔍 ZOOM ${Math.round(activeFraming.zoom)}%`)
-                            : (activePlatform === 'tiktok' ? '📱 9:16 FULL BLEED' : '⏹ 1:1 SQUARE')}
+                            : (draft.aspectRatio === '16:9' ? '🖥 16:9 LANDSCAPE' : '📱 9:16 FULL BLEED')}
                     </div>
                 </div>
             </div>
@@ -356,7 +376,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
             <div ref={containerRef} tabIndex={-1} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '16px', background: 'radial-gradient(circle at center, #181d24 0%, #0e1115 100%)', outline: 'none' }}>
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} platform={activePlatform} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
+                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
             </div>
@@ -428,7 +448,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
                 {/* Unified Camera, Keyframes & Framing Row */}
                 <StudioFramingControls
-                    draft={draft} isPlaying={isPlaying && !isScrubbing} activePlatform={activePlatform} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
+                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
                     activeFraming={activeFraming} zoomMin={zoomMin} zoomMax={zoomMax}
                     existingKeyframeIndex={existingKeyframeIndex} activePreTime={activeKf?.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : undefined} activePostTime={activeKf?.time} activeKeyframeEasing={activeKf?.easing}
                     kfEditSide={effectiveEditSide} activeDisplayTime={activeDisplayTime} storyStart={timelineStruct.preStoryDur} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}
@@ -436,7 +456,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     onRemoveKeyframe={handleRemoveKeyframe} onUpdateKeyframeTime={handleUpdateKeyframeTime}
                     onSetKfEditSide={(s) => { setKfEditSide(s); if (activeKf) seekTo(s === 'pre' && activeKf.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : activeKf.time); }}
                     onToggleEasing={toggleActiveKeyframeEasing} onClearAllKeyframes={handleClearAllKeyframes}
-                    onFramingSliderChange={handleFramingSliderChange}
+                    onFramingSliderChange={handleFramingSliderChange} onDefaultFramingChange={handleDefaultFramingChange}
                 />
             </div>
         </section>

@@ -7,7 +7,7 @@ import { useAssetManager } from "../hooks/useAssetManager";
 import { DraftResolver } from "../utils/dataAccessors";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
 import { EditorialField } from "./EditorialField";
-import { TPEVectorLogo } from "../../../components/templates/instagram/TPEVectorLogo";
+import { TPEVectorLogo } from "../../../components/templates/TPEVectorLogo";
 
 interface DraftFormProps {
     draft: Draft;

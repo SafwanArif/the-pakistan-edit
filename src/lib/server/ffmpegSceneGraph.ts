@@ -1,4 +1,4 @@
-import { clamp, interpolateKeyframe, isSharedReHookScene, resolveSceneFadeDurations, type TimelineScene, type VideoDraft } from "../../types/news";
+import { clamp, getDefaultVideoFraming, interpolateKeyframe, isSharedReHookScene, resolveSceneFadeDurations, type TimelineScene, type VideoDraft } from "../../types/news";
 import { AudioBoundaryFadeMode, build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildPosXNormExpr, buildTopOffsetYExpr, buildZoomFactorExpr } from "./ffmpegFilters";
 
 interface SceneFilterContext {
@@ -27,7 +27,7 @@ interface SceneFilterContext {
     aLoopTrim: string;
 }
 
-/** Builds the FFmpeg filtergraph stages for a single scene (4:5 ambient spill or 9:16/1:1 full bleed, fade, overlay, audio). */
+/** Builds the FFmpeg filtergraph stages for a single scene (4:5 ambient spill or 9:16/16:9 full bleed, fade, overlay, audio). */
 export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: string[]; vMap: string; aMap: string } {
     const {
         index: i, scene: s, scenes, draft, start, duration: dur, width: W, height: H, targetFps,
@@ -37,7 +37,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
 
     const snapEven = (v: number) => Math.max(2, Math.round(v / 2) * 2);
     const filters: string[] = [];
-    const framing = interpolateKeyframe(draft.keyframes, start + dur * 0.5, { zoom: draft.zoom, posX: draft.posX, posY: draft.posY });
+    const framing = interpolateKeyframe(draft.keyframes, start + dur * 0.5, getDefaultVideoFraming(draft, draft.aspectRatio));
     const posXExpr = buildPosXNormExpr(draft, start, dur);
     const zoomExpr = buildZoomFactorExpr(draft, start, dur);
     const vLabel = `v_base_${i}`;

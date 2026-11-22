@@ -140,26 +140,26 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
 
     return (
         <div
-            className="tpe-flex-col tpe-deck-surface"
-            style={{ gap: '6px' }}
+            className="tpe-flex-col"
+            style={{ gap: '6px', width: '100%' }}
         >
             {/* Compact Studio Capsule Strip matching Keyframes toolbar */}
             <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                    type="button"
-                    disabled={!draft.videoUrl || isTranscribing}
-                    onClick={() => void handleTranscribe()}
-                    className="tpe-mode-btn"
-                    style={{
-                        padding: '2px 7px', fontSize: '8.5px', fontWeight: 800,
-                        background: isTranscribing ? 'oklch(from var(--ui-accent) l c h / 0.14)' : 'rgba(255,255,255,0.05)',
-                        color: isTranscribing ? 'var(--ui-accent)' : 'var(--ui-text)',
-                        border: '1px solid var(--ui-border)', borderRadius: '5px',
-                    }}
-                    title="Detect speech with local Whisper and generate editable subtitles"
-                >
-                    {isTranscribing ? "⏳ TRANSCRIBING..." : (subtitles.length > 0 ? "↻ RE-TRANSCRIBE" : "🎙️ AUTO-GENERATE SUBTITLES")}
-                </button>
+                <div className="tpe-nested-action-row tpe-nested-capsule">
+                    <button
+                        type="button"
+                        disabled={!draft.videoUrl || isTranscribing}
+                        onClick={() => void handleTranscribe()}
+                        className="tpe-mode-btn tpe-nested-action"
+                        style={{
+                            background: isTranscribing ? 'oklch(from var(--ui-accent) l c h / 0.14)' : 'transparent',
+                            color: isTranscribing ? 'var(--ui-accent)' : 'var(--ui-text)',
+                        }}
+                        title="Detect speech with local Whisper and generate editable subtitles"
+                    >
+                        {isTranscribing ? "TRANSCRIBING..." : (subtitles.length > 0 ? "RE-TRANSCRIBE" : "AUTO-GENERATE SUBTITLES")}
+                    </button>
+                </div>
 
                 {subtitles.length > 0 && (
                     <>

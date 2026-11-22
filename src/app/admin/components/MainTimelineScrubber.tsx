@@ -7,7 +7,6 @@ import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers
 
 interface SceneMarker {
     id: string;
-    start: number;
     percent: number;
     label?: string;
     shortLabel?: string;
@@ -22,8 +21,10 @@ const MainTimelineSegments = React.memo<{
 }>(({ sceneMarkers, outroPct, activeSegIdx, isOutroActive }) => (
     <>
         {sceneMarkers.map((m, idx) => {
-            const nextPct = sceneMarkers[idx + 1]?.percent ?? (outroPct > 0 ? 100 - outroPct : 100);
-            const segW = Math.max(0, nextPct - m.percent);
+            const sceneEndPct = 100 - outroPct;
+            const startPct = Math.min(m.percent, sceneEndPct);
+            const nextPct = Math.min(sceneMarkers[idx + 1]?.percent ?? sceneEndPct, sceneEndPct);
+            const segW = Math.max(0, nextPct - startPct);
             const isActiveSeg = idx === activeSegIdx;
             const roleColor = m.color || "var(--ui-accent)";
             const displayLabel = segW >= 8 ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
@@ -32,7 +33,7 @@ const MainTimelineSegments = React.memo<{
                     key={`${m.id}-${idx}`}
                     style={{
                         position: "absolute",
-                        left: `${m.percent}%`,
+                        left: `${startPct}%`,
                         width: `${segW}%`,
                         top: 0,
                         bottom: 0,
@@ -151,17 +152,20 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const safeDuration = Math.max(duration, 0.1);
     const pct = clamp((currentTime / safeDuration) * 100, 0, 100);
     const outroPct = enableOutro && duration > 0 ? Math.min(25, (outroDuration / safeDuration) * 100) : 0;
+    const sceneEndPct = 100 - outroPct;
 
     const preSetupDur = hookDuration + rehookDuration;
+    const getHandleTimelinePos = (sourceOffset: number) =>
+        preSetupDur + Math.max(0, sourceOffset - setupOffset);
     const hookMax = Math.max(0, clipDuration - hookDuration);
-    const hookTimelinePos = preSetupDur + Math.max(0, hookOffset - setupOffset);
-    const hookLeftPct = safeDuration > 0 ? clamp((hookTimelinePos / safeDuration) * 100, 0, 100) : 0;
-    const hookWidthPct = safeDuration > 0 ? Math.min(100 - hookLeftPct, (hookDuration / safeDuration) * 100) : 0;
+    const hookTimelinePos = getHandleTimelinePos(hookOffset);
+    const hookLeftPct = safeDuration > 0 ? clamp((hookTimelinePos / safeDuration) * 100, 0, sceneEndPct) : 0;
+    const hookWidthPct = safeDuration > 0 ? Math.min(sceneEndPct - hookLeftPct, (hookDuration / safeDuration) * 100) : 0;
 
     const rehookMax = Math.max(0, clipDuration - rehookDuration);
-    const rehookTimelinePos = preSetupDur + Math.max(0, rehookOffset - setupOffset);
-    const rehookLeftPct = safeDuration > 0 ? clamp((rehookTimelinePos / safeDuration) * 100, 0, 100) : 0;
-    const rehookWidthPct = safeDuration > 0 ? Math.min(100 - rehookLeftPct, (rehookDuration / safeDuration) * 100) : 0;
+    const rehookTimelinePos = getHandleTimelinePos(rehookOffset);
+    const rehookLeftPct = safeDuration > 0 ? clamp((rehookTimelinePos / safeDuration) * 100, 0, sceneEndPct) : 0;
+    const rehookWidthPct = safeDuration > 0 ? Math.min(sceneEndPct - rehookLeftPct, (rehookDuration / safeDuration) * 100) : 0;
 
     const timeAtClientX = (clientX: number, maxSec = safeDuration) => {
         const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
@@ -196,7 +200,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             const next = clamp(Math.round((startOffset + deltaRatio * safeDuration) * 10) / 10, 0, maxOff);
             if (target === "hook") onChangeHookOffset?.(next);
             else onChangeRehookOffset?.(next);
-            const nextTimelinePos = preSetupDur + Math.max(0, next - setupOffset);
+            const nextTimelinePos = getHandleTimelinePos(next);
             setHoverInfo({ pct: (nextTimelinePos / safeDuration) * 100, time: next });
         };
 

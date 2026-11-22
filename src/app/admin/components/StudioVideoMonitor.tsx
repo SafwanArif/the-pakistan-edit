@@ -282,7 +282,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
             const isSetup = idx === timelineStruct.storyIdx;
             return {
                 id: b.id,
-                start: b.start,
                 percent: duration > 0 ? (b.start / duration) * 100 : 0,
                 label: getSceneRoleLabel(draft.scenes, idx),
                 shortLabel: String(idx + 1).padStart(2, '0'),

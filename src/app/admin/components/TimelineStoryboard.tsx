@@ -188,7 +188,6 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                             </button>
                         </div>
                     )}
-                    <button type="button" aria-pressed={Boolean(draft.enableOutro)} onClick={() => onChange({ ...draft, enableOutro: !draft.enableOutro })} className="tpe-mode-btn" data-active={draft.enableOutro} style={{ padding: '4px 8px', fontSize: '9px' }} title="Append 5-second branded outro end card">🏁 OUTRO: {draft.enableOutro ? "ON" : "OFF"}</button>
                     <div ref={masterChecklistRef} style={{ position: 'relative' }}>
                         <button type="button" aria-expanded={showMasterChecklist} aria-haspopup="dialog" onClick={() => setShowMasterChecklist(p => !p)} className="tpe-mode-btn" data-active={showMasterChecklist || masterPassed === masterItems.length} style={{ padding: '4px 8px', fontSize: '9px' }} title="Master 2026/2027 video best-practice checklist">📋 MASTER ({masterPassed}/{masterItems.length})</button>
                         {showMasterChecklist && <MasterChecklistPopover draft={draft} onChange={onChange} onClose={() => setShowMasterChecklist(false)} />}
@@ -416,7 +415,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                 })}
 
                 <TimelineFooterCards
-                    sceneCount={scenes.length} enableOutro={Boolean(draft.enableOutro)} outroDuration={draft.outroDuration}
+                    sceneCount={scenes.length} enableOutro={Boolean(draft.enableOutro)} onToggleOutro={() => onChange({ ...draft, enableOutro: !draft.enableOutro })} outroDuration={draft.outroDuration}
                     outroCta={draft.outroCta} outroStart={outroStart} isOutroActive={isOutroActive}
                     onAddAngle={handleAddScene} onSeekOutro={seekTo}
                 />

@@ -60,6 +60,14 @@
 .tpe-storyboard-pane {
   container-type: inline-size;
   container-name: storyboard;
+  background: oklch(from var(--ui-bg) l c h / 0.95);
+  width: 420px;
+  min-width: 0;
+  max-width: 460px;
+  height: 100%;
+  padding: 14px 16px;
+  border-inline-end: 1px solid var(--ui-border);
+  overflow: hidden auto;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
   overflow-anchor: none;
@@ -78,10 +86,71 @@
   contain: layout style;
 }
 
+.tpe-monitor-header {
+  padding: 8px 16px;
+  gap: 8px;
+}
+
+.tpe-mode-cluster.tpe-monitor-aspect-switcher {
+  padding: 2px 4px;
+}
+
+.tpe-monitor-platform-logo {
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+}
+
+.tpe-monitor-platform-logo-image {
+  width: 52px;
+}
+
+.tpe-mode-btn.tpe-monitor-aspect-button {
+  padding: 4px 10px;
+  font-size: 10px;
+}
+
+.tpe-monitor-status-row {
+  gap: 8px;
+}
+
+.tpe-monitor-status-pill {
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
 .tpe-storyboard-card {
   content-visibility: auto;
   contain-intrinsic-size: auto 190px;
   scroll-margin-block: 12px;
+}
+
+.tpe-storyboard-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-block: 4px;
+}
+
+.tpe-storyboard-footer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-block: 4px;
+}
+
+.tpe-storyboard-slide {
+  min-width: 0;
+}
+
+.tpe-mobile-scenes-control,
+.tpe-mobile-scenes-header,
+.tpe-mobile-scenes-backdrop {
+  display: none;
+}
+
+.tpe-mode-cluster.tpe-mobile-playback-mode {
+  display: none;
 }
 
 .tpe-subtitle-row {
@@ -122,7 +191,143 @@
 
   .tpe-nle-split-pane {
     flex-direction: column-reverse;
-    block-size: auto;
+    block-size: calc(100dvh - var(--ui-header-height));
+    min-block-size: 0;
     overflow: visible;
+  }
+
+  .tpe-storyboard-pane[data-mobile-open="false"] {
+    display: none;
+  }
+
+  .tpe-storyboard-pane[data-mobile-open="true"] {
+    display: flex;
+  }
+
+  .tpe-storyboard-pane {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    padding-inline-end: 16px;
+    border-inline-end: 0;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .tpe-storyboard-pane[data-mobile-open="true"] {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: var(--z-overlay);
+    max-height: 72dvh;
+    padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    border-block-start: 1px solid var(--ui-border);
+    border-radius: 12px 12px 0 0;
+    overflow: hidden auto;
+    background: var(--ui-bg-popover);
+    box-shadow: var(--shadow-lg);
+    overscroll-behavior: contain;
+  }
+
+  .tpe-mobile-scenes-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-overlay) - 1);
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.62);
+    touch-action: none;
+  }
+
+  .tpe-mobile-scenes-control {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .tpe-desktop-checklist-control {
+    display: none;
+  }
+
+  .tpe-mode-cluster.tpe-mobile-playback-mode {
+    display: inline-flex;
+  }
+
+  .tpe-mode-cluster.tpe-desktop-playback-mode,
+  .tpe-storyboard-timeline-hud {
+    display: none;
+  }
+
+  .tpe-mobile-scenes-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    font-size: 9px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  .tpe-mobile-scenes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-block-end: 8px;
+    border-block-end: 1px solid var(--ui-border);
+  }
+
+  .tpe-storyboard-rack {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0;
+    padding-block: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    overscroll-behavior-inline: contain;
+    touch-action: pan-x pan-y;
+  }
+
+  .tpe-storyboard-rack::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tpe-storyboard-slide {
+    flex: 0 0 100%;
+    max-width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+}
+
+@media (width <= 430px) {
+  .tpe-monitor-header {
+    padding-inline: 8px;
+    gap: 4px;
+  }
+
+  .tpe-mode-cluster.tpe-monitor-aspect-switcher {
+    padding-inline: 2px;
+  }
+
+  .tpe-monitor-platform-logo {
+    padding-inline: 4px;
+  }
+
+  .tpe-monitor-platform-logo-image {
+    width: 40px;
+  }
+
+  .tpe-mode-btn.tpe-monitor-aspect-button {
+    padding-inline: 6px;
+  }
+
+  .tpe-monitor-status-row {
+    gap: 4px;
+  }
+
+  .tpe-monitor-status-pill {
+    padding-inline: 6px;
   }
 }

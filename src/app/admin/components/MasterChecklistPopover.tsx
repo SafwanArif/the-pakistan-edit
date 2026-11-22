@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     VideoDraft,
     SUBTITLE_FONT_OPTIONS,
@@ -12,6 +12,7 @@ import {
     getTimelineStructure,
     clamp,
 } from "../../../types/news";
+import { useClickOutside } from "../hooks/useClickOutside";
 
 type MasterChecklistTab = "seo" | "rewards" | "psychology";
 
@@ -230,7 +231,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         <div
             ref={popoverRef}
             role="dialog"
-            aria-label="Master Video Standards Checklist"
+            aria-label="Video Standards Checklist"
             style={{
                 position: "fixed",
                 top: "96px",
@@ -246,14 +247,14 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         >
             <div className="tpe-flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <span style={{ fontSize: "9px", fontWeight: 800, color: "var(--ui-accent)", letterSpacing: "0.08em" }}>
-                    MASTER VIDEO STANDARDS ({totalPassed}/{items.length})
+                    VIDEO STANDARDS ({totalPassed}/{items.length})
                 </span>
                 <button
                     type="button"
-                    aria-label="Close Master Checklist"
+                    aria-label="Close Standards Checklist"
                     onClick={onClose}
                     style={{ background: "none", border: "none", color: "var(--ui-text-secondary)", cursor: "pointer", fontSize: "10px", padding: "0 4px" }}
-                    title="Close Master Checklist"
+                    title="Close Standards Checklist"
                 >
                     ✕
                 </button>
@@ -324,3 +325,51 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
     );
 });
 MasterChecklistPopover.displayName = "MasterChecklistPopover";
+
+interface MasterChecklistControlProps {
+    draft: VideoDraft;
+    onChange: (draft: VideoDraft) => void;
+    variant: "mobile" | "desktop";
+}
+
+export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = React.memo(({
+    draft,
+    onChange,
+    variant,
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const checklistRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
+    const items = useMemo(() => getMasterChecklistItems(draft), [draft]);
+    const passed = items.filter((item) => item.passed).length;
+    const isMobile = variant === "mobile";
+
+    return (
+        <div ref={checklistRef} className={isMobile ? "tpe-mobile-checklist-control" : "tpe-desktop-checklist-control"} style={{ position: "relative" }}>
+            <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-haspopup="dialog"
+                aria-label={`Video standards checklist: ${passed} of ${items.length} checks passed`}
+                onClick={() => setIsOpen((open) => !open)}
+                className="tpe-mode-btn"
+                data-active={isOpen || passed === items.length}
+                style={isMobile
+                    ? { height: "20px", padding: "0 4px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "3px" }
+                    : { padding: "4px 8px", fontSize: "9px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                title={`Video standards checklist (${passed}/${items.length})`}
+            >
+                <span aria-hidden="true" style={{ fontSize: "11px", lineHeight: "11px", display: "inline-flex" }}>📋</span>
+                <span style={isMobile ? { fontSize: "8px" } : undefined}>{passed}/{items.length}</span>
+            </button>
+            {isOpen && (
+                <MasterChecklistPopover
+                    draft={draft}
+                    onChange={onChange}
+                    onClose={() => setIsOpen(false)}
+                />
+            )}
+        </div>
+    );
+});
+
+MasterChecklistControl.displayName = "MasterChecklistControl";

@@ -26,11 +26,13 @@ interface StudioVideoMonitorProps {
     isLoadingStream?: boolean;
     ingestStatus?: string | null;
     onTimeUpdate?: (current: number, duration: number) => void;
+    isMobileScenesOpen: boolean;
+    onToggleMobileScenes: () => void;
 }
 
 /** Program Monitor with viewport auto-fit, platform switcher, scrubber, keyframe controls, and focal tuning. */
 export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
-    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate
+    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate, isMobileScenesOpen, onToggleMobileScenes
 }) => {
     const [isScrubbing, setIsScrubbing] = useState(false);
     const [scrubTime, setScrubTime] = useState<number | null>(null);
@@ -338,29 +340,29 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     return (
         <section aria-label="Video Monitor" aria-busy={Boolean(isLoadingStream)} className="tpe-flex-col" style={{ flex: 1, height: '100%', overflow: 'hidden', background: '#040404', position: 'relative' }}>
             {/* Monitor Header */}
-            <div className="tpe-flex-row" style={{ padding: '8px 16px', background: 'oklch(from var(--ui-bg) l c h / 0.9)', borderBlockEnd: '1px solid var(--ui-border)', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div className="tpe-flex-row tpe-monitor-header" style={{ background: 'oklch(from var(--ui-bg) l c h / 0.9)', borderBlockEnd: '1px solid var(--ui-border)', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div className="tpe-flex-row" style={{ gap: '6px', alignItems: 'center' }}>
-                    <div className="tpe-mode-cluster" role="group" aria-label="Target aspect ratio" style={{ background: 'oklch(from var(--ui-accent) l c h / 0.08)', padding: '2px 4px', borderRadius: '6px' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', paddingInline: '6px' }}>
-                            <Image src="/assets/social/trimmed/tt-primary-white.png" alt="TikTok" width={52} height={14} style={{ height: '14px', width: 'auto', display: 'block', objectFit: 'contain' }} />
+                    <div className="tpe-mode-cluster tpe-monitor-aspect-switcher" role="group" aria-label="Target aspect ratio" style={{ background: 'oklch(from var(--ui-accent) l c h / 0.08)', borderRadius: '6px' }}>
+                        <span className="tpe-monitor-platform-logo">
+                            <Image src="/assets/social/trimmed/tt-primary-white.png" alt="TikTok" width={52} height={14} className="tpe-monitor-platform-logo-image" style={{ height: '14px', display: 'block', objectFit: 'contain' }} />
                         </span>
-                        <button type="button" aria-pressed={draft.aspectRatio === '9:16'} onClick={() => handleSelectAspectRatio('9:16')} className="tpe-mode-btn" data-active={draft.aspectRatio === '9:16'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 9:16 (1080 × 1920)">
+                        <button type="button" aria-pressed={draft.aspectRatio === '9:16'} onClick={() => handleSelectAspectRatio('9:16')} className="tpe-mode-btn tpe-monitor-aspect-button" data-active={draft.aspectRatio === '9:16'} title="TikTok 9:16 (1080 × 1920)">
                             <span>9:16</span>
                         </button>
-                        <button type="button" aria-pressed={draft.aspectRatio === '4:5'} onClick={() => handleSelectAspectRatio('4:5')} className="tpe-mode-btn" data-active={draft.aspectRatio === '4:5'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 4:5 (1080 × 1350)">
+                        <button type="button" aria-pressed={draft.aspectRatio === '4:5'} onClick={() => handleSelectAspectRatio('4:5')} className="tpe-mode-btn tpe-monitor-aspect-button" data-active={draft.aspectRatio === '4:5'} title="TikTok 4:5 (1080 × 1350)">
                             <span>4:5</span>
                         </button>
-                        <button type="button" aria-pressed={draft.aspectRatio === '16:9'} onClick={() => handleSelectAspectRatio('16:9')} className="tpe-mode-btn" data-active={draft.aspectRatio === '16:9'} style={{ padding: '4px 10px', fontSize: '10px' }} title="TikTok 16:9 (1920 × 1080)">
+                        <button type="button" aria-pressed={draft.aspectRatio === '16:9'} onClick={() => handleSelectAspectRatio('16:9')} className="tpe-mode-btn tpe-monitor-aspect-button" data-active={draft.aspectRatio === '16:9'} title="TikTok 16:9 (1920 × 1080)">
                             <span>16:9</span>
                         </button>
                     </div>
                 </div>
 
-                <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
-                    <div style={{ padding: '3px 8px', borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}>
-                        {dimensions.width} × {dimensions.height}
+                <div className="tpe-flex-row tpe-monitor-status-row">
+                    <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}>
+                        {dimensions.width}×{dimensions.height}
                     </div>
-                    <div style={{ padding: '3px 8px', borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                         {isTopBox45
                             ? (Math.round(activeFraming.zoom) === 0 ? '📺 CONTAIN (0%)' : Math.round(activeFraming.zoom) === 100 ? '📱 FILL (100%)' : `🔍 ZOOM ${Math.round(activeFraming.zoom)}%`)
                             : (draft.aspectRatio === '16:9' ? '🖥 16:9 LANDSCAPE' : '📱 9:16 FULL BLEED')}
@@ -429,6 +431,22 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                                 Z {Math.round(activeFraming.zoom)}% · X {Math.round(activeFraming.posX)}%{isLetterboxActive ? ` · Y ${Math.round(activeFraming.posY ?? 100)}%` : ''}
                             </button>
                         </div>
+                    </div>
+                    <div className="tpe-mobile-scenes-control">
+                        <button
+                            type="button"
+                            aria-label={isMobileScenesOpen ? "Close Scenes menu" : "Open Scenes menu"}
+                            aria-expanded={isMobileScenesOpen}
+                            aria-controls="mobile-scenes-drawer"
+                            onClick={onToggleMobileScenes}
+                            className="tpe-mode-btn tpe-mobile-scenes-trigger"
+                            title={isMobileScenesOpen ? "Close scene drawer" : "Browse scenes"}
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                                <path d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
+                            SCENES
+                        </button>
                     </div>
                 </div>
 

@@ -25,6 +25,7 @@ import { SelectionPopover } from "./components/SelectionPopover";
 export default function AdminDashboard() {
     const [postMode, setPostMode] = useState<PostMode>('carousel');
     const [exporting, setExporting] = useState<string | null>(null);
+    const [isMobileScenesOpen, setIsMobileScenesOpen] = useState(false);
 
     // Carousel State
     const { 
@@ -104,6 +105,8 @@ export default function AdminDashboard() {
     const handleTogglePlaybackMode = useCallback(() => {
         setPlaybackMode(m => (m === 'play-all' ? 'loop-angle' : 'play-all'));
     }, [setPlaybackMode]);
+    const handleToggleMobileScenes = useCallback(() => setIsMobileScenesOpen(open => !open), []);
+    const handleCloseMobileScenes = useCallback(() => setIsMobileScenesOpen(false), []);
 
     const activeVideoScene = useMemo(
         () => getActiveSceneAtTime(videoDraft, currentTime),
@@ -225,6 +228,8 @@ export default function AdminDashboard() {
                             seekTo={seekTo}
                             playbackMode={playbackMode}
                             onTogglePlaybackMode={handleTogglePlaybackMode}
+                            isMobileDrawerOpen={isMobileScenesOpen}
+                            onCloseMobileDrawer={handleCloseMobileScenes}
                         />
 
                         {/* 🏛️ RIGHT PANE: Focused Program Monitor with Platform Switcher & Docked Transport */}
@@ -242,6 +247,8 @@ export default function AdminDashboard() {
                             isLoadingStream={isOptimisingVideo}
                             ingestStatus={ingestStatus}
                             onTimeUpdate={syncTimeFromVideo}
+                            isMobileScenesOpen={isMobileScenesOpen}
+                            onToggleMobileScenes={handleToggleMobileScenes}
                         />
                     </div>
                 )}

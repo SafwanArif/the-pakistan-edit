@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Draft } from "../../../types/news";
+import { Draft, PostMode } from "../../../types/news";
 import { EDITORIAL_STEPS } from "../../../config/editorial";
 import { useAssetManager } from "../hooks/useAssetManager";
 import { DraftResolver } from "../utils/dataAccessors";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
 import { EditorialField } from "./EditorialField";
-import { TPEVectorLogo } from "../../../components/templates/TPEVectorLogo";
+import { CommandRibbonMenu } from "./CommandRibbonMenu";
 
 interface DraftFormProps {
     draft: Draft;
@@ -16,15 +16,14 @@ interface DraftFormProps {
     step: number;
     setStep: (s: number) => void;
     onReset?: () => void;
-    modeSwitcher?: React.ReactNode;
+    mode: PostMode;
+    onModeChange: (mode: PostMode) => void;
 }
-
-const logoResetBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' };
 
 /**
  * Schema-driven form ribbon for Carousel slide editing and batch export.
  */
-export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, modeSwitcher }) => {
+export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, mode, onModeChange }) => {
     const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
     const [focusedField, setFocusedField] = React.useState<string | null>(null);
     
@@ -57,18 +56,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
             <div className="tpe-header-row">
-                {/* 1. LOGO */}
-                <button
-                    type="button"
-                    aria-label="Reset draft"
-                    onClick={() => { if (window.confirm("Reset draft?")) onReset?.(); }}
-                    className="tpe-logo-wrapper"
-                    style={logoResetBtnStyle}
-                >
-                    <TPEVectorLogo scale={0.9} showWordmark={false} />
-                </button>
-
-                {modeSwitcher}
+                <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 {/* 2. STEP ID (CLEANED FOR MOBILE) */}
                 <div className="tpe-step-cluster" style={{ minInlineSize: 'auto' }}>

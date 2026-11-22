@@ -17,7 +17,6 @@ import { FocalToolkit } from "./components/FocalToolkit";
 import { TimelineStoryboard } from "./components/TimelineStoryboard";
 import { ExportOverlay } from "./components/ExportOverlay";
 import { SelectionPopover } from "./components/SelectionPopover";
-import { CarouselIcon, VideoIcon } from "../../components/icons/TPEIcons";
 
 /**
  * 2027 Institutional Command Center: AdminDashboard
@@ -106,35 +105,6 @@ export default function AdminDashboard() {
         setPlaybackMode(m => (m === 'play-all' ? 'loop-angle' : 'play-all'));
     }, [setPlaybackMode]);
 
-    const modeSwitcher = useMemo(() => (
-        <div className="tpe-mode-cluster" role="tablist" aria-label="Post mode">
-            <button
-                type="button"
-                role="tab"
-                aria-selected={postMode === 'carousel'}
-                className="tpe-mode-btn"
-                data-active={postMode === 'carousel'}
-                onClick={() => handleSetPostMode('carousel')}
-                title="Carousel Multi-Slide Posts"
-            >
-                <CarouselIcon width={12} height={12} stroke={postMode === 'carousel' ? '#000' : 'currentColor'} />
-                <span>CAROUSEL</span>
-            </button>
-            <button
-                type="button"
-                role="tab"
-                aria-selected={postMode === 'video'}
-                className="tpe-mode-btn"
-                data-active={postMode === 'video'}
-                onClick={() => handleSetPostMode('video')}
-                title="Timeline Video Engine (60s+ Monetization & 4:5 Contain)"
-            >
-                <VideoIcon width={12} height={12} stroke={postMode === 'video' ? '#000' : 'currentColor'} />
-                <span>VIDEO ENGINE</span>
-            </button>
-        </div>
-    ), [postMode, handleSetPostMode]);
-
     const activeVideoScene = useMemo(
         () => getActiveSceneAtTime(videoDraft, currentTime),
         [videoDraft, currentTime]
@@ -166,7 +136,8 @@ export default function AdminDashboard() {
                             step={currentStep} 
                             setStep={setCurrentStep} 
                             onReset={resetState}
-                            modeSwitcher={modeSwitcher}
+                            mode={postMode}
+                            onModeChange={handleSetPostMode}
                         />
                     ) : (
                         <VideoDraftForm 
@@ -178,7 +149,8 @@ export default function AdminDashboard() {
                             onUploadVideo={ingestVideoBlob}
                             isOptimisingVideo={isOptimisingVideo}
                             isExporting={!!exporting}
-                            modeSwitcher={modeSwitcher}
+                            mode={postMode}
+                            onModeChange={handleSetPostMode}
                             activeSceneIndex={activeVideoScene.sceneIndex}
                             isOutro={activeVideoScene.isOutro}
                         />

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
-import { PlayIcon, PauseIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
+import { PlayIcon, PauseIcon } from "../../../components/icons/TPEIcons";
 import { useFitScale } from "../hooks/useFitScale";
 import { useStudioShortcuts } from "../hooks/useStudioShortcuts";
 import { StudioFramingControls } from "./StudioFramingControls";
@@ -35,7 +35,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const [isScrubbing, setIsScrubbing] = useState(false);
     const [scrubTime, setScrubTime] = useState<number | null>(null);
     const [timeDraftText, setTimeDraftText] = useState<string | null>(null);
-    const [activeToolTab, setActiveToolTab] = useState<'layout' | 'keyframes' | 'subtitles' | 'motion' | null>(null);
+    const [activeToolTab, setActiveToolTab] = useState<'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume' | null>(null);
     const [kfEditSide, setKfEditSide] = useState<'post' | 'pre'>('pre');
     const [starPreviewNonce, setStarPreviewNonce] = useState(0);
     const wasPlayingBeforeScrubRef = useRef(false);
@@ -289,7 +289,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         [sceneBounds, draft.scenes, duration, timelineStruct.hasReHook, timelineStruct.storyIdx]
     );
 
-    const handleToggleToolTab = useCallback((tab: 'layout' | 'keyframes' | 'subtitles' | 'motion') => {
+    const handleToggleToolTab = useCallback((tab: 'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume') => {
         setActiveToolTab(p => (p === tab ? null : tab));
     }, []);
 
@@ -395,7 +395,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     />
                 </div>
 
-                {/* Row 2: Play + Editable Timecode (Left) & Audio/LUFS (Right) */}
+                {/* Row 2: Play + Editable Timecode */}
                 <div role="toolbar" aria-label="Playback transport" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                     <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
                         <button type="button" aria-keyshortcuts="Space" aria-label={isPlaying ? "Pause Video" : "Play Video"} onClick={togglePlay} className="tpe-asset-btn" style={{ width: '26px', height: '26px', borderRadius: '50%', background: isPlaying ? 'oklch(from var(--ui-accent) l c h / 0.15)' : 'var(--ui-accent)', color: isPlaying ? 'var(--ui-accent)' : '#000', border: '1px solid var(--ui-accent)', flexShrink: 0 }} title={isPlaying ? "Pause Video (Spacebar)" : "Play Video (Spacebar)"}>
@@ -430,21 +430,11 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                             </button>
                         </div>
                     </div>
-
-                    <div className="tpe-flex-row" style={{ gap: '4px', alignItems: 'center' }}>
-                        <button type="button" aria-pressed={isCurrentlyMuted} aria-label={isCurrentlyMuted ? "Unmute Native Audio" : "Mute Native Audio"} onClick={() => updateDraft({ ...draft, isMuted: !isCurrentlyMuted })} className="tpe-asset-btn" style={{ width: '24px', height: '24px' }} title={isCurrentlyMuted ? "Unmute Native Audio" : "Mute Native Audio"}>
-                            {isCurrentlyMuted ? <VolumeMuteIcon width={12} height={12} /> : <VolumeIcon width={12} height={12} />}
-                        </button>
-                        <input type="range" aria-label="Volume" min={0} max={1} step={0.05} value={isCurrentlyMuted ? 0 : (draft.volume ?? 1)} onChange={(e) => { const v = parseFloat(e.target.value); updateDraft({ ...draft, volume: v, isMuted: v === 0 }); }} style={{ width: '44px', accentColor: 'var(--ui-accent)' }} title="Volume" />
-                        <button type="button" aria-pressed={draft.normalizeAudio !== false} className="tpe-mode-btn" data-active={draft.normalizeAudio !== false} onClick={() => updateDraft({ ...draft, normalizeAudio: draft.normalizeAudio === false })} style={{ padding: '2px 5px', fontSize: '8px', whiteSpace: 'nowrap' }} title="Broadcast Loudness Mastering (-14 LUFS / -1.5 dBTP) on MP4 export">
-                            -14 LUFS
-                        </button>
-                    </div>
                 </div>
 
                 {/* Unified Camera, Keyframes & Framing Row */}
                 <StudioFramingControls
-                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
+                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} isCurrentlyMuted={isCurrentlyMuted} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
                     activeFraming={activeFraming} zoomMin={zoomMin} zoomMax={zoomMax}
                     existingKeyframeIndex={existingKeyframeIndex} activePreTime={activeKf?.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : undefined} activePostTime={activeKf?.time} activeKeyframeEasing={activeKf?.easing}
                     kfEditSide={effectiveEditSide} activeDisplayTime={activeDisplayTime} storyStart={timelineStruct.preStoryDur} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}

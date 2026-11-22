@@ -2,12 +2,12 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { set } from "idb-keyval";
-import { VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "../../../types/news";
-import { TPEVectorLogo } from "../../../components/templates/TPEVectorLogo";
+import { PostMode, VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "../../../types/news";
 import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { probeVideoMetadata } from "../hooks/useVideoDraftState";
 import { VideoCreditToolbar, SourcePrefixToolbar, EmojiToolbar } from "./EditorialTools";
+import { CommandRibbonMenu } from "./CommandRibbonMenu";
 
 interface VideoDraftFormProps {
     draft: VideoDraft;
@@ -18,7 +18,8 @@ interface VideoDraftFormProps {
     onUploadVideo?: (file: File, name?: string) => void | Promise<void>;
     isOptimisingVideo?: boolean;
     isExporting?: boolean;
-    modeSwitcher?: React.ReactNode;
+    mode: PostMode;
+    onModeChange: (mode: PostMode) => void;
     activeSceneIndex?: number;
     isOutro?: boolean;
 }
@@ -29,7 +30,6 @@ const textareaBaseStyle: React.CSSProperties = {
 };
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
 const pipeStyle: React.CSSProperties = { opacity: 0.35, margin: '0 4px', fontSize: '14px', alignSelf: 'center' };
-const logoBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' };
 const loadingBadgeStyle: React.CSSProperties = {
     fontSize: '9px', fontWeight: 900, color: '#000', background: 'var(--ui-accent)', padding: '3px 8px',
     borderRadius: '4px', letterSpacing: '0.06em', whiteSpace: 'nowrap', boxShadow: '0 0 12px oklch(from var(--ui-accent) l c h / 0.45)',
@@ -46,7 +46,7 @@ const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSPropert
 
 /** Command ribbon interface for Video Post metadata, active scene copy, media upload, and exports. */
 export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
-    draft, onChange, onExportOverlay, onExportMP4, onReset, onUploadVideo, isOptimisingVideo = false, isExporting = false, modeSwitcher, activeSceneIndex = 0, isOutro = false
+    draft, onChange, onExportOverlay, onExportMP4, onReset, onUploadVideo, isOptimisingVideo = false, isExporting = false, mode, onModeChange, activeSceneIndex = 0, isOutro = false
 }) => {
     const [focusedField, setFocusedField] = useState<string | null>(null);
     const [isAssetTrayOpen, setIsAssetTrayOpen] = useState(false);
@@ -151,18 +151,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
             <div className="tpe-header-row" style={{ gap: '10px' }}>
-                <button
-                    type="button"
-                    aria-label="Reset video draft"
-                    onClick={() => { if (window.confirm("Reset video draft?")) onReset?.(); }}
-                    className="tpe-logo-wrapper"
-                    title="Click to reset draft"
-                    style={logoBtnStyle}
-                >
-                    <TPEVectorLogo scale={0.9} showWordmark={false} />
-                </button>
-
-                {modeSwitcher}
+                <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 <div className="tpe-header-main" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
                     <div className="tpe-header-tools" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '4px' }}>

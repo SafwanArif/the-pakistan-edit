@@ -2,7 +2,7 @@
 
 import React, { useCallback } from "react";
 import { DEFAULT_STAR_CUES, getVideoHeadingPreset, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
-import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
+import { ChevronLeftIcon, ChevronRightIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { SnapCap } from "./FramingToolbarPrimitives";
@@ -31,7 +31,7 @@ const POS_Y_SNAP_OPTIONS = [
     { label: 'BTM', val: 0, title: 'Snap to Bottom edge' },
 ];
 
-type ActiveToolTab = 'layout' | 'keyframes' | 'subtitles' | 'motion';
+type ActiveToolTab = 'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume';
 
 interface ToolTabItem {
     tab: ActiveToolTab;
@@ -52,6 +52,7 @@ interface StudioFramingControlsProps {
     sourceFps: number;
     sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
     isPlaying?: boolean;
+    isCurrentlyMuted: boolean;
     aspectRatio: VideoAspectRatio;
     defaultFraming: VideoFraming;
     isTopBox45: boolean;
@@ -86,9 +87,9 @@ interface StudioFramingControlsProps {
     onDefaultFramingChange: (field: 'zoom' | 'posX' | 'posY', val: number) => void;
 }
 
-/** Video editing toolbar for layout, captions, motion, and keyframe framing. */
+/** Video editing toolbar for layout, captions, motion, audio, and keyframe framing. */
 export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React.memo(({
-    draft, sourceFps, sourceFrameIndex, aspectRatio, defaultFraming, isTopBox45, isLetterboxActive, activeFraming, zoomMin, zoomMax,
+    draft, sourceFps, sourceFrameIndex, aspectRatio, defaultFraming, isTopBox45, isLetterboxActive, isCurrentlyMuted, activeFraming, zoomMin, zoomMax,
     existingKeyframeIndex, activePreTime, activePostTime, activeKeyframeEasing, kfEditSide,
     activeDisplayTime, storyStart, activeToolTab, onToggleToolTab, onCloseToolTab, seekTo,
     onUpdateDraft, onJumpKeyframe, onJumpSubtitle, onJumpStarCue, onPreviewStar, activeSubtitleCount, onAddOrUpdateKeyframe, onRemoveKeyframe, onUpdateKeyframeTime,
@@ -103,12 +104,14 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     const isLayoutOpen = activeToolTab === 'layout';
     const isSubtitlesOpen = activeToolTab === 'subtitles';
     const isMotionOpen = activeToolTab === 'motion';
+    const isVolumeOpen = activeToolTab === 'volume';
     const isParked = existingKeyframeIndex >= 0;
     const isDefaultLetterboxActive = aspectRatio === '4:5' && Math.round(defaultFraming.zoom) < 100;
     const kfCount = draft.keyframes?.length ?? 0;
     const subCount = draft.subtitles?.length ?? 0;
     const headingPreset = getVideoHeadingPreset(draft, aspectRatio);
     const hasUploadedVideo = Boolean(draft.videoUrl.trim());
+    const volumePercent = Math.round((isCurrentlyMuted ? 0 : (draft.volume ?? 1)) * 100);
 
     return (
         <div ref={toolbarRef} className="tpe-flex-col" style={{ alignItems: 'center', gap: '6px', width: 'fit-content', maxWidth: '100%', alignSelf: 'center' }}>
@@ -153,6 +156,12 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                         isActive: isMotionOpen,
                         title: isMotionOpen ? 'Collapse Motion Control Deck (M)' : 'Expand Motion Control Deck (M): on-demand P. dot → star cues & channels',
                     },
+                    {
+                        tab: 'volume' as const,
+                        label: 'VOLUME',
+                        isActive: isVolumeOpen,
+                        title: isVolumeOpen ? 'Collapse Volume controls' : 'Open Volume controls',
+                    },
                 ] satisfies ToolTabItem[]).filter((item) => activeToolTab === null || activeToolTab === item.tab).map((item) => (
                     <div key={item.tab} className="tpe-mode-cluster" style={{ padding: '2px', gap: '2px', alignItems: 'center' }}>
                         {(item.navCount ?? 0) > 0 && item.onJump && (
@@ -180,6 +189,57 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                     </div>
                 ))}
             </div>
+
+            {isVolumeOpen && (
+                <div role="group" aria-label="Volume controls" className="tpe-deck-surface tpe-flex-col" style={{ width: '280px', maxWidth: 'calc(100vw - 32px)', padding: '8px 10px', gap: '8px' }}>
+                    <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '7px' }}>
+                            <button
+                                type="button"
+                                aria-pressed={isCurrentlyMuted}
+                                aria-label={isCurrentlyMuted ? "Unmute Native Audio" : "Mute Native Audio"}
+                                onClick={() => onUpdateDraft({ ...draft, isMuted: !isCurrentlyMuted })}
+                                className="tpe-asset-btn"
+                                style={{ width: '24px', height: '24px' }}
+                                title={isCurrentlyMuted ? "Unmute Native Audio" : "Mute Native Audio"}
+                            >
+                                {isCurrentlyMuted ? <VolumeMuteIcon width={12} height={12} /> : <VolumeIcon width={12} height={12} />}
+                            </button>
+                            <label className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px', fontSize: '8px', fontWeight: 900, color: 'var(--ui-text-dim)' }}>
+                                VOLUME
+                                <input
+                                    type="range"
+                                    aria-label="Volume"
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    value={isCurrentlyMuted ? 0 : (draft.volume ?? 1)}
+                                    onChange={(e) => {
+                                        const volume = parseFloat(e.target.value);
+                                        onUpdateDraft({ ...draft, volume, isMuted: volume === 0 });
+                                    }}
+                                    style={{ width: '100px', accentColor: 'var(--ui-accent)' }}
+                                    title="Preview volume"
+                                />
+                            </label>
+                            <span aria-hidden="true" className="tpe-tabular-nums" style={{ minWidth: '28px', textAlign: 'end', fontSize: '9px', fontWeight: 800, color: 'var(--ui-text)' }}>
+                                {volumePercent}%
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            aria-pressed={draft.normalizeAudio !== false}
+                            className="tpe-mode-btn"
+                            data-active={draft.normalizeAudio !== false}
+                            onClick={() => onUpdateDraft({ ...draft, normalizeAudio: draft.normalizeAudio === false })}
+                            style={{ padding: '3px 7px', fontSize: '8px', whiteSpace: 'nowrap' }}
+                            title="Broadcast Loudness Mastering (-14 LUFS / -1.5 dBTP) on MP4 export"
+                        >
+                            -14 LUFS
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Nested Layout Drawer */}
             {isLayoutOpen && (
@@ -392,6 +452,10 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
         return prev.draft === next.draft
             && prev.storyStart === next.storyStart
             && Math.round(prev.activeDisplayTime * 10) === Math.round(next.activeDisplayTime * 10);
+    }
+    if (next.activeToolTab === 'volume') {
+        return prev.draft === next.draft
+            && prev.isCurrentlyMuted === next.isCurrentlyMuted;
     }
     return prev.draft === next.draft
         && prev.isPlaying === next.isPlaying

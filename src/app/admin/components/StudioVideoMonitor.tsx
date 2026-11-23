@@ -365,7 +365,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                         {isTopBox45
                             ? (Math.round(activeFraming.zoom) === 0 ? '📺 CONTAIN (0%)' : Math.round(activeFraming.zoom) === 100 ? '📱 FILL (100%)' : `🔍 ZOOM ${Math.round(activeFraming.zoom)}%`)
-                            : (draft.aspectRatio === '16:9' ? '🖥 16:9 LANDSCAPE' : '📱 9:16 FULL BLEED')}
+                            : (draft.aspectRatio === '16:9' ? '🖥 LANDSCAPE' : '📱 FULL BLEED')}
                     </div>
                 </div>
             </div>

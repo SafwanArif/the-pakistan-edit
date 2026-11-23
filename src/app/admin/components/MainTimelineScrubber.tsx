@@ -380,23 +380,23 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail (GPU translate3d) */}
             {showHookHandles && clipDuration > 0 && (
                 <>
-                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "-1px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
+                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
                         <button
                             type="button"
                             onPointerDown={(e) => startHandleDrag(e, "hook")}
                             title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
-                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-50%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto" }}
+                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto" }}
                         >
                             <HookGlyph role="hook" />
                         </button>
                     </div>
                     {rehookDuration > 0 && (
-                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "-1px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
+                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
                             <button
                                 type="button"
                                 onPointerDown={(e) => startHandleDrag(e, "rehook")}
                                 title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
-                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-50%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto" }}
+                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto" }}
                             >
                                 <HookGlyph role="rehook" />
                             </button>

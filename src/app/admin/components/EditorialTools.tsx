@@ -40,10 +40,23 @@ FormatButton.displayName = "FormatButton";
  */
 export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down' }>(({ fieldId, value, onUpdate, popDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
 
     return (
         <div style={{ position: 'relative' }}>
-            <button type="button" aria-label="Insert emoji" aria-expanded={open} aria-haspopup="dialog" onClick={(e) => { e.preventDefault(); setOpen(!open); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}>🙂</button>
+            <button 
+                type="button" 
+                aria-label="Insert emoji" 
+                aria-expanded={open} 
+                aria-haspopup="dialog" 
+                onMouseDown={(e) => { 
+                    e.preventDefault(); 
+                    setOpen(!open); 
+                }} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}
+            >
+                🙂
+            </button>
             <EditorialPopover open={open} onClose={() => setOpen(false)} direction={popDirection} width="auto">
                 <LazyEmojiPicker
                     onEmojiClick={(emojiData) => {
@@ -55,8 +68,8 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     searchPlaceHolder="Search emojis..."
                     lazyLoadEmojis={true}
                     skinTonesDisabled={true}
-                    width={320}
-                    height={400}
+                    width={isMobile ? Math.min(300, window.innerWidth - 32) : 320}
+                    height={isMobile ? 350 : 400}
                 />
             </EditorialPopover>
         </div>
@@ -83,7 +96,19 @@ const PrefixToolbar = React.memo<{
     
     return (
         <div style={{ position: 'relative' }}>
-            <button type="button" aria-label={`Change prefix (${prefix})`} aria-expanded={open} aria-haspopup="menu" onClick={(e) => { e.preventDefault(); setOpen(!open); }} className="tpe-prefix-toggle">{prefix}</button>
+            <button 
+                type="button" 
+                aria-label={`Change prefix (${prefix})`} 
+                aria-expanded={open} 
+                aria-haspopup="menu" 
+                onMouseDown={(e) => { 
+                    e.preventDefault(); 
+                    setOpen(!open); 
+                }} 
+                className="tpe-prefix-toggle"
+            >
+                {prefix}
+            </button>
             <EditorialPopover open={open} onClose={() => setOpen(false)} direction="down" width="200px" right="auto">
                 {options.map(opt => (
                     <button key={opt} type="button" onClick={(e) => { 

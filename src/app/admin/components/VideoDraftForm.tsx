@@ -25,7 +25,7 @@ interface VideoDraftFormProps {
 }
 
 const textareaBaseStyle: React.CSSProperties = {
-    fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', height: '34px', paddingInlineStart: '8px',
+    fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', height: '34px',
     resize: 'none', lineHeight: 1.35, paddingTop: '8px', overflowY: 'auto', whiteSpace: 'pre-wrap'
 };
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
@@ -35,14 +35,6 @@ const loadingBadgeStyle: React.CSSProperties = {
     borderRadius: '4px', letterSpacing: '0.06em', whiteSpace: 'nowrap', boxShadow: '0 0 12px oklch(from var(--ui-accent) l c h / 0.45)',
 };
 const exportMenuBtnStyle: React.CSSProperties = { width: '100%', justifyContent: 'center', textAlign: 'center', padding: '7px 10px', fontSize: '10px' };
-const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSProperties }[] = [
-    { token: '==text==', label: 'Gold Text', style: { color: 'var(--ui-accent)', fontWeight: 800 } },
-    { token: '**text**', label: 'Bold', style: { fontWeight: 800 } },
-    { token: '*text*', label: 'Italic', style: { fontStyle: 'italic', color: 'var(--ui-text-dim)' } },
-    { token: '~~text~~', label: 'Green Text', style: { color: 'var(--ui-indicator)', fontWeight: 800 } },
-    { token: '^^text^^', label: 'Black Label Box', style: { background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, border: '1px solid var(--ui-border)' } },
-    { token: '&&text&&', label: 'White Label Box', style: { background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800 } },
-];
 
 /** Command ribbon interface for Video Post metadata, active scene copy, media upload, and exports. */
 export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
@@ -51,7 +43,6 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     const [focusedField, setFocusedField] = useState<string | null>(null);
     const [isAssetTrayOpen, setIsAssetTrayOpen] = useState(false);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-    const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [urlInput, setUrlInput] = useState("");
 
@@ -67,7 +58,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
         setShowLinkInput(false);
     }, undefined, isAssetTrayOpen);
     const exportContainerRef = useClickOutside(() => setIsExportMenuOpen(false), undefined, isExportMenuOpen);
-    const glossaryContainerRef = useClickOutside(() => setIsGlossaryOpen(false), undefined, isGlossaryOpen);
+    const headerRowRef = useClickOutside(() => setFocusedField(null), undefined, focusedField !== null);
 
     const hasVideo = !!draft.videoUrl;
     const sceneRoleLabel = isOutro ? "🏁 OUTRO" : getSceneRoleLabel(draft.scenes, activeSceneIndex);
@@ -150,14 +141,14 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
 
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
-            <div className="tpe-header-row" style={{ gap: '10px' }}>
+            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={focusedField || undefined} style={{ gap: '10px' }}>
                 <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 <div className="tpe-header-main" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
                     <div className="tpe-header-tools" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <div {...getElasticProps('category', 1.4, 0.32)}>
                             <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, position: 'relative' }}>
-                                <input id="input-video-category" aria-label="Category" dir="auto" enterKeyHint="done" spellCheck={false} autoComplete="off" className="tpe-input-field tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} onFocus={() => setFocusedField('category')} onBlur={() => setFocusedField(null)} style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', height: '34px', padding: '0 8px' }} />
+                                <input id="input-video-category" aria-label="Category" dir="auto" enterKeyHint="done" spellCheck={false} autoComplete="off" className="tpe-input-field tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} onFocus={() => setFocusedField('category')} style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', height: '34px' }} />
                             </div>
                         </div>
 
@@ -176,7 +167,6 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     value={currentHeadlineValue}
                                     onChange={(e) => handleHeadlineChange(e.target.value)}
                                     onFocus={() => setFocusedField('headline')}
-                                    onBlur={() => setFocusedField(null)}
                                     rows={1}
                                     style={{ ...textareaBaseStyle, fontWeight: 600, letterSpacing: '0.02em', paddingInlineEnd: '38px' }}
                                 />
@@ -202,7 +192,6 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     disabled={isOutro}
                                     onChange={(e) => handleSubtitleChange(e.target.value)}
                                     onFocus={() => setFocusedField('subtitle')}
-                                    onBlur={() => setFocusedField(null)}
                                     rows={1}
                                     style={{ ...textareaBaseStyle, opacity: isOutro ? 0.5 : 1, textTransform: 'none', fontWeight: 400, paddingInlineEnd: isOutro ? '8px' : '38px' }}
                                 />
@@ -216,28 +205,8 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                     </div>
                 </div>
 
-                {/* Formatting FX Glossary + Asset Toolbar */}
-                <div style={{ position: 'relative' }} ref={glossaryContainerRef}>
-                    <button type="button" aria-label="Text FX syntax glossary" aria-expanded={isGlossaryOpen} aria-haspopup="dialog" onClick={() => setIsGlossaryOpen((prev) => !prev)} className="tpe-asset-btn" data-active={isGlossaryOpen} style={{ width: 'auto', paddingInline: '7px', fontSize: '9px', fontWeight: 900, letterSpacing: '0.05em' }} title="Inline text formatting syntax glossary">
-                        ? FX
-                    </button>
-                    {isGlossaryOpen && (
-                        <div role="dialog" aria-label="Text FX syntax glossary" className="tpe-asset-tray-expanded tpe-flex-col" style={{ right: 0, left: 'auto', minWidth: '220px', gap: '6px', padding: '10px' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-accent)', borderBlockEnd: '1px solid var(--ui-border)', paddingBlockEnd: '4px' }}>
-                                TEXT FX SYNTAX GLOSSARY
-                            </div>
-                            {FX_GLOSSARY_ITEMS.map((item) => (
-                                <div key={item.token} className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', fontSize: '10px' }}>
-                                    <code style={{ fontFamily: 'monospace', color: 'var(--ui-text-dim)' }}>{item.token}</code>
-                                    <span style={item.style}>{item.label}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
                 {/* Asset Toolbar */}
-                <div className="tpe-flex-row" style={{ gap: '8px', position: 'relative', alignItems: 'center' }} ref={assetContainerRef}>
+                <div className="tpe-flex-row tpe-ribbon-assets" style={{ gap: '8px', position: 'relative', alignItems: 'center' }} ref={assetContainerRef}>
                     {isOptimisingVideo && (
                         <span
                             style={loadingBadgeStyle}
@@ -292,10 +261,11 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                         onClick={() => setIsExportMenuOpen((prev) => !prev)}
                         disabled={isExporting}
                         className="tpe-nav-btn tpe-btn-primary"
-                        style={{ whiteSpace: 'nowrap', padding: '6px 14px' }}
+                        style={{ whiteSpace: 'nowrap', padding: '6px 6px' }}
                         title="Export Final MP4 or Transparent PNG Overlays"
+                        aria-label={isExporting ? "Export in progress" : "Export options"}
                     >
-                        {isExporting ? "EXPORTING..." : "EXPORT ▾"}
+                        {isExporting ? "EXPORTING..." : "EXPORT"}
                     </button>
 
                     {isExportMenuOpen && !isExporting && (

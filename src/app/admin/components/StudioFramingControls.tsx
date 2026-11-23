@@ -238,6 +238,9 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                             -14 LUFS
                         </button>
                     </div>
+                    <p style={{ fontSize: '10px', color: 'var(--ui-text-dim)', margin: 0, paddingInline: '4px' }}>
+                        Matches TikTok's loudness standard for consistent audio across all videos.
+                    </p>
                 </div>
             )}
 

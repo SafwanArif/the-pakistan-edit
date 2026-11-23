@@ -18,6 +18,15 @@ const menuOptionStyle: React.CSSProperties = {
     padding: "7px 10px",
 };
 
+const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSProperties }[] = [
+    { token: '==text==', label: 'Gold Text', style: { color: 'var(--ui-accent)', fontWeight: 800 } },
+    { token: '**text**', label: 'Bold', style: { fontWeight: 800 } },
+    { token: '*text*', label: 'Italic', style: { fontStyle: 'italic', color: 'var(--ui-text-dim)' } },
+    { token: '~~text~~', label: 'Green Text', style: { color: 'var(--ui-indicator)', fontWeight: 800 } },
+    { token: '^^text^^', label: 'Black Label Box', style: { background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, border: '1px solid var(--ui-border)' } },
+    { token: '&&text&&', label: 'White Label Box', style: { background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800 } },
+];
+
 export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onModeChange, onReset }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
@@ -55,7 +64,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
                     role="menu"
                     aria-label="Mode and draft options"
                     className="tpe-asset-tray-expanded tpe-flex-col"
-                    style={{ left: 0, right: "auto", minWidth: "200px", gap: "6px", padding: "8px" }}
+                    style={{ left: 0, right: "auto", minWidth: "160px", gap: "6px", padding: "8px" }}
                 >
                     <button
                         type="button"
@@ -83,6 +92,19 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
                         <VideoIcon width={12} height={12} stroke={mode === "video" ? "#000" : "currentColor"} />
                         <span>VIDEO MODE</span>
                     </button>
+                    
+                    <div role="separator" style={{ width: "100%", height: "1px", background: "var(--ui-border)", marginBlock: "2px" }} />
+                    
+                    <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-accent)', paddingInline: '10px', paddingBlockStart: '4px' }}>
+                        TEXT FORMATTING
+                    </div>
+                    {FX_GLOSSARY_ITEMS.map((item) => (
+                        <div key={item.token} className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', paddingInline: '10px', gap: '8px' }}>
+                            <code style={{ fontFamily: 'monospace', color: 'var(--ui-text-dim)', fontSize: '9px', flexShrink: 0 }}>{item.token}</code>
+                            <span style={{ ...item.style, fontSize: '9px', textAlign: 'right' }}>{item.label}</span>
+                        </div>
+                    ))}
+                    
                     {onReset && (
                         <>
                             <div role="separator" style={{ width: "100%", height: "1px", background: "var(--ui-border)", marginBlock: "2px" }} />

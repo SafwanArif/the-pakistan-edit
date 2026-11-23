@@ -377,6 +377,24 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                         <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
+                
+                {/* Mobile Scenes Button - centered in existing gap */}
+                <div className="tpe-mobile-scenes-control" style={{ position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)' }}>
+                    <button
+                        type="button"
+                        aria-label={isMobileScenesOpen ? "Close Scenes menu" : "Open Scenes menu"}
+                        aria-expanded={isMobileScenesOpen}
+                        aria-controls="mobile-scenes-drawer"
+                        onClick={onToggleMobileScenes}
+                        className="tpe-mode-btn tpe-mobile-scenes-trigger"
+                        title={isMobileScenesOpen ? "Close scene drawer" : "Browse scenes"}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ marginTop: '-0.5px' }}>
+                            <path d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        SCENES
+                    </button>
+                </div>
             </div>
 
             {/* Docked Studio Transport Bar */}
@@ -431,22 +449,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                                 Z {Math.round(activeFraming.zoom)}% · X {Math.round(activeFraming.posX)}%{isLetterboxActive ? ` · Y ${Math.round(activeFraming.posY ?? 100)}%` : ''}
                             </button>
                         </div>
-                    </div>
-                    <div className="tpe-mobile-scenes-control">
-                        <button
-                            type="button"
-                            aria-label={isMobileScenesOpen ? "Close Scenes menu" : "Open Scenes menu"}
-                            aria-expanded={isMobileScenesOpen}
-                            aria-controls="mobile-scenes-drawer"
-                            onClick={onToggleMobileScenes}
-                            className="tpe-mode-btn tpe-mobile-scenes-trigger"
-                            title={isMobileScenesOpen ? "Close scene drawer" : "Browse scenes"}
-                        >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                                <path d="M4 6h16M4 12h16M4 18h16" />
-                            </svg>
-                            SCENES
-                        </button>
                     </div>
                 </div>
 

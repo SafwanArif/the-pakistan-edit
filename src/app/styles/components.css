@@ -33,6 +33,31 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-block-start: 10px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  
+  &:focus {
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+    
+    &::-webkit-scrollbar {
+      display: block;
+      width: 6px;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: oklch(from var(--ui-accent) l c h / 0.5);
+      border-radius: 3px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  }
 }
 
 .tpe-btn-gold,

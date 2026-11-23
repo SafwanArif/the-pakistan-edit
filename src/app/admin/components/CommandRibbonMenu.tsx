@@ -29,6 +29,7 @@ const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSPropert
 
 export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onModeChange, onReset }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [animationNonce, setAnimationNonce] = useState(0);
     const menuRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
 
     const handleReset = () => {
@@ -43,6 +44,11 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
         onModeChange(nextMode);
         setIsOpen(false);
     };
+    
+    const handleLogoClick = () => {
+        setAnimationNonce(prev => prev + 1);
+        setIsOpen(open => !open);
+    };
 
     return (
         <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
@@ -51,12 +57,24 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
                 aria-label="Open mode and draft menu"
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
-                onClick={() => setIsOpen((open) => !open)}
+                onClick={handleLogoClick}
                 className="tpe-logo-wrapper"
                 style={{ background: "transparent", border: "none", padding: 0 }}
                 title="Open mode and draft menu"
             >
-                <TPEVectorLogo scale={0.9} showWordmark={false} />
+                <TPEVectorLogo 
+                    scale={0.9} 
+                    showWordmark={false} 
+                    motionConfig={{ 
+                        previewNonce: animationNonce,
+                        morphDuration: 0.45,
+                        holdDuration: 0.5,
+                        starScale: 100,
+                        spinMode: 'ccw',
+                        sequence: 'star-crescent',
+                        holdFeel: 'drift'
+                    }} 
+                />
             </button>
 
             {isOpen && (

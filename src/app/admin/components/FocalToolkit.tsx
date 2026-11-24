@@ -7,7 +7,6 @@ import { FocalSlider } from "./FocalSlider";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 const SNAP_MODES = ['height', 'width', 'grid'] as const;
-const RESET_SLIDE_FIELDS = ['imageZoom', 'imagePosX', 'imagePosY', 'imagePosY_Square'] as const;
 
 interface FocalToolkitProps {
     activeDraft: Draft;
@@ -147,11 +146,13 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
                                 onClick={() => {
                                     const currentMode = asset.snapMode || 'height';
                                     const next = SNAP_MODES[(SNAP_MODES.indexOf(currentMode) + 1) % SNAP_MODES.length]!;
-                                    let d = DraftResolver.set(`slide-${currentStep}-snapMode`, next, activeDraft);
-                                    RESET_SLIDE_FIELDS.forEach(f => {
-                                        d = DraftResolver.set(`slide-${currentStep}-${f}`, f === 'imageZoom' ? 100 : 50, d);
-                                    });
-                                    updateDraft(d);
+                                    updateDraft(DraftResolver.patchSlide(currentStep, {
+                                        snapMode: next,
+                                        imageZoom: 100,
+                                        imagePosX: 50,
+                                        imagePosY: 50,
+                                        imagePosY_Square: 50,
+                                    }, activeDraft));
                                 }}
                                 className="tpe-btn-primary"
                                 style={{ boxShadow: 'none' }}

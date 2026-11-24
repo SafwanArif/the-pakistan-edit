@@ -14,6 +14,7 @@ interface UseVideoElementSyncOptions {
     currentTime: number;
     effectiveMuted: boolean;
     overlayOnly: boolean;
+    ambientBlurActive?: boolean;
     ambientCrop?: AmbientCropRect;
     ambientVisibility?: AmbientVisibilityState;
     onTimeUpdate?: (current: number, duration: number) => void;
@@ -34,6 +35,7 @@ export const useVideoElementSync = ({
     currentTime,
     effectiveMuted,
     overlayOnly,
+    ambientBlurActive = false,
     ambientCrop = { xFrac: 0, wFrac: 1, yFrac: 0, hFrac: 1 },
     ambientVisibility = { topVisible: false, botVisible: true },
     onTimeUpdate,
@@ -47,6 +49,7 @@ export const useVideoElementSync = ({
     const rVfcHandleRef = useRef<{ el: HTMLVideoElement; id: number } | null>(null);
     const rVfcCallbackRef = useRef<VideoFrameRequestCallback | null>(null);
     const seekCleanupRef = useRef<(() => void) | null>(null);
+    const preParkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingScrubTargetRef = useRef<number | null>(null);
     const isCameraGlidingRef = useRef(false);
 
@@ -92,6 +95,7 @@ export const useVideoElementSync = ({
         draft,
         videoSrc,
         overlayOnly,
+        ambientBlurActive,
         ambientCrop,
         ambientVisibility,
         draftRef,
@@ -114,10 +118,31 @@ export const useVideoElementSync = ({
         seekCleanupRef.current = null;
     }, []);
 
-    useEffect(() => () => {
-        cancelPendingSeekListener();
-        pendingScrubTargetRef.current = null;
-    }, [cancelPendingSeekListener]);
+    const cancelPreParkTimer = useCallback(() => {
+        if (preParkTimerRef.current !== null) {
+            clearTimeout(preParkTimerRef.current);
+            preParkTimerRef.current = null;
+        }
+    }, []);
+
+    // Release hardware video decoders cleanly on unmount and clear pending seek/pre-park timers
+    useEffect(() => {
+        const primaryEl = videoRef.current;
+        const standbyEl = standbyVideoRef.current;
+        return () => {
+            cancelPendingSeekListener();
+            cancelPreParkTimer();
+            pendingScrubTargetRef.current = null;
+            for (const el of [primaryEl, standbyEl]) {
+                if (!el) continue;
+                try {
+                    el.pause();
+                    el.removeAttribute("src");
+                    el.load();
+                } catch {}
+            }
+        };
+    }, [cancelPendingSeekListener, cancelPreParkTimer]);
 
     useEffect(() => {
         if (videoRef.current) {
@@ -207,6 +232,7 @@ export const useVideoElementSync = ({
         const standby = getStandbyVideo();
         if (isOutro) {
             cancelPendingSeekListener();
+            cancelPreParkTimer();
             if (!video.paused) video.pause();
             if (standby && !standby.paused) standby.pause();
             const hookOffset = draftRef.current.scenes?.[0]?.clipStartOffset ?? 0;
@@ -222,10 +248,11 @@ export const useVideoElementSync = ({
             preParkStandbyDeck(standby, getNextCutMediaTarget(draftRef.current, currentTimeRef.current, playbackModeRef.current === 'loop-angle'));
         } else {
             cancelPendingSeekListener();
+            cancelPreParkTimer();
             if (!video.paused) video.pause();
             if (standby && !standby.paused) standby.pause();
         }
-    }, [isPlaying, isScrubbing, isOutro, overlayOnly, getActiveVideo, getStandbyVideo, seekAndSync, cancelPendingSeekListener]);
+    }, [isPlaying, isScrubbing, isOutro, overlayOnly, getActiveVideo, getStandbyVideo, seekAndSync, cancelPendingSeekListener, cancelPreParkTimer]);
 
     /** Swaps instantaneously to the pre-parked standby deck (0ms seek latency) or falls back to seekAndSync. */
     const transitionToMediaTime = useCallback((outgoing: HTMLVideoElement, targetMediaTime: number, nextTimelineTime: number) => {
@@ -264,20 +291,22 @@ export const useVideoElementSync = ({
             paintAmbientCanvas(standby);
             onTimeUpdate?.(nextTimelineTime, standby.duration || 0);
             // Defer outgoing deck re-seek by 220ms and wait until any active keyframe camera glide settles
+            cancelPreParkTimer();
             const schedulePrePark = () => {
+                preParkTimerRef.current = null;
                 if (activeVideoRef.current !== standby || !isPlayingRef.current) return;
                 if (isCameraGlidingRef.current) {
-                    setTimeout(schedulePrePark, 500);
+                    preParkTimerRef.current = setTimeout(schedulePrePark, 500);
                     return;
                 }
                 preParkStandbyDeck(outgoing, getNextCutMediaTarget(draftRef.current, currentTimeRef.current, playbackModeRef.current === 'loop-angle'));
             };
-            setTimeout(schedulePrePark, 220);
+            preParkTimerRef.current = setTimeout(schedulePrePark, 220);
             return true;
         }
         seekAndSync(outgoing, targetMediaTime, isPlayingRef.current);
         return false;
-    }, [cancelPendingSeekListener, getStandbyVideo, onTimeUpdate, paintAmbientCanvas, seekAndSync]);
+    }, [cancelPendingSeekListener, cancelPreParkTimer, getStandbyVideo, onTimeUpdate, paintAmbientCanvas, seekAndSync]);
 
     useEffect(() => {
         const video = getActiveVideo();

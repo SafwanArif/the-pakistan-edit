@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFadeDurations, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
 import { PowerIcon } from "../../../components/icons/TPEIcons";
-import { detectFaceInHookWindow } from "../utils/autoTrackSubject";
+import { detectFaceInHookWindow, getCachedFaceScan } from "../utils/autoTrackSubject";
 
 interface FadePresetControlProps {
     sceneIdx: number;
@@ -209,24 +209,25 @@ export const SceneChecklistPopover: React.FC<SceneChecklistPopoverProps> = React
     const hookSrc = scene.mediaUrl || draft.videoUrl || '';
     const hookStart = scene.clipStartOffset ?? 0;
     const scanKey = `${hookSrc}@${hookStart}`;
+    const cachedScan = sceneMode === 'hook' && hookSrc ? getCachedFaceScan(hookSrc, hookStart) : undefined;
 
     useEffect(() => {
-        if (sceneMode !== 'hook' || !hookSrc) return;
-        let cancelled = false;
+        if (sceneMode !== 'hook' || !hookSrc || cachedScan !== undefined) return;
+        const controller = new AbortController();
         const timer = setTimeout(() => {
-            void detectFaceInHookWindow(hookSrc, hookStart).then((detected) => {
-                if (!cancelled) setFaceScan({ key: scanKey, detected });
+            void detectFaceInHookWindow(hookSrc, hookStart, controller.signal).then((detected) => {
+                if (!controller.signal.aborted) setFaceScan({ key: scanKey, detected });
             });
         }, 350);
         return () => {
-            cancelled = true;
             clearTimeout(timer);
+            controller.abort();
         };
-    }, [sceneMode, hookSrc, hookStart, scanKey]);
+    }, [sceneMode, hookSrc, hookStart, scanKey, cachedScan]);
 
     const checks = getSceneCheckItems(sceneMode, scene, draft, {
         sceneBounds,
-        faceDetected: faceScan?.key === scanKey ? faceScan.detected : null,
+        faceDetected: cachedScan ?? (faceScan?.key === scanKey ? faceScan.detected : null),
         onUpdateScene,
     });
 

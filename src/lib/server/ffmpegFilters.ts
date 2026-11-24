@@ -1,10 +1,10 @@
 import {
     VideoDraft,
-    VideoKeyframe,
     TimelineScene,
     SUBTITLE_FONT_OPTIONS,
     getTopBoxOffsetY,
     interpolateKeyframe,
+    resolveKeyframeSpan,
     timelineTimeToMediaTime,
     wrapMediaTime,
     getDefaultSubtitleFontSize,
@@ -28,55 +28,6 @@ const escapeAssText = (text: string): string =>
 /** Escapes a local file path for FFmpeg's `ass=` filter argument (cross-platform Windows/POSIX). */
 export const escapeFfmpegFilterPath = (filePath: string): string =>
     filePath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
-
-/** Resolves the global cosine glide interval `[gStart, gEnd, vStart, vEnd]` containing `globalT`, or `null` if constant. */
-const resolveGlobalGlideSpan = (
-    sortedKfs: VideoKeyframe[],
-    globalT: number,
-    fallback: { zoom?: number; posX?: number; posY?: number },
-    selectValue: (f: { zoom: number; posX: number; posY: number }) => number
-): { gStart: number; gEnd: number; vStart: number; vEnd: number } | null => {
-    if (!sortedKfs.length) return null;
-    const fb = { zoom: fallback.zoom ?? 100, posX: fallback.posX ?? 50, posY: fallback.posY ?? 100 };
-    if (globalT >= sortedKfs[sortedKfs.length - 1]!.time) return null;
-
-    let prev: VideoKeyframe = { id: '__base__', time: 0, ...fb };
-    let next = sortedKfs[0]!;
-    if (globalT < next.time) {
-        if ((next.easing === 'snap' && next.pre) || next.time <= 0) return null;
-    } else {
-        for (let i = 0; i < sortedKfs.length - 1; i++) {
-            if (globalT >= sortedKfs[i]!.time && globalT < sortedKfs[i + 1]!.time) {
-                prev = sortedKfs[i]!;
-                next = sortedKfs[i + 1]!;
-                break;
-            }
-        }
-    }
-
-    if (next.easing === 'snap' && !next.pre) return null;
-    const prevFraming = { zoom: prev.zoom, posX: prev.posX, posY: prev.posY ?? fb.posY };
-    if (next.easing === 'snap' && next.pre) {
-        const preTime = next.pre.time !== undefined
-            ? Math.min(next.time, Math.max(prev.time, next.pre.time))
-            : next.time;
-        if (globalT >= preTime || preTime <= prev.time) return null;
-        return {
-            gStart: prev.time,
-            gEnd: preTime,
-            vStart: selectValue(prevFraming),
-            vEnd: selectValue({ zoom: next.pre.zoom, posX: next.pre.posX, posY: next.pre.posY ?? fb.posY }),
-        };
-    }
-
-    if (next.time <= prev.time) return null;
-    return {
-        gStart: prev.time,
-        gEnd: next.time,
-        vStart: selectValue(prevFraming),
-        vEnd: selectValue({ zoom: next.zoom, posX: next.posX, posY: next.posY ?? fb.posY }),
-    };
-};
 
 /**
  * Builds an exact piecewise FFmpeg `t` expression across keyframe intervals in a scene.
@@ -114,8 +65,8 @@ const buildPiecewiseKeyframeExpr = (
         const aT = boundaries[i]!;
         const bT = boundaries[i + 1]!;
         const span = Math.max(0.001, bT - aT);
-        const startVal = selectValue(interpolateKeyframe(draft.keyframes, sceneStart + aT + Math.min(0.0005, span * 0.1), fallback));
-        const endVal = selectValue(interpolateKeyframe(draft.keyframes, sceneStart + bT - Math.min(0.0005, span * 0.1), fallback));
+        const startVal = selectValue(interpolateKeyframe(sortedKfs, sceneStart + aT + Math.min(0.0005, span * 0.1), fallback));
+        const endVal = selectValue(interpolateKeyframe(sortedKfs, sceneStart + bT - Math.min(0.0005, span * 0.1), fallback));
 
         if (Math.abs(endVal - startVal) < 0.0005) {
             segments.push({ start: aT, end: bT, expr: startVal.toFixed(4), minV: startVal, maxV: startVal });
@@ -123,16 +74,18 @@ const buildPiecewiseKeyframeExpr = (
         }
 
         const midGlobal = sceneStart + (aT + bT) * 0.5;
-        const glide = resolveGlobalGlideSpan(sortedKfs, midGlobal, fallback, selectValue);
-        const segExpr = glide && Math.abs(glide.vEnd - glide.vStart) >= 0.0005
-            ? `(${glide.vStart.toFixed(4)}+(${(glide.vEnd - glide.vStart).toFixed(4)})*0.5*(1-cos(PI*(t+(${(sceneStart - glide.gStart).toFixed(4)}))/${(glide.gEnd - glide.gStart).toFixed(4)})))`
+        const resolved = resolveKeyframeSpan(sortedKfs, midGlobal, fallback);
+        const glideStartVal = resolved.kind === 'glide' ? selectValue(resolved.start) : startVal;
+        const glideEndVal = resolved.kind === 'glide' ? selectValue(resolved.end) : endVal;
+        const segExpr = resolved.kind === 'glide' && Math.abs(glideEndVal - glideStartVal) >= 0.0005
+            ? `(${glideStartVal.toFixed(4)}+(${(glideEndVal - glideStartVal).toFixed(4)})*0.5*(1-cos(PI*(t+(${(sceneStart - resolved.gStart).toFixed(4)}))/${(resolved.gEnd - resolved.gStart).toFixed(4)})))`
             : `(${startVal.toFixed(4)}+(${(endVal - startVal).toFixed(4)})*0.5*(1-cos(PI*(t-${aT.toFixed(4)})/${span.toFixed(4)})))`;
         segments.push({ start: aT, end: bT, expr: segExpr, minV: Math.min(startVal, endVal), maxV: Math.max(startVal, endVal) });
     }
 
     const globalMin = Math.min(...segments.map((s) => s.minV));
     const globalMax = Math.max(...segments.map((s) => s.maxV));
-    const endVal = selectValue(interpolateKeyframe(draft.keyframes, sceneStart + dur, fallback));
+    const endVal = selectValue(interpolateKeyframe(sortedKfs, sceneStart + dur, fallback));
     if (globalMax - globalMin < minDelta && Math.abs(endVal - globalMin) < minDelta) {
         return { isConstant: true, expr: segments[0]!.expr, minV: globalMin, maxV: globalMax };
     }

@@ -163,17 +163,14 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         const morphDur = clamp(cfg?.morphDuration ?? 0.45, 0.15, 2.0);
         const holdDur = clamp(cfg?.holdDuration ?? 0.5, 0, 5.0);
         const sequence = cfg?.sequence ?? 'star-crescent';
-        if (cfg?.enableLogo === false && dotEl) {
-            dotEl.setAttribute("d", CIRCLE_PATH_R3);
-            dotEl.setAttribute("transform", "translate(32 39)");
-            return;
-        }
-        const cues = cfg?.starCues ?? DEFAULT_STAR_CUES;
+        const cues = cfg?.enableLogo === false ? [] : (cfg?.starCues ?? DEFAULT_STAR_CUES);
         let maxCueTime = 0;
         for (let i = 0; i < cues.length; i++) {
             if (cues[i]!.time > maxCueTime) maxCueTime = cues[i]!.time;
         }
-        const cutoff = Math.max(0.7, maxCueTime + getCueTotalDuration(morphDur, holdDur, sequence) + 0.1);
+        const cutoff = cues.length > 0
+            ? Math.max(0.7, maxCueTime + getCueTotalDuration(morphDur, holdDur, sequence) + 0.1)
+            : 0.7;
         let rafId = 0;
 
         applyProgress(baseOffset, false);
@@ -204,6 +201,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
     }, [
         animateWordmark,
         wordmarkStartTime,
+        motionConfig?.enableLogo,
         motionConfig?.starCues,
         motionConfig?.morphDuration,
         motionConfig?.holdDuration,

@@ -96,21 +96,32 @@ export const autoPadToMonetisationThreshold = (draft: VideoDraft, targetSeconds:
     return { ...draft, scenes };
 };
 
+export interface ResolvedFraming {
+    zoom: number;
+    posX: number;
+    posY: number;
+}
+
+export type KeyframeSpan =
+    | { kind: 'constant'; framing: ResolvedFraming }
+    | { kind: 'glide'; gStart: number; gEnd: number; start: ResolvedFraming; end: ResolvedFraming };
+
 /**
- * Smoothly interpolates Zoom and Pan X across time-based keyframes.
- * Uses smooth cosine easing for organic camera gliding without abrupt cuts.
+ * Canonical keyframe interval resolver shared by both 120Hz preview (`interpolateKeyframe`)
+ * and server-side FFmpeg curve generation (`ffmpegFilters.ts`).
+ * Holds the letterbox endpoint's `posY` across `FILL (>=100%) <-> CONTAIN (<100%)` glides.
  */
-export const interpolateKeyframe = (
+export const resolveKeyframeSpan = (
     keyframes: VideoKeyframe[] | undefined,
     currentTime: number,
     fallback?: { zoom?: number; posX?: number; posY?: number }
-): { zoom: number; posX: number; posY: number } => {
+): KeyframeSpan => {
     const fbZoom = fallback?.zoom ?? 100;
     const fbX = fallback?.posX ?? 50;
     const fbY = fallback?.posY ?? 100;
 
     if (!keyframes || keyframes.length === 0) {
-        return { zoom: fbZoom, posX: fbX, posY: fbY };
+        return { kind: 'constant', framing: { zoom: fbZoom, posX: fbX, posY: fbY } };
     }
 
     let alreadySorted = true;
@@ -124,7 +135,7 @@ export const interpolateKeyframe = (
 
     const last = sorted[sorted.length - 1]!;
     if (currentTime >= last.time) {
-        return { zoom: last.zoom, posX: last.posX, posY: last.posY ?? fbY };
+        return { kind: 'constant', framing: { zoom: last.zoom, posX: last.posX, posY: last.posY ?? fbY } };
     }
 
     let prevTime = 0;
@@ -132,13 +143,12 @@ export const interpolateKeyframe = (
     let prevPosX = fbX;
     let prevPosY = fbY;
     let next = sorted[0]!;
-    if (currentTime < sorted[0]!.time) {
-        const first = sorted[0]!;
-        if (first.easing === 'snap' && first.pre) {
-            return { zoom: first.pre.zoom, posX: first.pre.posX, posY: first.pre.posY ?? fbY };
+    if (currentTime < next.time) {
+        if (next.easing === 'snap' && next.pre) {
+            return { kind: 'constant', framing: { zoom: next.pre.zoom, posX: next.pre.posX, posY: next.pre.posY ?? fbY } };
         }
-        if (first.time <= 0) {
-            return { zoom: first.zoom, posX: first.posX, posY: first.posY ?? fbY };
+        if (next.time <= 0) {
+            return { kind: 'constant', framing: { zoom: next.zoom, posX: next.posX, posY: next.posY ?? fbY } };
         }
     } else {
         for (let i = 0; i < sorted.length - 1; i++) {
@@ -154,14 +164,31 @@ export const interpolateKeyframe = (
         }
     }
 
-    const span = next.time - prevTime;
-    if (span <= 0) return { zoom: prevZoom, posX: prevPosX, posY: prevPosY };
+    if (next.time <= prevTime) {
+        return { kind: 'constant', framing: { zoom: prevZoom, posX: prevPosX, posY: prevPosY } };
+    }
     if (currentTime >= next.time) {
-        return { zoom: next.zoom, posX: next.posX, posY: next.posY ?? fbY };
+        return { kind: 'constant', framing: { zoom: next.zoom, posX: next.posX, posY: next.posY ?? fbY } };
     }
     if (next.easing === 'snap' && !next.pre) {
-        return { zoom: prevZoom, posX: prevPosX, posY: prevPosY };
+        return { kind: 'constant', framing: { zoom: prevZoom, posX: prevPosX, posY: prevPosY } };
     }
+
+    const buildGlide = (gEnd: number, targetZoom: number, targetPosX: number, targetPosY: number): KeyframeSpan => {
+        if (gEnd <= prevTime) {
+            return { kind: 'constant', framing: { zoom: targetZoom, posX: targetPosX, posY: targetPosY } };
+        }
+        const startPosY = prevZoom >= 100 && targetZoom < 100 ? targetPosY : prevPosY;
+        const endPosY = prevZoom < 100 && targetZoom >= 100 ? prevPosY : targetPosY;
+        return {
+            kind: 'glide',
+            gStart: prevTime,
+            gEnd,
+            start: { zoom: prevZoom, posX: prevPosX, posY: startPosY },
+            end: { zoom: targetZoom, posX: targetPosX, posY: endPosY },
+        };
+    };
+
     const preTarget = next.easing === 'snap' ? next.pre : undefined;
     if (preTarget) {
         const preTime = preTarget.time !== undefined
@@ -169,27 +196,31 @@ export const interpolateKeyframe = (
             : next.time;
         const preY = preTarget.posY ?? fbY;
         if (currentTime >= preTime) {
-            return { zoom: preTarget.zoom, posX: preTarget.posX, posY: preY };
+            return { kind: 'constant', framing: { zoom: preTarget.zoom, posX: preTarget.posX, posY: preY } };
         }
-        const preSpan = preTime - prevTime;
-        if (preSpan <= 0) return { zoom: preTarget.zoom, posX: preTarget.posX, posY: preY };
-        const preT = (currentTime - prevTime) / preSpan;
-        const smoothPreT = (1 - Math.cos(preT * Math.PI)) / 2;
-        return {
-            zoom: prevZoom + (preTarget.zoom - prevZoom) * smoothPreT,
-            posX: prevPosX + (preTarget.posX - prevPosX) * smoothPreT,
-            posY: prevPosY + (preY - prevPosY) * smoothPreT,
-        };
+        return buildGlide(preTime, preTarget.zoom, preTarget.posX, preY);
     }
 
-    const t = (currentTime - prevTime) / span;
-    const targetY = next.posY ?? fbY;
-    const smoothT = (1 - Math.cos(t * Math.PI)) / 2;
+    return buildGlide(next.time, next.zoom, next.posX, next.posY ?? fbY);
+};
 
+/**
+ * Smoothly interpolates Zoom, Pan X, and Pos Y across time-based keyframes.
+ * Uses smooth cosine easing for organic camera gliding without abrupt cuts.
+ */
+export const interpolateKeyframe = (
+    keyframes: VideoKeyframe[] | undefined,
+    currentTime: number,
+    fallback?: { zoom?: number; posX?: number; posY?: number }
+): ResolvedFraming => {
+    const span = resolveKeyframeSpan(keyframes, currentTime, fallback);
+    if (span.kind === 'constant') return span.framing;
+    const t = (currentTime - span.gStart) / (span.gEnd - span.gStart);
+    const smoothT = (1 - Math.cos(t * Math.PI)) / 2;
     return {
-        zoom: prevZoom + (next.zoom - prevZoom) * smoothT,
-        posX: prevPosX + (next.posX - prevPosX) * smoothT,
-        posY: prevPosY + (targetY - prevPosY) * smoothT,
+        zoom: span.start.zoom + (span.end.zoom - span.start.zoom) * smoothT,
+        posX: span.start.posX + (span.end.posX - span.start.posX) * smoothT,
+        posY: span.start.posY + (span.end.posY - span.start.posY) * smoothT,
     };
 };
 
@@ -264,13 +295,47 @@ export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = fal
     return allowFullZero ? (1 - Math.pow(f, 2)) : (0.25 + 0.75 * (1 - Math.pow(f, 2)));
 };
 
+/** Formats seconds as compact `MM:SS.d` for studio transport, scrubbers, and pills. */
 export const formatTimecode = (seconds: number): string => {
+    if (Number.isNaN(seconds) || seconds < 0) return "00:00.0";
+    const tenths = Math.round(seconds * 10);
+    const m = Math.floor(tenths / 600);
+    const s = Math.floor((tenths % 600) / 10);
+    const dec = tenths % 10;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${dec}`;
+};
+
+/** Formats seconds as high-precision `MM:SS.ssss` for frame-level keyframe editing. */
+export const formatPreciseTimecode = (seconds: number): string => {
     if (Number.isNaN(seconds) || seconds < 0) return "00:00.0000";
     const tenThousandths = Math.round(seconds * 10000);
     const m = Math.floor(tenThousandths / 600000);
     const s = Math.floor((tenThousandths % 600000) / 10000);
     const decimals = tenThousandths % 10000;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${decimals.toString().padStart(4, '0')}`;
+};
+
+/** Snaps a timestamp to the nearest source PTS (for VFR clips) or uniform frame grid (for CFR clips). */
+export const snapTimeToSourceFrame = (
+    time: number,
+    fps: number,
+    sourceFrameIndex?: import("../types/news").SourceFrameIndex
+): number => {
+    const safeTime = Math.max(0, Number.isFinite(time) ? time : 0);
+    if (sourceFrameIndex && !sourceFrameIndex.cfr && sourceFrameIndex.pts.length > 0) {
+        let lo = 0;
+        let hi = sourceFrameIndex.pts.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (sourceFrameIndex.pts[mid]! < safeTime) lo = mid + 1;
+            else hi = mid;
+        }
+        const curr = sourceFrameIndex.pts[lo]!;
+        const prev = lo > 0 ? sourceFrameIndex.pts[lo - 1]! : curr;
+        return Math.max(0, Math.abs(prev - safeTime) <= Math.abs(curr - safeTime) ? prev : curr);
+    }
+    const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+    return Math.max(0, Math.round(safeTime * safeFps) / safeFps);
 };
 
 /** Moves from an exact manual time to the adjacent source frame in the requested direction. */
@@ -281,15 +346,16 @@ export const nudgeTimeToFrame = (
     sourceFrameIndex?: import("../types/news").SourceFrameIndex
 ): number => {
     if (sourceFrameIndex && !sourceFrameIndex.cfr && sourceFrameIndex.pts.length > 1) {
-        let nearestIndex = 0;
-        let nearestDistance = Number.POSITIVE_INFINITY;
-        for (let index = 0; index < sourceFrameIndex.pts.length; index++) {
-            const distance = Math.abs(sourceFrameIndex.pts[index]! - time);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestIndex = index;
-            }
+        let lo = 0;
+        let hi = sourceFrameIndex.pts.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (sourceFrameIndex.pts[mid]! < time) lo = mid + 1;
+            else hi = mid;
         }
+        const currDist = Math.abs(sourceFrameIndex.pts[lo]! - time);
+        const prevDist = lo > 0 ? Math.abs(sourceFrameIndex.pts[lo - 1]! - time) : Number.POSITIVE_INFINITY;
+        const nearestIndex = prevDist <= currDist ? lo - 1 : lo;
         const nextIndex = Math.min(sourceFrameIndex.pts.length - 1, Math.max(0, nearestIndex + deltaFrames));
         return Math.max(0, sourceFrameIndex.pts[nextIndex]!);
     }

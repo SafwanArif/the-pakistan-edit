@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { SOCIAL_ICONS } from "../../../config/editorial";
 import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 
 const LazyEmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -40,7 +41,16 @@ FormatButton.displayName = "FormatButton";
  */
 export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down' }>(({ fieldId, value, onUpdate, popDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
-    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+    const isMobile = useMediaQuery("(max-width: 768px)");
+    const [viewportWidth, setViewportWidth] = useState(320);
+
+    useEffect(() => {
+        if (!open || !isMobile) return;
+        const sync = () => setViewportWidth(window.innerWidth);
+        sync();
+        window.addEventListener("resize", sync);
+        return () => window.removeEventListener("resize", sync);
+    }, [open, isMobile]);
 
     return (
         <div style={{ position: 'relative' }}>
@@ -68,7 +78,7 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     searchPlaceHolder="Search emojis..."
                     lazyLoadEmojis={true}
                     skinTonesDisabled={true}
-                    width={isMobile ? Math.min(300, window.innerWidth - 32) : 320}
+                    width={isMobile ? Math.max(240, Math.min(300, viewportWidth - 32)) : 320}
                     height={isMobile ? 350 : 400}
                 />
             </EditorialPopover>

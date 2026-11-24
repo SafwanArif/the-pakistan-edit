@@ -26,7 +26,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
     const [showLinkInput, setShowLinkInput] = useState(false);
     const [urlInput, setUrlInput] = useState("");
     
-    const containerRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded);
+    const containerRef = useClickOutside(() => setIsExpanded(false), '[data-editorial-popover="true"]', isExpanded);
 
     const hasOverride = !!draft.slideAssets?.[step]?.image || (step === 1 && !!draft.image);
     const hasEffectiveImage = hasOverride || !!draft.image;
@@ -68,7 +68,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
             <div className={`${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>
                 <div className="tpe-flex-row" style={{ gap: '6px' }}>
                     <label className="tpe-asset-btn tpe-upload-label" aria-label="Upload image" title="Upload image">
-                        <input type="file" className="tpe-sr-only" accept="image/png,image/jpeg,image/webp" onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
+                        <input type="file" className="tpe-sr-only" accept="image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.currentTarget.value = ''; }} />
                         <UploadIcon />
                     </label>
                     <button type="button" aria-pressed={showLinkInput} aria-label="Paste image URL" onClick={() => setShowLinkInput(!showLinkInput)} className="tpe-asset-btn" data-active={showLinkInput}><LinkIcon /></button>

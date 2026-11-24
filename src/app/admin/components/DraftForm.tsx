@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import { Draft, PostMode } from "../../../types/news";
 import { EDITORIAL_STEPS } from "../../../config/editorial";
 import { useAssetManager } from "../hooks/useAssetManager";
+import { useClickOutside } from "../hooks/useClickOutside";
 import { DraftResolver } from "../utils/dataAccessors";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
 import { EditorialField } from "./EditorialField";
@@ -26,6 +27,7 @@ interface DraftFormProps {
 export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, mode, onModeChange }) => {
     const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
     const [focusedField, setFocusedField] = React.useState<string | null>(null);
+    const headerRowRef = useClickOutside(() => setFocusedField(null), '[data-editorial-popover="true"]', focusedField !== null);
     
     // 1. Resolve Schema for current step
     const config = useMemo(() => {
@@ -55,7 +57,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
 
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
-            <div className="tpe-header-row">
+            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={focusedField || undefined}>
                 <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 {/* 2. STEP ID (CLEANED FOR MOBILE) */}
@@ -92,7 +94,6 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
                                             isMain={f === 'headline' || f.includes('content')}
                                             isCategory={f === 'category' || f.includes('heading')}
                                             onFocus={() => setFocusedField(f)}
-                                            onBlur={() => setFocusedField(null)}
                                         />
                                     </div>
                                     {i === 0 && config.fields.length > 1 && !focusedField && <span className="tpe-separator-pipe">|</span>}

@@ -21,6 +21,115 @@ export const renderNodeToBlobWithTimeout = (
         );
     });
 
+/** Waits deterministically for all `<img>` nodes inside `node` to settle and flushes two paint frames. */
+const waitForCaptureReady = async (node: HTMLElement): Promise<void> => {
+    await document.fonts.ready;
+    await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+            const images = Array.from(node.querySelectorAll("img"));
+            if (images.length === 0) {
+                resolve();
+                return;
+            }
+            let settled = false;
+            let loaded = 0;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve();
+            };
+            const timer = setTimeout(finish, 8000);
+            const check = () => {
+                loaded++;
+                if (loaded >= images.length) finish();
+            };
+            images.forEach((img) => {
+                if (img.complete) check();
+                else {
+                    img.onload = check;
+                    img.onerror = check;
+                }
+            });
+        });
+    });
+    await document.fonts.ready;
+    await new Promise((r) => requestAnimationFrame(r));
+};
+
+export interface DomCaptureSession {
+    capture: (
+        element: React.ReactNode,
+        config: {
+            width: number;
+            height: number;
+            pixelRatio: number;
+            backgroundColor: string;
+            timeoutMessage: string;
+            quality?: number;
+            skipAutoScale?: boolean;
+            style?: Record<string, string>;
+        }
+    ) => Promise<Blob | null>;
+    dispose: () => void;
+}
+
+/**
+ * Shared off-screen React capture session inside `#export-capture-surface`.
+ * Caches `getFontEmbedCSS()` once per batch and waits deterministically for fonts, images, and paint frames.
+ */
+export const createDomCaptureSession = async (
+    options: { fallbackToBody?: boolean; transparent?: boolean } = {}
+): Promise<DomCaptureSession> => {
+    const container = document.getElementById("export-capture-surface")
+        ?? (options.fallbackToBody ? document.body : null);
+    if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
+
+    const { createRoot } = await import("react-dom/client");
+    const temp = document.createElement("div");
+    temp.style.cssText = `position:fixed;top:0;left:0;z-index:-9999;pointer-events:none;${options.transparent ? "background:transparent;" : ""}`;
+    container.appendChild(temp);
+    const root = createRoot(temp);
+    let cachedFontEmbedCSS: string | undefined;
+
+    return {
+        async capture(element, config) {
+            temp.style.width = `${config.width}px`;
+            temp.style.height = `${config.height}px`;
+            root.render(
+                <div id="export-freeze-frame" style={options.transparent ? { background: "transparent" } : undefined}>
+                    <style>{`* { transition: none !important; animation: none !important; }`}</style>
+                    {element}
+                </div>
+            );
+            await waitForCaptureReady(temp);
+            if (cachedFontEmbedCSS === undefined) {
+                cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
+            }
+            return renderNodeToBlobWithTimeout(
+                temp,
+                {
+                    width: config.width,
+                    height: config.height,
+                    pixelRatio: config.pixelRatio,
+                    quality: config.quality,
+                    cacheBust: false,
+                    fontEmbedCSS: cachedFontEmbedCSS || undefined,
+                    backgroundColor: config.backgroundColor,
+                    skipAutoScale: config.skipAutoScale,
+                    style: config.style,
+                },
+                8000,
+                config.timeoutMessage
+            );
+        },
+        dispose() {
+            root.unmount();
+            temp.remove();
+        },
+    };
+};
+
 /**
  * Institutional Export Engine: Deterministic Asset Generation Pipeline
  * v2027.Simplified: Streamlined root management and centralized naming.
@@ -33,9 +142,6 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
     const zip = new JSZip();
 
     try {
-        const container = document.getElementById('export-capture-surface');
-        if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
-
         const anchorKW = getAnchorKeyword(draft.headline);
         const brandTag = "the-pakistan-edit";
 
@@ -43,87 +149,24 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
 
         let count = 0;
         const total = platforms.length * totalSlides;
-        const { createRoot } = await import("react-dom/client");
-
-        // Single render root per export batch
-        const temp = document.createElement("div");
-        temp.style.position = "fixed";
-        temp.style.top = "0";
-        temp.style.left = "0";
-        temp.style.zIndex = "-9999";
-        container.appendChild(temp);
-        const root = createRoot(temp);
-        let cachedFontEmbedCSS: string | undefined;
+        const session = await createDomCaptureSession();
 
         try {
             for (const p of platforms) {
                 for (let s = 1; s <= totalSlides; s++) {
                     count++;
                     onStatus(`[${count}/${total}] Rendering ${p} S${s}...`);
-                    
-                    temp.style.width = `${OMNI_CONFIG[p].width}px`;
-                    temp.style.height = `${OMNI_CONFIG[p].height}px`;
 
-                    root.render(
-                        <div id="export-freeze-frame">
-                            <style>{`* { transition: none !important; animation: none !important; }`}</style>
-                            <NewsCard draft={draft} step={s} platform={p} />
-                        </div>
-                    );
-                    
-                    await document.fonts.ready;
-                    
-                    // Wait for all images in the card to fully load deterministically (with 8s safety timeout)
-                    await new Promise<void>((resolve) => {
-                        requestAnimationFrame(() => {
-                            const images = Array.from(temp.querySelectorAll('img'));
-                            if (images.length === 0) {
-                                resolve();
-                                return;
-                            }
-                            let settled = false;
-                            let loaded = 0;
-                            const finish = () => {
-                                if (settled) return;
-                                settled = true;
-                                clearTimeout(timer);
-                                resolve();
-                            };
-                            const timer = setTimeout(finish, 8000);
-                            const check = () => {
-                                loaded++;
-                                if (loaded >= images.length) finish();
-                            };
-                            images.forEach(img => {
-                                if (img.complete) check();
-                                else {
-                                    img.onload = check;
-                                    img.onerror = check;
-                                }
-                            });
-                        });
-                    });
-
-                    // Final font & frame paint flush
-                    await document.fonts.ready;
-                    await new Promise(r => requestAnimationFrame(r));
-                    if (cachedFontEmbedCSS === undefined) {
-                        cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
-                    }
-
-                    const blob = await renderNodeToBlobWithTimeout(
-                        temp,
+                    const blob = await session.capture(
+                        <NewsCard draft={draft} step={s} platform={p} />,
                         {
                             width: OMNI_CONFIG[p].width,
                             height: OMNI_CONFIG[p].height,
                             pixelRatio: 2,
-                            cacheBust: false,
-                            fontEmbedCSS: cachedFontEmbedCSS || undefined,
-                            backgroundColor: '#050505',
-                            style: { transform: 'none', transition: 'none' }
-                        },
-                        8000,
-                        `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`
+                            backgroundColor: "#050505",
+                            style: { transform: "none", transition: "none" },
+                            timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
+                        }
                     );
 
                     if (!blob || blob.size < 1000) {
@@ -138,8 +181,7 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
                 }
             }
         } finally {
-            root.unmount();
-            temp.remove();
+            session.dispose();
         }
 
         onStatus("Packaging Institutional Bundle...");

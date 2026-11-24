@@ -98,6 +98,23 @@ export const DraftResolver = {
         }
 
         return { ...draft, [path]: value } as Draft;
+    },
+
+    /** Atomically patches multiple asset/framing fields for a single Carousel slide in one immutable update. */
+    patchSlide: (slideNum: number, patch: Partial<SlideAsset>, draft: Draft): Draft => {
+        if (slideNum === 1) {
+            return { ...draft, ...patch };
+        }
+        return {
+            ...draft,
+            slideAssets: {
+                ...(draft.slideAssets || {}),
+                [slideNum]: {
+                    ...(draft.slideAssets?.[slideNum] || {}),
+                    ...patch,
+                },
+            },
+        };
     }
 };
 

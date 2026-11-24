@@ -36,8 +36,20 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
     } = ctx;
 
     const snapEven = (v: number) => Math.max(2, Math.round(v / 2) * 2);
+    const buildAmbientSpillFilter = (
+        inputPad: string,
+        outputPad: string,
+        cropH: number,
+        cropY: number,
+        blurW: number,
+        spillH: number,
+        preScale = ""
+    ) => {
+        const blurH = snapEven(Math.max(16, spillH / 4));
+        const radius = Math.max(1, Math.min(7, Math.floor(Math.min(blurW, blurH) / 4)));
+        return `[${inputPad}]${preScale}crop=${W}:${cropH}:0:${cropY},vflip,scale=${blurW}:${blurH}:flags=bilinear,boxblur=${radius}:2,scale=${W}:${spillH}:flags=bilinear,eq=brightness=-0.22:saturation=1.35[${outputPad}]`;
+    };
     const filters: string[] = [];
-    const framing = interpolateKeyframe(draft.keyframes, start + dur * 0.5, getDefaultVideoFraming(draft, draft.aspectRatio));
     const posXExpr = buildPosXNormExpr(draft, start, dur);
     const zoomExpr = buildZoomFactorExpr(draft, start, dur);
     const vLabel = `v_base_${i}`;
@@ -87,20 +99,17 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
                 const spillSrcH = Math.min(hContain, snapEven(hContain * 0.45));
                 const bottomSpillH = snapEven(Math.max(2, H - Math.floor(topYInfo.minY) - Math.floor(boxHInfo.minH) + 2));
                 const bottomSpillY = Math.max(0, hContain - spillSrcH);
-                const botBlurH = snapEven(Math.max(16, bottomSpillH / 4));
-                const botRadius = Math.max(1, Math.min(7, Math.floor(Math.min(blurW, botBlurH) / 4)));
+                const preScale = `scale=${W}:${hContain}:force_original_aspect_ratio=increase:flags=bilinear,`;
 
                 filters.push(`${vInputPad}${mediaPrep},split=${needsTopSpill ? 3 : 2}[fg_raw_${i}][bg_bot_raw_${i}]${needsTopSpill ? `[bg_top_raw_${i}]` : ''}`);
                 filters.push(`[fg_raw_${i}]scale=w='${fgScaleW}':h='${fgScaleH}':eval=frame:force_original_aspect_ratio=increase:flags=lanczos[fg_main_${i}]`);
                 filters.push(`color=c=#080808:s=${W}x${H}:d=${dur.toFixed(3)}:r=${targetFps}[canvas_${i}]`);
                 filters.push(`[canvas_${i}][fg_main_${i}]overlay=x='${fgOverlayX}':y='${fgOverlayY}'[fg_placed_${i}]`);
-                filters.push(`[bg_bot_raw_${i}]scale=${W}:${hContain}:force_original_aspect_ratio=increase:flags=bilinear,crop=${W}:${spillSrcH}:0:${bottomSpillY},vflip,scale=${blurW}:${botBlurH}:flags=bilinear,boxblur=${botRadius}:2,scale=${W}:${bottomSpillH}:flags=bilinear,eq=brightness=-0.22:saturation=1.35[bg_spill_${i}]`);
+                filters.push(buildAmbientSpillFilter(`bg_bot_raw_${i}`, `bg_spill_${i}`, spillSrcH, bottomSpillY, blurW, bottomSpillH, preScale));
                 filters.push(`[fg_placed_${i}][bg_spill_${i}]overlay=0:'max(0,(${topYInfo.expr})+(${boxHInfo.expr})-2)'[${needsTopSpill ? `bg_bot_ready_${i}` : vLabel}]`);
                 if (needsTopSpill) {
                     const topSpillH = snapEven(Math.ceil(topYInfo.maxY) + 2);
-                    const topBlurH = snapEven(Math.max(16, topSpillH / 4));
-                    const topRadius = Math.max(1, Math.min(7, Math.floor(Math.min(blurW, topBlurH) / 4)));
-                    filters.push(`[bg_top_raw_${i}]scale=${W}:${hContain}:force_original_aspect_ratio=increase:flags=bilinear,crop=${W}:${spillSrcH}:0:0,vflip,scale=${blurW}:${topBlurH}:flags=bilinear,boxblur=${topRadius}:2,scale=${W}:${topSpillH}:flags=bilinear,eq=brightness=-0.22:saturation=1.35[bg_top_spill_${i}]`);
+                    filters.push(buildAmbientSpillFilter(`bg_top_raw_${i}`, `bg_top_spill_${i}`, spillSrcH, 0, blurW, topSpillH, preScale));
                     filters.push(`[bg_bot_ready_${i}][bg_top_spill_${i}]overlay=0:'(${topYInfo.expr})+2-${topSpillH}'[${vLabel}]`);
                 }
             }
@@ -120,21 +129,16 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
                     const bottomSpillH = snapEven(H - Math.floor(topYInfo.minY) - boxH + 2);
                     const bottomSpillY = Math.max(0, boxH - spillSrcH);
                     const botOverlayY = topYInfo.isConstant ? String(Math.max(0, staticTopY + boxH - 2)) : `'max(0,(${topYInfo.expr})+${boxH}-2)'`;
-
                     const blurW = snapEven(Math.max(32, W / 4));
-                    const botBlurH = snapEven(Math.max(16, bottomSpillH / 4));
-                    const botRadius = Math.max(1, Math.min(7, Math.floor(Math.min(blurW, botBlurH) / 4)));
 
                     filters.push(`${vInputPad}${mediaPrep},${fgBox},split=${needsTopSpill ? 3 : 2}[fg_main_${i}][fg_src_${i}]${needsTopSpill ? `[fg_top_src_${i}]` : ''}`);
-                    filters.push(`[fg_src_${i}]crop=${W}:${spillSrcH}:0:${bottomSpillY},vflip,scale=${blurW}:${botBlurH}:flags=bilinear,boxblur=${botRadius}:2,scale=${W}:${bottomSpillH}:flags=bilinear,eq=brightness=-0.22:saturation=1.35[bg_spill_${i}]`);
+                    filters.push(buildAmbientSpillFilter(`fg_src_${i}`, `bg_spill_${i}`, spillSrcH, bottomSpillY, blurW, bottomSpillH));
                     filters.push(`color=c=#080808:s=${W}x${H}:d=${dur.toFixed(3)}:r=${targetFps}[canvas_${i}]`);
                     filters.push(`[canvas_${i}][bg_spill_${i}]overlay=0:${botOverlayY}[bg_ready_${i}]`);
                     if (needsTopSpill) {
                         const topSpillH = snapEven(Math.ceil(topYInfo.maxY) + 2);
-                        const topBlurH = snapEven(Math.max(16, topSpillH / 4));
-                        const topRadius = Math.max(1, Math.min(7, Math.floor(Math.min(blurW, topBlurH) / 4)));
                         const topOverlayY = topYInfo.isConstant ? '0' : `'(${topYInfo.expr})+2-${topSpillH}'`;
-                        filters.push(`[fg_top_src_${i}]crop=${W}:${spillSrcH}:0:0,vflip,scale=${blurW}:${topBlurH}:flags=bilinear,boxblur=${topRadius}:2,scale=${W}:${topSpillH}:flags=bilinear,eq=brightness=-0.22:saturation=1.35[bg_top_spill_${i}]`);
+                        filters.push(buildAmbientSpillFilter(`fg_top_src_${i}`, `bg_top_spill_${i}`, spillSrcH, 0, blurW, topSpillH));
                         filters.push(`[bg_ready_${i}][bg_top_spill_${i}]overlay=0:${topOverlayY}[bg_top_ready_${i}]`);
                         filters.push(`[bg_top_ready_${i}][fg_main_${i}]overlay=0:${fgOverlayY}[${vLabel}]`);
                     } else {
@@ -148,6 +152,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
     } else if (zoomExpr) {
         filters.push(`${vInputPad}${mediaPrep},scale=w='ceil(${W}*${zoomExpr}/2)*2':h='ceil(${H}*${zoomExpr}/2)*2':eval=frame:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${H}:x='(iw-${W})*${posXExpr}':y='(ih-${H})/2'${kenBurnsFull}[${vLabel}]`);
     } else {
+        const framing = interpolateKeyframe(draft.keyframes, start + dur * 0.5, getDefaultVideoFraming(draft, draft.aspectRatio));
         const zFactor = Math.max(1.0, (framing.zoom ?? 100) / 100);
         const sW = snapEven(W * zFactor);
         const sH = snapEven(H * zFactor);

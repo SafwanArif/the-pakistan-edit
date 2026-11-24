@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatTimecode, parseTimeInput } from "../../../types/news";
+import { formatPreciseTimecode, parseTimeInput } from "../../../types/news";
 
 const DIAMOND_BASE_STYLE: React.CSSProperties = {
     display: 'inline-block',
@@ -114,11 +114,11 @@ export const KeyframeTimeChip: React.FC<{
             <span style={{ opacity: 0.45 }}>@</span>
             <button
                 type="button"
-                onClick={() => setEditingText(formatTimecode(time))}
+                onClick={() => setEditingText(formatPreciseTimecode(time))}
                 title="Click to edit timestamp"
                 style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontFamily: 'monospace', cursor: 'text', textDecoration: 'underline dotted' }}
             >
-                {formatTimecode(time)}
+                {formatPreciseTimecode(time)}
             </button>
             {onNudgeTime && (
                 <>

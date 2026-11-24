@@ -4,7 +4,8 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { CACHE_DIR, SAFE_MEDIA_ID_RE, createFileWebStream, spawnExec } from "../../../../lib/server/videoMedia";
+import { CACHE_DIR, SAFE_MEDIA_ID_RE, classifyFrameTimestamps, createFileWebStream, probeMediaFile, spawnExec } from "../../../../lib/server/videoMedia";
+import type { SourceFrameIndex, SourceMediaInfo } from "../../../../types/news";
 
 export const runtime = "nodejs";
 
@@ -13,65 +14,45 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const STALE_TEMP_AGE_MS = 60 * 60 * 1000;
 const FRAME_LOG_SUFFIX = ".tpe-frame-index.json";
 
-const normalizeProbeFps = (rawRate: string | undefined): number => {
-    if (!rawRate) return 30;
-    const [numRaw, denRaw] = rawRate.split('/');
-    const num = Number(numRaw);
-    const den = Number(denRaw || 1);
-    if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) return 30;
-    const raw = num / den;
-    if (Math.abs(raw - 23.976) < 0.1 || Math.abs(raw - 24) < 0.1) return 24;
-    if (Math.abs(raw - 29.97) < 0.1 || Math.abs(raw - 30) < 0.1) return 30;
-    if (Math.abs(raw - 59.94) < 0.1 || Math.abs(raw - 60) < 0.1) return 60;
-    return Math.min(120, Math.max(24, Math.round(raw)));
-};
-
-interface IngestFrameIndex {
-    mediaUrl: string;
-    fps: number;
-    nominalFps: number;
-    startTime: number;
-    duration: number;
-    frameCount: number;
-    cfr: boolean;
-    keyframes: number[];
-    pts: number[];
-}
-
 const probeSourceFrameIndex = async (
     inputPath: string,
     mediaUrl: string,
     nominalFps: number,
+    exactFps: number,
     signal?: AbortSignal
-): Promise<IngestFrameIndex | null> => {
+): Promise<SourceFrameIndex | null> => {
     try {
+        // Demux-only packet scan (`packet=pts_time,flags`) is 10–50x faster than decoding frames
         const { stdout } = await spawnExec("ffprobe", [
             "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "frame=pts_time,best_effort_timestamp_time,key_frame",
+            "-show_entries", "packet=pts_time,flags",
             "-of", "json",
             inputPath,
-        ], { signal, timeoutMs: 120_000 });
-        const parsed = JSON.parse(stdout) as { frames?: Array<{ pts_time?: string; best_effort_timestamp_time?: string; key_frame?: number }> };
-        const pts = (parsed.frames || [])
-            .map((frame) => Number(frame.pts_time ?? frame.best_effort_timestamp_time))
-            .filter((time) => Number.isFinite(time));
-        if (!pts.length) return null;
+        ], { signal, timeoutMs: 60_000 });
+        const parsed = JSON.parse(stdout) as { packets?: Array<{ pts_time?: string; flags?: string }> };
+        const entries = (parsed.packets || [])
+            .map((pkt) => ({
+                pts: Number(pkt.pts_time),
+                isKey: Boolean(pkt.flags && pkt.flags.includes("K")),
+            }))
+            .filter((item) => Number.isFinite(item.pts))
+            .sort((a, b) => a.pts - b.pts);
+        if (!entries.length) return null;
 
-        const startTime = pts[0] ?? 0;
-        const frameTimes = pts.map((time) => time - startTime);
-        const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]!);
-        const uniqueIntervals = intervals.filter((_, index) => index === 0 || Math.abs(intervals[index]! - intervals[index - 1]!) > 0.0001);
-        const cfr = uniqueIntervals.length <= 1;
-        const frameCount = pts.length;
-        const duration = frameTimes.at(-1)! + (frameTimes.length > 1 ? (intervals.at(-1) || 1 / nominalFps) : 1 / nominalFps);
-        const keyframes = (parsed.frames || [])
-            .map((frame, index) => frame.key_frame === 1 ? index : -1)
-            .filter((index) => index >= 0);
+        const startTime = entries[0]!.pts;
+        const frameTimes = entries.map((item) => Math.max(0, Math.round((item.pts - startTime) * 1_000_000) / 1_000_000));
+        const { cfr, medianInterval } = classifyFrameTimestamps(frameTimes);
+        const frameCount = frameTimes.length;
+        const duration = frameTimes.at(-1)! + (medianInterval || 1 / nominalFps);
+        const keyframes: number[] = [];
+        for (let index = 0; index < entries.length; index++) {
+            if (entries[index]!.isKey) keyframes.push(index);
+        }
 
         return {
             mediaUrl,
-            fps: nominalFps,
+            fps: exactFps,
             nominalFps,
             startTime,
             duration,
@@ -85,35 +66,16 @@ const probeSourceFrameIndex = async (
     }
 };
 
-/** Probes duration, FPS, AAC audio compatibility, and edit-list offset in one `ffprobe` pass. */
-const probeIngestMetadata = async (inputPath: string, signal?: AbortSignal): Promise<{ copyAudio: boolean; durationSec: number; fps: number }> => {
-    try {
-        const { stdout } = await spawnExec("ffprobe", [
-            "-v", "error",
-            "-show_entries", "format=duration,start_time:stream=codec_type,codec_name,initial_padding,r_frame_rate,avg_frame_rate",
-            "-of", "json",
-            inputPath,
-        ], { signal, timeoutMs: 30_000 });
-        const parsed = JSON.parse(stdout) as {
-            format?: { duration?: string; start_time?: string };
-            streams?: { codec_type?: string; codec_name?: string; initial_padding?: number; r_frame_rate?: string; avg_frame_rate?: string }[];
-        };
-        const durationSec = Math.max(0, Number(parsed.format?.duration ?? 0) || 0);
-        const startTime = Number(parsed.format?.start_time ?? 0);
-        const videoStream = parsed.streams?.find((s) => s.codec_type === "video");
-        const fps = normalizeProbeFps(videoStream?.avg_frame_rate || videoStream?.r_frame_rate);
-        if (Number.isFinite(startTime) && startTime < -0.05) return { copyAudio: false, durationSec, fps };
-
-        const audioStream = parsed.streams?.find((s) => s.codec_type === "audio");
-        if (!audioStream) return { copyAudio: true, durationSec, fps };
-        return {
-            copyAudio: audioStream.codec_name === "aac" && (audioStream.initial_padding ?? 0) <= 2048,
-            durationSec,
-            fps,
-        };
-    } catch {
-        return { copyAudio: false, durationSec: 0, fps: 30 };
-    }
+const persistFrameIndexSidecar = async (
+    mediaName: string,
+    mediaUrl: string,
+    frameIndex: SourceFrameIndex | null
+): Promise<string | undefined> => {
+    if (!frameIndex) return undefined;
+    const frameLogName = `${mediaName}${FRAME_LOG_SUFFIX}`;
+    const frameLogPath = path.join(CACHE_DIR, frameLogName);
+    await fs.promises.writeFile(frameLogPath, JSON.stringify({ ...frameIndex, mediaUrl }), "utf8");
+    return `/api/video/ingest?frameIndex=${encodeURIComponent(frameLogName)}`;
 };
 
 /**
@@ -123,12 +85,14 @@ const probeIngestMetadata = async (inputPath: string, signal?: AbortSignal): Pro
 const runLosslessVideoIngest = async (
     inputPath: string,
     outputPath: string,
+    fileSize: number,
     stripEditList: boolean,
     onStage?: (stage: string) => void,
     signal?: AbortSignal
-): Promise<{ fps: number; frameIndex: IngestFrameIndex | null }> => {
+): Promise<{ fps: number; frameIndex: SourceFrameIndex | null; mediaInfo: SourceMediaInfo }> => {
     onStage?.("PROBING STREAMS & CODECS (FFPROBE)...");
-    const { copyAudio, durationSec, fps } = await probeIngestMetadata(inputPath, signal);
+    const { copyAudio, durationSec, mediaInfo } = await probeMediaFile(inputPath, { fileSize, signal });
+    const fps = mediaInfo.nominalFps;
     const baseLabel = copyAudio
         ? "AAC AUDIO DETECTED — LOSSLESS STREAM COPY (+FASTSTART)"
         : "RE-ENCODING AUDIO TO 48KHZ AAC & MOVING MOOV ATOM";
@@ -171,21 +135,28 @@ const runLosslessVideoIngest = async (
             }
         } : undefined,
     });
-    const frameIndex = await probeSourceFrameIndex(outputPath, "", fps, signal);
-    return { fps, frameIndex };
+    onStage?.("INDEXING SOURCE FRAMES...");
+    const frameIndex = await probeSourceFrameIndex(outputPath, "", fps, mediaInfo.exactFps, signal);
+    return { fps, frameIndex, mediaInfo };
 };
 
 /** Keeps `.next/cache/tpe-videos` bounded to the newest clips and removes legacy/temp files. */
 const pruneCacheDir = async (keepFilename: string): Promise<void> => {
     try {
         const entries = await fs.promises.readdir(CACHE_DIR, { withFileTypes: true });
+        const keepFrameIndex = `${keepFilename}${FRAME_LOG_SUFFIX}`;
         const mediaFiles: { name: string; mtimeMs: number }[] = [];
+        const frameIndexFiles: { name: string; mtimeMs: number }[] = [];
 
         for (const entry of entries) {
-            if (!entry.isFile() || entry.name === keepFilename) continue;
+            if (!entry.isFile() || entry.name === keepFilename || entry.name === keepFrameIndex) continue;
             const fullPath = path.join(CACHE_DIR, entry.name);
             const stat = await fs.promises.stat(fullPath).catch(() => null);
             if (!stat) continue;
+            if (entry.name.endsWith(FRAME_LOG_SUFFIX)) {
+                frameIndexFiles.push({ name: entry.name, mtimeMs: stat.mtimeMs });
+                continue;
+            }
             if (!SAFE_MEDIA_ID_RE.test(entry.name)) {
                 if (Date.now() - stat.mtimeMs > STALE_TEMP_AGE_MS) {
                     await fs.promises.unlink(fullPath).catch(() => {});
@@ -196,8 +167,16 @@ const pruneCacheDir = async (keepFilename: string): Promise<void> => {
         }
 
         mediaFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        const keptMediaNames = new Set([keepFilename, ...mediaFiles.slice(0, MAX_CACHED_VIDEOS - 1).map((m) => m.name)]);
         for (const stale of mediaFiles.slice(MAX_CACHED_VIDEOS - 1)) {
             await fs.promises.unlink(path.join(CACHE_DIR, stale.name)).catch(() => {});
+            await fs.promises.unlink(path.join(CACHE_DIR, `${stale.name}${FRAME_LOG_SUFFIX}`)).catch(() => {});
+        }
+        for (const idxFile of frameIndexFiles) {
+            const ownerMedia = idxFile.name.slice(0, -FRAME_LOG_SUFFIX.length);
+            if (!keptMediaNames.has(ownerMedia) && Date.now() - idxFile.mtimeMs > STALE_TEMP_AGE_MS) {
+                await fs.promises.unlink(path.join(CACHE_DIR, idxFile.name)).catch(() => {});
+            }
         }
     } catch { /* non-fatal cache pruning */ }
 };
@@ -242,25 +221,6 @@ const resolveMediaFile = async (request: Request): Promise<{ filePath: string; t
     }
 };
 
-export async function frameIndexHandler(request: Request) {
-    const name = new URL(request.url).searchParams.get("name") || "";
-    if (!/^media-[A-Za-z0-9_-]+\.mp4\.tpe-frame-index\.json$/.test(name)) {
-        return NextResponse.json({ error: "Invalid frame index name" }, { status: 400 });
-    }
-    const filePath = path.join(CACHE_DIR, path.basename(name));
-    try {
-        const contents = await fs.promises.readFile(filePath, "utf8");
-        return new Response(contents, {
-            headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": "private, max-age=31536000, immutable",
-            },
-        });
-    } catch {
-        return NextResponse.json({ error: "Frame index not found" }, { status: 404 });
-    }
-}
-
 /** Stores uploaded video with lossless `-c:v copy` + smart AAC sync for HTTP 206 streaming. */
 export async function POST(request: Request) {
     let rawPath: string | null = null;
@@ -302,22 +262,22 @@ export async function POST(request: Request) {
             const enc = new TextEncoder();
             const stream = new ReadableStream<Uint8Array>({
                 async start(controller) {
-                    const send = (obj: Record<string, string>) => {
+                    const send = (obj: Record<string, unknown>) => {
                         try { controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`)); } catch {}
                     };
                     try {
                         send({ stage: "SAVING RAW STREAM TO STUDIO CACHE..." });
-                        const metadata = await runLosslessVideoIngest(streamRawPath, outPath!, stripEditList, (stage) => send({ stage }), request.signal);
+                        const metadata = await runLosslessVideoIngest(streamRawPath, outPath!, file.size, stripEditList, (stage) => send({ stage }), request.signal);
                         void pruneCacheDir(mediaName);
                         const mediaUrl = `/api/video/ingest?id=${encodeURIComponent(mediaName)}`;
-                        let frameIndexUrl: string | undefined;
-                        if (metadata.frameIndex) {
-                            const frameLogName = `${mediaName}${FRAME_LOG_SUFFIX}`;
-                            const frameLogPath = path.join(CACHE_DIR, frameLogName);
-                            await fs.promises.writeFile(frameLogPath, JSON.stringify({ ...metadata.frameIndex, mediaUrl }, null, 2), "utf8");
-                            frameIndexUrl = `/api/video/ingest/frame-index?name=${encodeURIComponent(frameLogName)}`;
-                        }
-                        send({ stage: "SYNCING MONITOR METADATA...", url: mediaUrl, fps: String(metadata.fps), frameIndexUrl: frameIndexUrl || "" });
+                        const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
+                        send({
+                            stage: "SYNCING MONITOR METADATA...",
+                            url: mediaUrl,
+                            fps: metadata.fps,
+                            frameIndexUrl: frameIndexUrl || "",
+                            mediaInfo: metadata.mediaInfo,
+                        });
                     } catch (err) {
                         if (outPath) await fs.promises.unlink(outPath).catch(() => {});
                         const msg = err instanceof Error ? err.message : "Video ingest failed";
@@ -332,17 +292,11 @@ export async function POST(request: Request) {
             return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
         }
 
-        const metadata = await runLosslessVideoIngest(rawPath, outPath, stripEditList, undefined, request.signal);
+        const metadata = await runLosslessVideoIngest(rawPath, outPath, file.size, stripEditList, undefined, request.signal);
         void pruneCacheDir(mediaName);
         const mediaUrl = `/api/video/ingest?id=${encodeURIComponent(mediaName)}`;
-        let frameIndexUrl: string | undefined;
-        if (metadata.frameIndex) {
-            const frameLogName = `${mediaName}${FRAME_LOG_SUFFIX}`;
-            const frameLogPath = path.join(CACHE_DIR, frameLogName);
-            await fs.promises.writeFile(frameLogPath, JSON.stringify({ ...metadata.frameIndex, mediaUrl }, null, 2), "utf8");
-            frameIndexUrl = `/api/video/ingest/frame-index?name=${encodeURIComponent(frameLogName)}`;
-        }
-        return NextResponse.json({ url: mediaUrl, fps: metadata.fps, frameIndexUrl });
+        const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
+        return NextResponse.json({ url: mediaUrl, fps: metadata.fps, frameIndexUrl, mediaInfo: metadata.mediaInfo });
     } catch (error) {
         if (outPath) await fs.promises.unlink(outPath).catch(() => {});
         const message = error instanceof Error ? error.message : "Video ingest failed";

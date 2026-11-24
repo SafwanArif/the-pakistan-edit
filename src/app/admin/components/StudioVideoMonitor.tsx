@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
+import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, snapTimeToSourceFrame, switchVideoAspectRatio, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { PlayIcon, PauseIcon } from "../../../components/icons/TPEIcons";
@@ -48,7 +48,8 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const activeDisplayTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
     const defaultFraming = useMemo(
         () => getDefaultVideoFraming(draft, draft.aspectRatio),
-        [draft]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [draft.aspectRatio, draft.defaultFramingByRatio, draft.zoom, draft.posX, draft.posY]
     );
     const existingKeyframeIndex = useMemo(
         () => ((!isPlaying || isScrubbing) && draft.keyframes
@@ -73,13 +74,13 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
     const isTopBox45 = draft.aspectRatio === '4:5';
     const isLetterboxActive = isTopBox45 && Math.round(activeFraming.zoom) < 100;
-    const zoomMin = isTopBox45 ? 0 : 50;
+    const zoomMin = isTopBox45 ? 0 : 100;
     const zoomMax = 200;
 
     const handleAddOrUpdateKeyframe = (kind: 'smooth' | 'snap' = 'snap') => {
         const keyframes: VideoKeyframe[] = draft.keyframes ? [...draft.keyframes] : [];
         const sourceFps = draft.sourceFps ?? 30;
-        const roundedTime = Math.round(activeDisplayTime * sourceFps) / sourceFps;
+        const roundedTime = snapTimeToSourceFrame(activeDisplayTime, sourceFps, draft.sourceFrameIndex);
         const nextPosY = isLetterboxActive ? activeFraming.posY : undefined;
         if (existingKeyframeIndex >= 0) {
             const curr = keyframes[existingKeyframeIndex]!;
@@ -105,8 +106,11 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         if (existingKeyframeIndex < 0 || !draft.keyframes) return;
         const maxT = duration > 0 ? duration : Math.max(nextRawTime, 60);
         const sourceFps = draft.sourceFps ?? 30;
+        const hasVfrPts = Boolean(draft.sourceFrameIndex && !draft.sourceFrameIndex.cfr && draft.sourceFrameIndex.pts.length > 0);
         const clamped = quantizeToFrame
-            ? clamp(Math.round(nextRawTime * sourceFps) / sourceFps, 0, maxT)
+            ? (hasVfrPts
+                ? clamp(nextRawTime, 0, maxT)
+                : clamp(snapTimeToSourceFrame(nextRawTime, sourceFps, draft.sourceFrameIndex), 0, maxT))
             : clamp(Math.round(nextRawTime * 10000) / 10000, 0, maxT);
         const keyframes = [...draft.keyframes];
         const curr = keyframes[existingKeyframeIndex]!;
@@ -223,7 +227,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const handleDefaultFramingChange = (field: 'zoom' | 'posX' | 'posY', val: number) => {
         if (field === 'posY' && !(isTopBox45 && Math.round(defaultFraming.zoom) < 100)) return;
         const nextFraming = { ...defaultFraming, [field]: val };
-        if (field === 'zoom' && val >= 100) nextFraming.posY = 100;
         updateDraft({
             ...draft,
             ...nextFraming,
@@ -236,26 +239,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
     const handleSelectAspectRatio = (ratio: VideoAspectRatio) => {
         if (draft.aspectRatio === ratio) return;
-        const was45 = draft.aspectRatio === '4:5';
-        const isNext45 = ratio === '4:5';
-        const currentFraming = getDefaultVideoFraming(draft, draft.aspectRatio);
-        const framingByRatio = {
-            ...draft.defaultFramingByRatio,
-            [draft.aspectRatio]: currentFraming,
-        };
-        const nextFraming = getDefaultVideoFraming({ ...draft, defaultFramingByRatio: framingByRatio }, ratio);
-        const nextKeyframes = draft.keyframes?.map(kf => {
-            if (was45 && !isNext45) return { ...kf, zoom: kf.zoom > 100 ? Math.min(200, kf.zoom) : 100, posY: undefined };
-            if (!was45 && isNext45) return { ...kf, zoom: kf.zoom > 100 ? Math.min(200, kf.zoom) : 0 };
-            return kf;
-        });
-        updateDraft({
-            ...draft,
-            aspectRatio: ratio,
-            ...nextFraming,
-            defaultFramingByRatio: { ...framingByRatio, [ratio]: nextFraming },
-            keyframes: nextKeyframes,
-        });
+        updateDraft(switchVideoAspectRatio(draft, ratio));
     };
 
     const handleScrubberPointerDown = useCallback(() => {
@@ -359,7 +343,13 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 </div>
 
                 <div className="tpe-flex-row tpe-monitor-status-row">
-                    <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}>
+                    <div
+                        className="tpe-monitor-status-pill"
+                        title={draft.sourceMediaInfo
+                            ? `Source: ${draft.sourceMediaInfo.width}×${draft.sourceMediaInfo.height} @ ${draft.sourceMediaInfo.exactFps}fps${draft.sourceMediaInfo.videoCodec ? ` · ${draft.sourceMediaInfo.videoCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.videoBitrate ? ` · ${(draft.sourceMediaInfo.videoBitrate / 1_000_000).toFixed(1)} Mbps` : ''}${draft.sourceMediaInfo.isHdr ? ' · HDR→BT.709' : ''}`
+                            : `Export canvas: ${dimensions.width}×${dimensions.height}`}
+                        style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}
+                    >
                         {dimensions.width}×{dimensions.height}
                     </div>
                     <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
@@ -382,6 +372,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 <div className="tpe-mobile-scenes-control" style={{ position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)' }}>
                     <button
                         type="button"
+                        data-mobile-scenes-trigger="true"
                         aria-label={isMobileScenesOpen ? "Close Scenes menu" : "Open Scenes menu"}
                         aria-expanded={isMobileScenesOpen}
                         aria-controls="mobile-scenes-drawer"

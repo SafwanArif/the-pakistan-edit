@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
@@ -145,9 +145,14 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
+    const handleDragCleanupRef = useRef<(() => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
     const [hoverInfo, setHoverInfo] = useState<{ pct: number; time: number } | null>(null);
+
+    useEffect(() => () => {
+        handleDragCleanupRef.current?.();
+    }, []);
 
     const safeDuration = Math.max(duration, 0.1);
     const pct = clamp((currentTime / safeDuration) * 100, 0, 100);
@@ -204,9 +209,21 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             setHoverInfo({ pct: (nextTimelinePos / safeDuration) * 100, time: next });
         };
 
-        const onUp = () => {
+        const cleanup = () => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onCancel);
+            handleDragCleanupRef.current = null;
+        };
+
+        const onCancel = () => {
+            cleanup();
+            setDragTarget(null);
+            setHoverInfo(null);
+        };
+
+        const onUp = () => {
+            cleanup();
             setDragTarget(null);
             setHoverInfo(null);
             if (!moved) {
@@ -215,8 +232,11 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             }
         };
 
+        handleDragCleanupRef.current?.();
+        handleDragCleanupRef.current = cleanup;
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onCancel);
     };
 
     return (
@@ -341,8 +361,14 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                                 if (outroPct > 0 && hoverInfo.pct >= 100 - outroPct) {
                                     return `${String(sceneMarkers.length + 1).padStart(2, '0')}. OUTRO • `;
                                 }
-                                const hoveredSeg = [...sceneMarkers].reverse().find(m => hoverInfo.pct >= m.percent);
-                                return hoveredSeg?.label ? `${hoveredSeg.label} • ` : "";
+                                let hoveredLabel = "";
+                                for (let i = sceneMarkers.length - 1; i >= 0; i--) {
+                                    if (hoverInfo.pct >= sceneMarkers[i]!.percent) {
+                                        hoveredLabel = sceneMarkers[i]!.label ? `${sceneMarkers[i]!.label} • ` : "";
+                                        break;
+                                    }
+                                }
+                                return hoveredLabel;
                             })()}
                             {formatTimecode(hoverInfo.time)}
                         </div>

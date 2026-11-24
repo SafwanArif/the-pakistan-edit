@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { DEFAULT_STAR_CUES, getVideoHeadingPreset, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
+import { DEFAULT_STAR_CUES, getVideoHeadingPreset, has45LetterboxFraming, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
 import { ChevronLeftIcon, ChevronRightIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { ScrubPillSlider } from "./ScrubPillSlider";
@@ -107,6 +107,7 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     const isVolumeOpen = activeToolTab === 'volume';
     const isParked = existingKeyframeIndex >= 0;
     const isDefaultLetterboxActive = aspectRatio === '4:5' && Math.round(defaultFraming.zoom) < 100;
+    const show45BackgroundTreatment = aspectRatio === '4:5' && has45LetterboxFraming(draft);
     const kfCount = draft.keyframes?.length ?? 0;
     const subCount = draft.subtitles?.length ?? 0;
     const headingPreset = getVideoHeadingPreset(draft, aspectRatio);
@@ -239,7 +240,7 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                         </button>
                     </div>
                     <p style={{ fontSize: '10px', color: 'var(--ui-text-dim)', margin: 0, paddingInline: '4px' }}>
-                        Matches TikTok's loudness standard for consistent audio across all videos.
+                        Matches TikTok&apos;s loudness standard for consistent audio across all videos.
                     </p>
                 </div>
             )}
@@ -357,7 +358,7 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                                     Sets framing without creating keyframes. Existing keyframes override it where they apply.
                                 </span>
                             </div>
-                            {aspectRatio === '4:5' && (
+                            {show45BackgroundTreatment && (
                                 <div className="tpe-flex-col" style={{ gap: '5px', paddingBlockStart: '6px', borderBlockStart: '1px solid var(--ui-border)' }}>
                                     <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>
                                         4:5 BACKGROUND TREATMENT

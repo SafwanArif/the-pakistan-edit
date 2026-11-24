@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Draft, createDefaultDraft } from '../../../types/news';
 import { get, set } from 'idb-keyval';
+import { useDebouncedIdbSave } from './useDebouncedIdbSave';
 
 const fingerprintImage = (img?: string) => (img ? `${img.length}:${img.slice(0, 32)}` : '');
 
@@ -25,7 +26,7 @@ export const useEditorialState = () => {
     const [activeDraft, setActiveDraft] = useState<Draft>(createDefaultDraft());
     const [historyState, setHistoryState] = useState<{ stack: Draft[], index: number }>({ stack: [], index: -1 });
     const historyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow } = useDebouncedIdbSave<Draft>('tpe_active_draft');
 
     const commitToHistory = useCallback((draftToCommit: Draft) => {
         setHistoryState(prev => {
@@ -68,16 +69,11 @@ export const useEditorialState = () => {
 
     useEffect(() => () => {
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
     }, []);
 
     const updateDraft = useCallback(async (newDraft: Draft, immediateCommit = false) => {
         setActiveDraft(newDraft);
-
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
-        saveTimeout.current = setTimeout(async () => {
-            await set('tpe_active_draft', newDraft);
-        }, 150);
+        scheduleDraftSave(newDraft);
 
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
 
@@ -88,7 +84,7 @@ export const useEditorialState = () => {
                 commitToHistory(newDraft);
             }, 1000);
         }
-    }, [commitToHistory]);
+    }, [commitToHistory, scheduleDraftSave]);
 
     const undo = useCallback(async () => {
         if (historyState.index <= 0) return;
@@ -97,12 +93,11 @@ export const useEditorialState = () => {
         if (!previousDraft) return;
 
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
 
         setHistoryState(prev => (prev.index > 0 ? { ...prev, index: prev.index - 1 } : prev));
         setActiveDraft(previousDraft);
-        await set('tpe_active_draft', previousDraft);
-    }, [historyState]);
+        await saveDraftNow(previousDraft);
+    }, [historyState, saveDraftNow]);
 
     const redo = useCallback(async () => {
         if (historyState.index >= historyState.stack.length - 1) return;
@@ -111,12 +106,11 @@ export const useEditorialState = () => {
         if (!nextDraft) return;
 
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
 
         setHistoryState(prev => (prev.index < prev.stack.length - 1 ? { ...prev, index: prev.index + 1 } : prev));
         setActiveDraft(nextDraft);
-        await set('tpe_active_draft', nextDraft);
-    }, [historyState]);
+        await saveDraftNow(nextDraft);
+    }, [historyState, saveDraftNow]);
 
     const updateStep = useCallback(async (step: number) => {
         setCurrentStep(step);
@@ -126,13 +120,12 @@ export const useEditorialState = () => {
     const resetState = useCallback(async () => {
         const defaultDraft = createDefaultDraft();
         if (historyTimeout.current) clearTimeout(historyTimeout.current);
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
         setActiveDraft(defaultDraft);
         setCurrentStep(1);
         setHistoryState({ stack: [defaultDraft], index: 0 });
-        await set('tpe_active_draft', defaultDraft);
+        await saveDraftNow(defaultDraft);
         await set('tpe_current_step', 1);
-    }, []);
+    }, [saveDraftNow]);
 
     return {
         isMounted,

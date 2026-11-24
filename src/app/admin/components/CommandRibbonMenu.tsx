@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { PostMode } from "../../../types/news";
 import { CarouselIcon, VideoIcon } from "../../../components/icons/TPEIcons";
-import { TPEVectorLogo } from "../../../components/templates/TPEVectorLogo";
+import { TPEVectorLogo, type LogoMotionConfig } from "../../../components/templates/TPEVectorLogo";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 interface CommandRibbonMenuProps {
@@ -27,10 +27,20 @@ const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSPropert
     { token: '&&text&&', label: 'White Label Box', style: { background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800 } },
 ];
 
-export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onModeChange, onReset }) => {
+export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({ mode, onModeChange, onReset }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [animationNonce, setAnimationNonce] = useState(0);
     const menuRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
+
+    const logoMotionConfig = useMemo<LogoMotionConfig>(() => ({
+        previewNonce: animationNonce,
+        morphDuration: 0.45,
+        holdDuration: 0.5,
+        starScale: 100,
+        spinMode: 'ccw',
+        sequence: 'star-crescent',
+        holdFeel: 'drift',
+    }), [animationNonce]);
 
     const handleReset = () => {
         const draftName = mode === "carousel" ? "carousel" : "video";
@@ -62,18 +72,10 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
                 style={{ background: "transparent", border: "none", padding: 0 }}
                 title="Open mode and draft menu"
             >
-                <TPEVectorLogo 
-                    scale={0.9} 
-                    showWordmark={false} 
-                    motionConfig={{ 
-                        previewNonce: animationNonce,
-                        morphDuration: 0.45,
-                        holdDuration: 0.5,
-                        starScale: 100,
-                        spinMode: 'ccw',
-                        sequence: 'star-crescent',
-                        holdFeel: 'drift'
-                    }} 
+                <TPEVectorLogo
+                    scale={0.9}
+                    showWordmark={false}
+                    motionConfig={logoMotionConfig}
                 />
             </button>
 
@@ -142,6 +144,6 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = ({ mode, onMo
             )}
         </div>
     );
-};
+});
 
 CommandRibbonMenu.displayName = "CommandRibbonMenu";

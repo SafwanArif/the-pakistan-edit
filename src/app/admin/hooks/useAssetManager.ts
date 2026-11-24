@@ -25,10 +25,10 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
 
         if (ASSET_CACHE[url]) {
             const cached = ASSET_CACHE[url];
-            const data = { image: cached.image, imageWidth: cached.w, imageHeight: cached.h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-            let d = draftRef.current;
-            Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChangeRef.current(d);
+            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
+                image: cached.image, imageWidth: cached.w, imageHeight: cached.h,
+                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
+            }, draftRef.current));
             return;
         }
 
@@ -39,12 +39,14 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         const img = new Image();
         
         img.onload = () => {
-            const data = { image: proxied, imageWidth: img.naturalWidth || 1080, imageHeight: img.naturalHeight || 1350, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-            ASSET_CACHE[url] = { image: proxied, w: data.imageWidth, h: data.imageHeight };
+            const w = img.naturalWidth || 1080;
+            const h = img.naturalHeight || 1350;
+            ASSET_CACHE[url] = { image: proxied, w, h };
 
-            let d = draftRef.current;
-            Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChangeRef.current(d);
+            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
+                image: proxied, imageWidth: w, imageHeight: h,
+                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
+            }, draftRef.current));
             
             setResolving(false); 
             activeRequests.current.delete(url);
@@ -66,10 +68,10 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         }
         const objectUrl = URL.createObjectURL(file);
         const applyImage = (w: number, h: number) => {
-            const data = { image: objectUrl, imageWidth: w, imageHeight: h, imageZoom: 100, snapMode: 'height' as const, imagePosX: 50, imagePosY: 50 };
-            let d = draftRef.current;
-            Object.entries(data).forEach(([k, v]) => d = DraftResolver.set(`slide-${slideNum}-${k}`, v, d));
-            onChangeRef.current(d);
+            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
+                image: objectUrl, imageWidth: w, imageHeight: h,
+                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
+            }, draftRef.current));
         };
 
         if (typeof createImageBitmap === 'function') {
@@ -91,9 +93,13 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
         img.src = objectUrl;
     }, []);
 
-    /** Resets image and focal framing fields on a slide to defaults. */
+    /** Resets image and focal framing fields on a slide to defaults and revokes any object URL. */
     const clearAsset = useCallback((slideNum: number) => {
-        const defaults: Record<string, string | number> = {
+        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
+        if (typeof prevUrl === 'string' && prevUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(prevUrl);
+        }
+        onChangeRef.current(DraftResolver.patchSlide(slideNum, {
             image: '',
             imageWidth: 0,
             imageHeight: 0,
@@ -101,12 +107,7 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
             imagePosX: 50,
             imagePosY: 50,
             snapMode: 'height',
-        };
-        let d = draftRef.current;
-        Object.entries(defaults).forEach(([field, val]) => {
-            d = DraftResolver.set(`slide-${slideNum}-${field}`, val, d);
-        });
-        onChangeRef.current(d);
+        }, draftRef.current));
     }, []);
 
     return { resolving, resolve, ingestFile, clearAsset };

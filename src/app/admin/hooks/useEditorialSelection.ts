@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 /**
  * Tracks active text selection across dashboard editorial inputs for the floating format popover.
+ * Bails out synchronously with zero `rAF` scheduling when no `input-*` element is focused.
  */
 export const useEditorialSelection = () => {
     const [selection, setSelection] = useState<{ 
@@ -11,11 +12,15 @@ export const useEditorialSelection = () => {
         y: number,
         bottom: number
     } | null>(null);
+    const hasSelectionRef = useRef(false);
 
     const checkSelection = useCallback(() => {
         const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
         if (!activeEl || !activeEl.id?.startsWith('input-')) {
-            setSelection((prev) => (prev === null ? prev : null));
+            if (hasSelectionRef.current) {
+                hasSelectionRef.current = false;
+                setSelection(null);
+            }
             return;
         }
 
@@ -29,19 +34,25 @@ export const useEditorialSelection = () => {
             const x = rect.left + (rect.width / 2);
             const y = rect.top;
             const bottom = rect.bottom;
+            hasSelectionRef.current = true;
             setSelection((prev) =>
                 prev && prev.fieldId === fieldId && prev.text === text && prev.x === x && prev.y === y && prev.bottom === bottom
                     ? prev
                     : { fieldId, text, x, y, bottom }
             );
-        } else {
-            setSelection((prev) => (prev === null ? prev : null));
+        } else if (hasSelectionRef.current) {
+            hasSelectionRef.current = false;
+            setSelection(null);
         }
     }, []);
 
     useEffect(() => {
         let rafId: number | null = null;
         const schedule = () => {
+            const activeEl = document.activeElement;
+            if (!hasSelectionRef.current && (!activeEl || !activeEl.id?.startsWith('input-'))) {
+                return;
+            }
             if (rafId !== null) cancelAnimationFrame(rafId);
             rafId = requestAnimationFrame(() => {
                 rafId = null;
@@ -58,7 +69,10 @@ export const useEditorialSelection = () => {
         };
     }, [checkSelection]);
 
-    const clearSelection = useCallback(() => setSelection(null), []);
+    const clearSelection = useCallback(() => {
+        hasSelectionRef.current = false;
+        setSelection(null);
+    }, []);
 
     return { selection, clearSelection };
 };

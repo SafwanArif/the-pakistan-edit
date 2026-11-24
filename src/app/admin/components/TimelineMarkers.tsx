@@ -38,7 +38,9 @@ interface TimelineKeyframeDiamondProps {
     dimmed?: boolean;
     size?: number;
     zIndex?: number;
-    onJump: (time: number) => void;
+    jumpTime?: number;
+    jumpSide?: 'pre' | 'post';
+    onJump: (time: number, side?: 'pre' | 'post') => void;
 }
 
 /** Shared NLE keyframe diamond marker used by both card and master timeline scrubbers. */
@@ -51,11 +53,13 @@ const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = React.me
     dimmed = false,
     size = 7,
     zIndex = 2,
+    jumpTime: explicitJumpTime,
+    jumpSide,
     onJump,
 }) => {
     const isCut = kf.easing === 'snap';
     const pre = isCut ? kf.pre : undefined;
-    const jumpTime = variant === 'pre' && pre?.time !== undefined ? pre.time : kf.time;
+    const jumpTime = explicitJumpTime ?? (variant === 'pre' && pre?.time !== undefined ? pre.time : kf.time);
     const title = variant === 'pre'
         ? `PRE Cut @ ${formatTimecode(displayTime)} • Zoom ${Math.round(pre?.zoom ?? kf.zoom)}% • Pan ${Math.round(pre?.posX ?? kf.posX)}%`
         : variant === 'post'
@@ -79,7 +83,7 @@ const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = React.me
             type="button"
             onPointerDown={(e) => {
                 e.stopPropagation();
-                onJump(jumpTime);
+                onJump(jumpTime, jumpSide);
             }}
             title={title}
             aria-label={title}
@@ -186,7 +190,9 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                                 isAtPlayhead={Math.abs(currentTime - preTime) <= 0.06}
                                 size={size}
                                 zIndex={zIndex + 1}
-                                onJump={(t) => onJump(t, 'pre')}
+                                jumpTime={preTime}
+                                jumpSide="pre"
+                                onJump={onJump}
                             />
                             <TimelineKeyframeDiamond
                                 kf={kf}
@@ -196,13 +202,16 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                                 isAtPlayhead={Math.abs(currentTime - kf.time) <= 0.06}
                                 size={size}
                                 zIndex={zIndex + 1}
-                                onJump={(t) => onJump(t, 'post')}
+                                jumpTime={kf.time}
+                                jumpSide="post"
+                                onJump={onJump}
                             />
                         </React.Fragment>
                     );
                 }
 
                 const earliest = getEarliestTime(kf);
+                const splitPre = kf.easing === 'snap' && kf.pre?.time !== undefined;
                 return (
                     <TimelineKeyframeDiamond
                         key={kf.id}
@@ -214,7 +223,9 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                         isAtPlayhead={isFocused}
                         size={size}
                         zIndex={isFocused ? zIndex + 1 : zIndex}
-                        onJump={(t) => onJump(kf.easing === 'snap' && kf.pre?.time !== undefined ? earliest : t, kf.easing === 'snap' && kf.pre?.time !== undefined && kf.pre.time < kf.time ? 'pre' : undefined)}
+                        jumpTime={splitPre ? earliest : kf.time}
+                        jumpSide={splitPre && kf.pre!.time! < kf.time ? 'pre' : undefined}
+                        onJump={onJump}
                     />
                 );
             })}

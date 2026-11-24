@@ -235,24 +235,33 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 const rawBotVisible = topY + containerH < o.dimensions.height - 2;
                 const topVisible = blurEnabled && rawTopVisible;
                 const botVisible = blurEnabled && rawBotVisible;
+                const anyBlurVisible = topVisible || botVisible;
 
-                // Keep ambient visibility & crop synced at 120Hz (heavy crop math skipped when blur is OFF)
-                o.ambientVisibilityRef.current = { topVisible: rawTopVisible, botVisible: rawBotVisible };
-                if (blurEnabled) {
+                // Keep ambient visibility & crop synced at 120Hz (zero allocations & zero crop math when FILL/OFF)
+                o.ambientVisibilityRef.current.topVisible = topVisible;
+                o.ambientVisibilityRef.current.botVisible = botVisible;
+                if (anyBlurVisible) {
                     if (effScale <= 1) {
-                        o.ambientCropRef.current = { xFrac: 0, wFrac: 1, yFrac: 0, hFrac: 1 };
+                        o.ambientCropRef.current.xFrac = 0;
+                        o.ambientCropRef.current.wFrac = 1;
+                        o.ambientCropRef.current.yFrac = 0;
+                        o.ambientCropRef.current.hFrac = 1;
                     } else {
                         const wFrac = Math.min(1, 1 / effScale);
                         const xFrac = clamp(0.5 - panX / (o.dimensions.width * effScale) - wFrac / 2, 0, 1 - wFrac);
                         const hFrac = Math.min(1, containerH / Math.max(1, H_cont * effScale));
-                        o.ambientCropRef.current = { xFrac, wFrac, yFrac: (1 - hFrac) / 2, hFrac };
+                        o.ambientCropRef.current.xFrac = xFrac;
+                        o.ambientCropRef.current.wFrac = wFrac;
+                        o.ambientCropRef.current.yFrac = (1 - hFrac) / 2;
+                        o.ambientCropRef.current.hFrac = hFrac;
                     }
                 }
 
+                const mediaY = topY - Math.max(0, H_cont * effScale - containerH) / 2;
                 const cameraGliding =
                     !Number.isNaN(lastScale) && (
                         Math.abs(panX - lastPanX) > 0.05 ||
-                        Math.abs(topY - lastTopY) > 0.05 ||
+                        Math.abs(mediaY - lastTopY) > 0.05 ||
                         Math.abs(effScale - lastScale) > 0.0002
                     );
                 if (o.isCameraGlidingRef) {
@@ -264,14 +273,14 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                     !mediaEl.style.transform ||
                     Number.isNaN(lastPanX) ||
                     Math.abs(panX - lastPanX) > 0.001 ||
-                    Math.abs(topY - lastTopY) > 0.001 ||
+                    Math.abs(mediaY - lastTopY) > 0.001 ||
                     Math.abs(effScale - lastScale) > 0.00001;
                 if (transformMoved) {
                     lastMediaEl = mediaEl;
                     lastPanX = panX;
-                    lastTopY = topY;
+                    lastTopY = mediaY;
                     lastScale = effScale;
-                    mediaEl.style.transform = `translate3d(${panX}px, ${topY}px, 0) scale(${effScale}) translateZ(0)`;
+                    mediaEl.style.transform = `translate3d(${panX}px, ${mediaY}px, 0) scale(${effScale}) translateZ(0)`;
                 }
                 if (o.isImage) {
                     if (blurEnabled && o.bgBlurImgRef.current && (transformMoved || !o.bgBlurImgRef.current.style.transform)) {
@@ -317,7 +326,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                     }
                 }
             } else {
-                const baseZoom = Math.max(0.1, (f.zoom ?? 100) / 100);
+                const baseZoom = Math.max(1.0, (f.zoom ?? 100) / 100);
                 const finalScale = baseZoom * kenBurnsMul;
                 const H_cov = Math.max(o.dimensions.height, o.dimensions.width / r);
                 const W_cov = H_cov * r;

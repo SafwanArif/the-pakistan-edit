@@ -692,7 +692,6 @@
 
 .tpe-elastic-field-wrapper.tpe-field-expanded { flex: 4; z-index: 10; }
 .tpe-elastic-field-wrapper.tpe-field-shrunk { opacity: 0.3; flex: 1; max-inline-size: 80px; overflow: clip; }
-.tpe-mobile-field-key { display: none; }
 
 .tpe-step-cluster { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .tpe-step-number { font-size: 10px; font-weight: 900; color: var(--ui-accent); opacity: 0.5; font-family: monospace; font-variant-numeric: tabular-nums; }
@@ -763,29 +762,6 @@
     overflow: hidden;
   }
 
-  .tpe-elastic-field-wrapper .tpe-input-field {
-    padding-inline-start: 20px;
-  }
-
-  .tpe-mobile-field-key {
-    position: absolute;
-    inset-inline-start: 6px;
-    inset-block-start: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    translate: 0 -50%;
-    color: var(--ui-accent);
-    font-size: 9px;
-    font-weight: 900;
-    line-height: 1;
-    pointer-events: none;
-  }
-
-  .tpe-elastic-field-wrapper.tpe-field-expanded .tpe-mobile-field-key {
-    display: none;
-  }
-
   .tpe-elastic-field-wrapper:not(.tpe-field-expanded) .tpe-field-tools {
     visibility: hidden;
   }
@@ -794,7 +770,6 @@
     visibility: visible;
   }
 
-  .tpe-header-row[data-focused-field] .tpe-ribbon-glossary,
   .tpe-header-row[data-focused-field] .tpe-ribbon-assets {
     display: none;
   }

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFadeDurations, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { SceneChecklistPopover, FadePresetControl } from "./SceneChecklistPopover";
 import { SubtitleRowList, getSceneSubtitles } from "./SubtitleEditorTray";
@@ -84,15 +85,49 @@ export function resolveSceneSubtitleSeekTime(
     return clamp(rawTarget, bounds.start, maxTarget);
 }
 
+const SceneDurationInput: React.FC<{ value: number; onCommit: (next: number) => void }> = React.memo(({ value, onCommit }) => {
+    const [draftText, setDraftText] = useState<string | null>(null);
+    const commit = (raw: string) => {
+        const parsed = parseFloat(raw.trim());
+        setDraftText(null);
+        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+            onCommit(clamp(Math.round(parsed * 10) / 10, 2, 180));
+        }
+    };
+    return (
+        <input
+            type="text"
+            inputMode="decimal"
+            enterKeyHint="done"
+            spellCheck={false}
+            value={draftText ?? String(value)}
+            aria-label="Scene duration in seconds"
+            className="tpe-tabular-nums"
+            onFocus={(e) => { setDraftText(String(value)); e.currentTarget.select(); }}
+            onChange={(e) => setDraftText(e.target.value)}
+            onBlur={(e) => commit(e.currentTarget.value)}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') { setDraftText(null); e.currentTarget.blur(); }
+            }}
+            style={{ width: '36px', fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--ui-text)', background: 'transparent', border: 'none', textAlign: 'center', padding: 0 }}
+            title="Directly enter seconds for this angle (2–180s)"
+        />
+    );
+});
+SceneDurationInput.displayName = "SceneDurationInput";
+
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
-export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
+export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
     draft, onChange, currentTime, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
 }) => {
+    const isMobileViewport = useMediaQuery("(max-width: 900px)");
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
     const [openSubSceneIdx, setOpenSubSceneIdx] = useState<number | null>(null);
     const [mobileSceneIndex, setMobileSceneIndex] = useState(0);
+    const [sceneUploadWarning, setSceneUploadWarning] = useState<string | null>(null);
     const checklistRef = useClickOutside(() => setOpenChecklistIdx(null), undefined, openChecklistIdx !== null);
-    const mobileDrawerRef = useClickOutside(onCloseMobileDrawer, undefined, isMobileDrawerOpen);
+    const mobileDrawerRef = useClickOutside(onCloseMobileDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
     const mobileSceneRackRef = useRef<HTMLDivElement>(null);
     const carouselSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const mobileSceneIndexRef = useRef(mobileSceneIndex);
@@ -234,6 +269,10 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
         seekTo(sceneBoundariesRef.current[sceneBoundariesRef.current.length - 1]?.end ?? 0);
     }, [isMobileDrawerOpen, onChange, seekTo]);
 
+    const handleRemoveOutro = useCallback(() => {
+        onChange({ ...draftRef.current, enableOutro: false });
+    }, [onChange]);
+
     const handleAddReHook = () => {
         const updated = [...scenes];
         updated.splice(1, 0, { id: `rehook-${crypto.randomUUID().slice(0, 8)}`, title: "WAIT — HERE IS ==THE REAL SHIFT==", subtitle: "The overlooked turning point right before the full picture emerged.", duration: 4, mediaType: 'video', shareHookText: true });
@@ -256,6 +295,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
         ingestAbortRef.current?.abort();
         const controller = new AbortController();
         ingestAbortRef.current = controller;
+        setSceneUploadWarning(null);
         try {
             const formData = new FormData();
             formData.append('file', file, file.name);
@@ -265,9 +305,10 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                 updateScene(idx, { mediaUrl: url, mediaType: 'video', mediaName: file.name });
                 return;
             }
+            setSceneUploadWarning(`Server ingest failed (${res.status}) for ${file.name} — previewing local copy.`);
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return;
-            /* fallback to local object URL */
+            setSceneUploadWarning(`Server ingest unavailable for ${file.name} — previewing local copy.`);
         }
         updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'video', mediaName: file.name });
     };
@@ -317,7 +358,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                 variant="mobile"
                             />
                         )}
-                        <MasterChecklistControl variant="mobile" draft={draft} onChange={onChange} />
+                        {isMobileViewport && <MasterChecklistControl variant="mobile" draft={draft} onChange={onChange} />}
                     </div>
                     <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
                         <button type="button" aria-label="Previous card" disabled={mobileSceneIndex <= 0} onClick={() => handleMobileSceneNavigate(-1)} className="tpe-cycle-arrow" title="Previous card">
@@ -340,11 +381,17 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                 variant="desktop"
                             />
                     )}
-                    <MasterChecklistControl variant="desktop" draft={draft} onChange={onChange} />
+                    {!isMobileViewport && <MasterChecklistControl variant="desktop" draft={draft} onChange={onChange} />}
                 </div>
             </div>
 
             {/* Scene Storyboard Rack */}
+            {sceneUploadWarning && (
+                <div role="status" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '5px 8px', borderRadius: '6px', background: 'rgba(250, 204, 21, 0.1)', border: '1px solid rgba(250, 204, 21, 0.35)', color: '#facc15', fontSize: '9px' }}>
+                    <span>{sceneUploadWarning}</span>
+                    <button type="button" aria-label="Dismiss warning" onClick={() => setSceneUploadWarning(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', padding: '0 2px' }}>×</button>
+                </div>
+            )}
             <div
                 ref={mobileSceneRackRef}
                 onScroll={handleMobileSceneScroll}
@@ -425,13 +472,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                 <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '3px' }}>
                                     <button type="button" aria-label="Decrease duration 1s" onClick={() => updateScene(idx, { duration: Math.max(2, Math.round((scene.duration - 1) * 10) / 10) })} className="tpe-asset-btn" style={{ width: '20px', height: '20px', fontSize: '11px', lineHeight: 1 }} title="Decrease 1s">-</button>
                                     <div style={{ display: 'flex', alignItems: 'center', background: 'oklch(from var(--ui-bg) l c h / 0.85)', border: '1px solid var(--ui-border)', borderRadius: '4px', padding: '1px 4px' }}>
-                                        <input
-                                            type="number" inputMode="decimal" step="0.5" min="1" max="180" value={scene.duration}
-                                            aria-label="Scene duration in seconds"
-                                            className="tpe-tabular-nums"
-                                            onChange={(e) => { const val = parseFloat(e.target.value); if (!Number.isNaN(val)) updateScene(idx, { duration: Math.max(2, Math.round(val * 10) / 10) }); }}
-                                            style={{ width: '36px', fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--ui-text)', background: 'transparent', border: 'none', textAlign: 'center', padding: 0 }}
-                                            title="Directly enter seconds for this angle"
+                                        <SceneDurationInput
+                                            value={scene.duration}
+                                            onCommit={(nextDur) => updateScene(idx, { duration: nextDur })}
                                         />
                                         <span style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontWeight: 700 }}>s</span>
                                     </div>
@@ -510,7 +553,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                                     start={bounds.start}
                                     end={bounds.end}
                                     duration={scene.duration}
-                                    localTime={clamp(currentTime - bounds.start, 0, scene.duration)}
+                                    localTime={isSceneActive ? clamp(currentTime - bounds.start, 0, scene.duration) : (currentTime >= bounds.end ? scene.duration : 0)}
                                     isSceneActive={isSceneActive}
                                     isPlaying={isPlaying}
                                     keyframes={draft.keyframes}
@@ -587,7 +630,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
                             outroStart={outroStart}
                             isOutroActive={isOutroActive}
                             onSeekOutro={seekTo}
-                            onRemoveOutro={() => onChange({ ...draft, enableOutro: false })}
+                            onRemoveOutro={handleRemoveOutro}
                         />
                     </div>
                 )}
@@ -602,4 +645,5 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = ({
             </aside>
         </>
     );
-};
+});
+TimelineStoryboard.displayName = "TimelineStoryboard";

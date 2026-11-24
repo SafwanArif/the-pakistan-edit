@@ -1,19 +1,21 @@
+const restoreInputSelection = (el: HTMLInputElement | HTMLTextAreaElement, start: number, end: number) => {
+    requestAnimationFrame(() => {
+        if (document.contains(el)) {
+            el.focus();
+            el.setSelectionRange(start, end);
+        }
+    });
+};
+
 /** Inserts text at the active cursor position and restores selection focus. */
 export const insertTextAtCursor = (fieldId: string, value: string, textToInsert: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
     if (el && typeof el.selectionStart === 'number') {
         const start = el.selectionStart;
         const end = el.selectionEnd ?? start;
-        const newVal = value.substring(0, start) + textToInsert + value.substring(end);
-        onUpdate(newVal);
-        
-        requestAnimationFrame(() => {
-            if (el && document.contains(el)) {
-                el.focus();
-                const newPos = start + textToInsert.length;
-                el.setSelectionRange(newPos, newPos);
-            }
-        });
+        onUpdate(value.substring(0, start) + textToInsert + value.substring(end));
+        const newPos = start + textToInsert.length;
+        restoreInputSelection(el, newPos, newPos);
     } else {
         onUpdate(value ? value + " " + textToInsert : textToInsert);
     }
@@ -25,53 +27,33 @@ export const insertTextAtCursor = (fieldId: string, value: string, textToInsert:
  */
 export const wrapSelectionWithSyntax = (fieldId: string, value: string, syntaxOpen: string, syntaxClose: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (el && typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number') {
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        const selection = value.substring(start, end);
-        
-        const lowerSelection = selection.toLowerCase();
-        const lowerOpen = syntaxOpen.toLowerCase();
-        const lowerClose = syntaxClose.toLowerCase();
+    if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') return;
 
-        // 1. If selection ITSELF is wrapped in the markers, toggle them OFF
-        if (selection.length >= syntaxOpen.length + syntaxClose.length && lowerSelection.startsWith(lowerOpen) && lowerSelection.endsWith(lowerClose)) {
-            const innerText = selection.substring(syntaxOpen.length, selection.length - syntaxClose.length);
-            const newVal = value.substring(0, start) + innerText + value.substring(end);
-            onUpdate(newVal);
-            requestAnimationFrame(() => {
-                if (el && document.contains(el)) {
-                    el.focus();
-                    el.setSelectionRange(start, start + innerText.length);
-                }
-            });
-            return;
-        }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selection = value.substring(start, end);
+    const lowerSelection = selection.toLowerCase();
+    const lowerOpen = syntaxOpen.toLowerCase();
+    const lowerClose = syntaxClose.toLowerCase();
 
-        // 2. If the SURROUNDING text is the markers, toggle them OFF
-        const prefix = value.substring(0, start);
-        const suffix = value.substring(end);
-        if (prefix.toLowerCase().endsWith(lowerOpen) && suffix.toLowerCase().startsWith(lowerClose)) {
-            const newVal = prefix.substring(0, prefix.length - syntaxOpen.length) + selection + suffix.substring(syntaxClose.length);
-            onUpdate(newVal);
-            requestAnimationFrame(() => {
-                if (el && document.contains(el)) {
-                    el.focus();
-                    el.setSelectionRange(start - syntaxOpen.length, end - syntaxOpen.length);
-                }
-            });
-            return;
-        }
-
-        // 3. Otherwise, toggle them ON
-        const newVal = prefix + syntaxOpen + selection + syntaxClose + suffix;
-        onUpdate(newVal);
-        
-        requestAnimationFrame(() => {
-            if (el && document.contains(el)) {
-                el.focus();
-                el.setSelectionRange(start + syntaxOpen.length, end + syntaxOpen.length);
-            }
-        });
+    // 1. If selection ITSELF is wrapped in the markers, toggle them OFF
+    if (selection.length >= syntaxOpen.length + syntaxClose.length && lowerSelection.startsWith(lowerOpen) && lowerSelection.endsWith(lowerClose)) {
+        const innerText = selection.substring(syntaxOpen.length, selection.length - syntaxClose.length);
+        onUpdate(value.substring(0, start) + innerText + value.substring(end));
+        restoreInputSelection(el, start, start + innerText.length);
+        return;
     }
+
+    // 2. If the SURROUNDING text is the markers, toggle them OFF
+    const prefix = value.substring(0, start);
+    const suffix = value.substring(end);
+    if (prefix.toLowerCase().endsWith(lowerOpen) && suffix.toLowerCase().startsWith(lowerClose)) {
+        onUpdate(prefix.substring(0, prefix.length - syntaxOpen.length) + selection + suffix.substring(syntaxClose.length));
+        restoreInputSelection(el, start - syntaxOpen.length, end - syntaxOpen.length);
+        return;
+    }
+
+    // 3. Otherwise, toggle them ON
+    onUpdate(prefix + syntaxOpen + selection + syntaxClose + suffix);
+    restoreInputSelection(el, start + syntaxOpen.length, end + syntaxOpen.length);
 };

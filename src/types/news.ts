@@ -69,6 +69,23 @@ export interface SourceFrameIndex {
     keyframes: number[];
     pts: number[];
 }
+
+export interface SourceMediaInfo {
+    width: number;
+    height: number;
+    exactFps: number;
+    nominalFps: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    videoBitrate?: number;
+    audioBitrate?: number;
+    pixFmt?: string;
+    colorTransfer?: string;
+    isHdr: boolean;
+    audioSampleRate?: number;
+    audioChannels?: number;
+    fileSize?: number;
+}
 export type SubtitleFontId = 'plus-jakarta' | 'onest' | 'dm-sans' | 'geist';
 export type SubtitleBackdropId = 'pill' | 'glass' | 'shadow' | 'none';
 export type FadePresetMode = 'auto' | 'micro' | 'editorial';
@@ -149,6 +166,7 @@ export interface VideoDraft {
     sourceFps?: number; // Detected source/export frame rate for exact frame nudging
     sourceFrameLogUrl?: string;
     sourceFrameIndex?: SourceFrameIndex;
+    sourceMediaInfo?: SourceMediaInfo;
     category: string;
     headline: string;
     subtitle?: string;
@@ -204,10 +222,66 @@ export const getDefaultVideoFraming = (
 ): VideoFraming => {
     const stored = draft.defaultFramingByRatio?.[aspectRatio];
     const usesLegacyValues = aspectRatio === draft.aspectRatio;
+    const rawZoom = stored?.zoom ?? (usesLegacyValues ? draft.zoom : undefined) ?? (aspectRatio === '4:5' ? 0 : 100);
     return {
-        zoom: stored?.zoom ?? (usesLegacyValues ? draft.zoom : undefined) ?? (aspectRatio === '4:5' ? 0 : 100),
+        zoom: aspectRatio === '4:5' ? Math.max(0, Math.min(200, rawZoom)) : Math.max(100, Math.min(200, rawZoom)),
         posX: stored?.posX ?? (usesLegacyValues ? draft.posX : undefined) ?? 50,
         posY: stored?.posY ?? (usesLegacyValues ? draft.posY : undefined) ?? 100,
+    };
+};
+
+/**
+ * Returns true only when a 4:5 timeline can actually expose top/bottom letterbox margins
+ * (either default framing < 100% or any keyframe POST/PRE state < 100%).
+ * Returns false in 4:5 FILL (>= 100%) and non-4:5 ratios so ambient blur canvases/GPU work stay completely unmounted.
+ */
+export const has45LetterboxFraming = (
+    draft: Pick<VideoDraft, 'aspectRatio' | 'defaultFramingByRatio' | 'zoom' | 'posX' | 'posY' | 'keyframes'>
+): boolean => {
+    if (draft.aspectRatio !== '4:5') return false;
+    if (Math.round(getDefaultVideoFraming(draft, '4:5').zoom) < 100) return true;
+    return Boolean(draft.keyframes?.some((kf) =>
+        Math.round(kf.zoom) < 100 || (kf.easing === 'snap' && kf.pre !== undefined && Math.round(kf.pre.zoom) < 100)
+    ));
+};
+
+/** Switches target aspect ratio while preserving per-ratio default framing and migrating both POST and PRE keyframe states. */
+export const switchVideoAspectRatio = (draft: VideoDraft, nextRatio: VideoAspectRatio): VideoDraft => {
+    if (draft.aspectRatio === nextRatio) return draft;
+    const was45 = draft.aspectRatio === '4:5';
+    const isNext45 = nextRatio === '4:5';
+    const currentFraming = getDefaultVideoFraming(draft, draft.aspectRatio);
+    const framingByRatio: Partial<Record<VideoAspectRatio, VideoFraming>> = {
+        ...draft.defaultFramingByRatio,
+        [draft.aspectRatio]: currentFraming,
+    };
+    const nextFraming = getDefaultVideoFraming({ ...draft, defaultFramingByRatio: framingByRatio }, nextRatio);
+    const migrateZoom = (z: number): number => {
+        if (was45 && !isNext45) return z > 100 ? Math.min(200, z) : 100;
+        if (!was45 && isNext45) return z > 100 ? Math.min(200, z) : 0;
+        return Math.max(100, Math.min(200, z));
+    };
+    const nextKeyframes = draft.keyframes?.map((kf): VideoKeyframe => {
+        const nextZoom = migrateZoom(kf.zoom);
+        const nextPosY = isNext45 && Math.round(nextZoom) < 100 ? (kf.posY ?? 100) : undefined;
+        if (kf.easing === 'snap') {
+            const nextPre = kf.pre
+                ? {
+                    ...kf.pre,
+                    zoom: migrateZoom(kf.pre.zoom),
+                    posY: isNext45 && Math.round(migrateZoom(kf.pre.zoom)) < 100 ? (kf.pre.posY ?? 100) : undefined,
+                }
+                : undefined;
+            return { ...kf, zoom: nextZoom, posY: nextPosY, pre: nextPre };
+        }
+        return { ...kf, zoom: nextZoom, posY: nextPosY };
+    });
+    return {
+        ...draft,
+        aspectRatio: nextRatio,
+        ...nextFraming,
+        defaultFramingByRatio: { ...framingByRatio, [nextRatio]: nextFraming },
+        keyframes: nextKeyframes,
     };
 };
 

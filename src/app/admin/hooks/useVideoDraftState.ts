@@ -3,19 +3,46 @@ import {
     VideoDraft,
     VideoAspectRatio,
     createDefaultVideoDraft,
+    getDefaultVideoFraming,
     getTotalVideoDuration,
     calculatePsychologyPacedScenes,
     ensureUniqueSceneIds,
     getSceneBoundaries,
+    type SourceFrameIndex,
+    type SourceMediaInfo,
     type VideoFraming,
 } from '../../../types/news';
 import { get, set } from 'idb-keyval';
+import { useDebouncedIdbSave } from './useDebouncedIdbSave';
+
+/** Migrates legacy `/api/video/ingest/frame-index?name=...` URLs to the active `?frameIndex=...` route. */
+const normalizeFrameLogUrl = (raw?: string): string | undefined => {
+    if (!raw) return undefined;
+    try {
+        const parsed = new URL(raw, "http://localhost");
+        if (parsed.pathname === "/api/video/ingest/frame-index") {
+            const name = parsed.searchParams.get("name");
+            return name ? `/api/video/ingest?frameIndex=${encodeURIComponent(name)}` : undefined;
+        }
+        return raw;
+    } catch {
+        return raw;
+    }
+};
+
+/** Strips bulky in-memory PTS arrays before writing drafts to IndexedDB. */
+const toPersistableDraft = (draft: VideoDraft): VideoDraft => {
+    if (!draft.sourceFrameIndex) return draft;
+    const { sourceFrameIndex: _omit, ...rest } = draft;
+    void _omit;
+    return rest;
+};
 
 const uploadWithTelemetry = (
     formData: FormData,
     onStatus: (msg: string) => void,
     signal?: AbortSignal
-): Promise<{ url: string; fps: number; frameIndexUrl?: string }> =>
+): Promise<{ url: string; fps: number; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo }> =>
     new Promise((resolve, reject) => {
         if (signal?.aborted) {
             reject(new Error("Upload aborted"));
@@ -26,6 +53,7 @@ const uploadWithTelemetry = (
         let finalUrl = "";
         let finalFps = 30;
         let finalFrameIndexUrl: string | undefined;
+        let finalMediaInfo: SourceMediaInfo | undefined;
         let settled = false;
 
         const finishReject = (err: Error) => {
@@ -47,7 +75,7 @@ const uploadWithTelemetry = (
                 for (const line of lines.slice(0, -1)) {
                     if (!line.trim()) continue;
                     try {
-                        const evt = JSON.parse(line) as { stage?: string; url?: string; fps?: string; frameIndexUrl?: string; error?: string };
+                        const evt = JSON.parse(line) as { stage?: string; url?: string; fps?: number | string; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo; error?: string };
                         if (evt.error) {
                             finishReject(new Error(evt.error));
                             return;
@@ -55,7 +83,8 @@ const uploadWithTelemetry = (
                         if (evt.stage) onStatus(evt.stage);
                         if (evt.url) finalUrl = evt.url;
                         if (evt.frameIndexUrl) finalFrameIndexUrl = evt.frameIndexUrl;
-                        if (evt.fps) {
+                        if (evt.mediaInfo) finalMediaInfo = evt.mediaInfo;
+                        if (evt.fps !== undefined) {
                             const parsedFps = Number(evt.fps);
                             if (Number.isFinite(parsedFps) && parsedFps > 0) finalFps = parsedFps;
                         }
@@ -79,7 +108,7 @@ const uploadWithTelemetry = (
             signal?.removeEventListener("abort", onAbort);
             if (xhr.status >= 200 && xhr.status < 300 && finalUrl) {
                 settled = true;
-                resolve({ url: finalUrl, fps: finalFps, frameIndexUrl: finalFrameIndexUrl });
+                resolve({ url: finalUrl, fps: finalFps, frameIndexUrl: finalFrameIndexUrl, mediaInfo: finalMediaInfo });
             } else {
                 settled = true;
                 reject(new Error(`Ingest failed (${xhr.status})`));
@@ -147,6 +176,11 @@ export const normalizeHydratedVideoDraft = (
         };
     }
     draft.defaultFramingByRatio = defaultFramingByRatio;
+    const activeFraming = getDefaultVideoFraming(draft, draft.aspectRatio);
+    draft.zoom = activeFraming.zoom;
+    draft.posX = activeFraming.posX;
+    draft.posY = activeFraming.posY;
+    draft.sourceFrameLogUrl = normalizeFrameLogUrl(draft.sourceFrameLogUrl);
     if (!draft.scenes || draft.scenes.length === 0) {
         draft.scenes = baseDraft.scenes;
     } else {
@@ -178,7 +212,7 @@ export const useVideoDraftState = () => {
     const [playbackMode, setPlaybackMode] = useState<'play-all' | 'loop-angle'>('play-all');
     const isMuted = Boolean(videoDraft.isMuted);
 
-    const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow } = useDebouncedIdbSave<VideoDraft>('tpe_video_draft', toPersistableDraft);
     const ingestAbortRef = useRef<AbortController | null>(null);
     const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
     const rVfcAnchorRef = useRef<{ time: number; perfNow: number } | null>(null);
@@ -216,12 +250,8 @@ export const useVideoDraftState = () => {
 
     const updateVideoDraft = useCallback(async (newDraft: VideoDraft) => {
         setVideoDraft(newDraft);
-
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
-        saveTimeout.current = setTimeout(async () => {
-            await set('tpe_video_draft', newDraft);
-        }, 150);
-    }, []);
+        scheduleDraftSave(newDraft);
+    }, [scheduleDraftSave]);
 
     /** Uploads a video blob to `/api/video/ingest` for untouched HTTP 206 byte-range streaming. */
     const ingestVideoBlob = useCallback(async (
@@ -261,12 +291,12 @@ export const useVideoDraftState = () => {
                 ? current.scenes
                 : calculatePsychologyPacedScenes(clipDuration, current.scenes);
 
-            let sourceFrameIndex = undefined;
+            let sourceFrameIndex: SourceFrameIndex | undefined = undefined;
             if (upload.frameIndexUrl) {
                 try {
                     const frameIndexResponse = await fetch(upload.frameIndexUrl, { signal: controller.signal });
                     if (frameIndexResponse.ok) {
-                        sourceFrameIndex = await frameIndexResponse.json();
+                        sourceFrameIndex = await frameIndexResponse.json() as SourceFrameIndex;
                     }
                 } catch (err) {
                     if (err instanceof DOMException && err.name === 'AbortError') throw err;
@@ -282,6 +312,7 @@ export const useVideoDraftState = () => {
                 sourceFps: upload.fps,
                 sourceFrameLogUrl: upload.frameIndexUrl,
                 sourceFrameIndex,
+                sourceMediaInfo: upload.mediaInfo,
                 aspectRatio: nextRatio,
                 scenes: nextScenes,
             };
@@ -334,6 +365,18 @@ export const useVideoDraftState = () => {
             }
             setVideoDraft(draft);
             setIsMounted(true);
+
+            // Lazily rehydrate sourceFrameIndex in memory without bloating IndexedDB
+            if (draft.sourceFrameLogUrl && !draft.sourceFrameIndex) {
+                const frameUrl = draft.sourceFrameLogUrl;
+                void fetch(frameUrl).then(async (res) => {
+                    if (!res.ok || cancelled) return;
+                    const idx = await res.json() as SourceFrameIndex;
+                    if (!cancelled) {
+                        setVideoDraft((curr) => (curr.sourceFrameLogUrl === frameUrl ? { ...curr, sourceFrameIndex: idx } : curr));
+                    }
+                }).catch(() => {});
+            }
 
             if (pendingMigrationBlob && !migrationStartedRef.current) {
                 migrationStartedRef.current = true;
@@ -405,10 +448,6 @@ export const useVideoDraftState = () => {
         return () => cancelAnimationFrame(animId);
     }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage]);
 
-    useEffect(() => () => {
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    }, []);
-
     const togglePlay = useCallback(() => {
         setIsPlaying((prev: boolean) => !prev);
     }, []);
@@ -459,25 +498,21 @@ export const useVideoDraftState = () => {
             if (!prevDraft.videoDuration || Math.abs(prevDraft.videoDuration - mediaDuration) > 1.5) {
                 const updated: VideoDraft = { ...prevDraft, videoDuration: mediaDuration };
                 setVideoDraft(updated);
-                if (saveTimeout.current) clearTimeout(saveTimeout.current);
-                saveTimeout.current = setTimeout(async () => {
-                    await set('tpe_video_draft', updated);
-                }, 150);
+                scheduleDraftSave(updated);
             }
         }
-    }, [totalDuration, seekTo]);
+    }, [totalDuration, seekTo, scheduleDraftSave]);
 
     const resetVideoDraft = useCallback(async () => {
         const prevUrl = videoDraftRef.current.videoUrl;
         if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
         const defaultDraft = createDefaultVideoDraft();
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
         setVideoDraft(defaultDraft);
         setIsPlaying(false);
         setCurrentTime(0);
-        await set('tpe_video_draft', defaultDraft);
+        await saveDraftNow(defaultDraft);
         await set('tpe_video_blob', undefined);
-    }, []);
+    }, [saveDraftNow]);
 
     return {
         isMounted, videoDraft, updateVideoDraft, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,

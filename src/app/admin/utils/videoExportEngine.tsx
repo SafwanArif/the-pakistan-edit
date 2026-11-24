@@ -1,11 +1,10 @@
 import JSZip from "jszip";
-import { getFontEmbedCSS } from "html-to-image";
 import { VideoDraft, VideoAspectRatio, getSceneBoundaries, isSharedReHookScene, downloadBlob } from "../../../types/news";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import React from "react";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
-import { renderNodeToBlobWithTimeout } from "./exportEngine";
+import { createDomCaptureSession } from "./exportEngine";
 
 /** Exports transparent PNG overlays for TikTok 9:16, 4:5, and 16:9 canvases. */
 export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
@@ -14,60 +13,32 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
     const zip = new JSZip();
 
     try {
-        const container = document.getElementById('export-capture-surface');
-        if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
-
         const anchorKW = getAnchorKeyword(draft.headline || draft.category || "video");
         zip.file("seo-metadata.txt", `THE PAKISTAN EDIT - VIDEO OVERLAY BUNDLE\n\nANCHOR: ${anchorKW}\nCATEGORY: ${draft.category}\nTAG: the-pakistan-edit-video`);
 
-        const { createRoot } = await import("react-dom/client");
-        const temp = document.createElement("div");
-        temp.style.cssText = "position:fixed;top:0;left:0;z-index:-9999;background:transparent;";
-        container.appendChild(temp);
-        const root = createRoot(temp);
-        let cachedFontEmbedCSS: string | undefined;
-
+        const session = await createDomCaptureSession({ transparent: true });
         try {
             for (let i = 0; i < aspectRatios.length; i++) {
                 const aspectRatio = aspectRatios[i]!;
                 const format = VIDEO_FORMAT_CONFIGS[aspectRatio];
                 onStatus(`[${i + 1}/${aspectRatios.length}] Rendering ${format.label} Overlay...`);
-                temp.style.width = `${format.width}px`;
-                temp.style.height = `${format.height}px`;
 
-                root.render(
-                    <div id="export-freeze-frame" style={{ background: 'transparent' }}>
-                        <style>{`* { transition: none !important; animation: none !important; }`}</style>
-                        <VideoCard draft={{ ...draft, aspectRatio }} overlayOnly={true} />
-                    </div>
-                );
-
-                await document.fonts.ready;
-                await new Promise((r) => setTimeout(r, 200));
-                if (cachedFontEmbedCSS === undefined) {
-                    cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
-                }
-
-                const blob = await renderNodeToBlobWithTimeout(
-                    temp,
+                const blob = await session.capture(
+                    <VideoCard draft={{ ...draft, aspectRatio }} overlayOnly={true} />,
                     {
                         width: format.width,
                         height: format.height,
                         pixelRatio: 1,
                         quality: 1,
-                        cacheBust: false,
-                        fontEmbedCSS: cachedFontEmbedCSS || undefined,
-                        backgroundColor: 'transparent',
+                        backgroundColor: "transparent",
                         skipAutoScale: true,
-                    },
-                    8000,
-                    `Overlay render timed out for ${format.label}.`
+                        timeoutMessage: `Overlay render timed out for ${format.label}.`,
+                    }
                 );
                 if (blob) zip.file(`overlay_tiktok_${aspectRatio.replace(':', 'x')}_${format.width}x${format.height}_${sanitize(anchorKW)}.png`, blob);
             }
         } finally {
-            root.unmount();
-            temp.remove();
+            session.dispose();
         }
 
         onStatus("Generating ZIP Archive...");
@@ -84,7 +55,7 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
 
 /** Exports a broadcast-grade H.264 / 48kHz AAC MP4 via native server-side FFmpeg compositing. */
 export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
-    const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
+    const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio] ?? VIDEO_FORMAT_CONFIGS['9:16'];
     const { width, height } = dimensions;
     const scenes = draft.scenes?.length ? draft.scenes : [];
 
@@ -96,41 +67,22 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
         const sceneBounds = getSceneBoundaries(scenes);
         const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
         const formData = new FormData();
-        formData.append("draft", JSON.stringify(draft));
+        // Omit large in-memory sourceFrameIndex PTS arrays from the multipart export payload
+        const exportDraft = { ...draft, sourceFrameIndex: undefined };
+        formData.append("draft", JSON.stringify(exportDraft));
 
-        const { createRoot } = await import("react-dom/client");
-        const container = document.getElementById('export-capture-surface') ?? document.body;
-        const temp = document.createElement("div");
-        temp.style.cssText = `position:fixed;top:0;left:0;z-index:-9999;background:transparent;width:${width}px;height:${height}px;pointer-events:none;`;
-        container.appendChild(temp);
-        const root = createRoot(temp);
-
-        let cachedFontEmbedCSS: string | undefined;
+        const session = await createDomCaptureSession({ fallbackToBody: true, transparent: true });
         const captureOverlay = async (overrideDraft: VideoDraft, currentTime: number): Promise<Blob> => {
-            root.render(
-                <div style={{ background: 'transparent' }}>
-                    <style>{`* { transition: none !important; animation: none !important; }`}</style>
-                    <VideoCard draft={{ ...overrideDraft, showSubtitles: false }} overlayOnly={true} currentTime={currentTime} />
-                </div>
-            );
-            await document.fonts.ready;
-            await new Promise((r) => setTimeout(r, 150));
-            if (cachedFontEmbedCSS === undefined) {
-                cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
-            }
-            const blob = await renderNodeToBlobWithTimeout(
-                temp,
+            const blob = await session.capture(
+                <VideoCard draft={{ ...overrideDraft, showSubtitles: false }} overlayOnly={true} currentTime={currentTime} />,
                 {
                     width,
                     height,
                     pixelRatio: 1,
-                    cacheBust: false,
-                    fontEmbedCSS: cachedFontEmbedCSS || undefined,
-                    backgroundColor: 'transparent',
+                    backgroundColor: "transparent",
                     skipAutoScale: true,
-                },
-                8000,
-                "Scene overlay render timed out after 8s."
+                    timeoutMessage: "Scene overlay render timed out after 8s.",
+                }
             );
             if (!blob) throw new Error("Scene overlay render failed — DOM fonts not loaded.");
             return blob;
@@ -160,8 +112,7 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
                 formData.append("outroOverlay", outroBlob, "outro.png");
             }
         } finally {
-            root.unmount();
-            temp.remove();
+            session.dispose();
         }
 
         onStatus("Rendering crisp H.264 + 48kHz AAC MP4 via FFmpeg...");

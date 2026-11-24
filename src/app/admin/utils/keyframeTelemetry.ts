@@ -7,6 +7,7 @@ interface TelemetryTint {
 }
 
 const PRE_COLOR = "var(--ui-pre)";
+const ACCENT_COLOR = "var(--ui-accent)";
 
 const NEUTRAL: TelemetryTint = {
     color: "var(--ui-text-dim)",
@@ -19,6 +20,12 @@ const makeTint = (color: string): TelemetryTint => ({
     background: `color-mix(in oklch, ${color} 10%, transparent)`,
     borderColor: `color-mix(in oklch, ${color} 45%, transparent)`,
 });
+
+const PRE_TINT = makeTint(PRE_COLOR);
+const ACCENT_TINT = makeTint(ACCENT_COLOR);
+const BLEND_TINTS: readonly TelemetryTint[] = Array.from({ length: 11 }, (_, step) =>
+    makeTint(`color-mix(in oklch, ${ACCENT_COLOR} ${step * 10}%, ${PRE_COLOR})`)
+);
 
 /** Returns continuous camera-state tint for the live framing telemetry pill. Pass boolean `isParkedSnap` or numeric index into `keyframes`. */
 export function getKeyframeTelemetryTint(
@@ -35,13 +42,13 @@ export function getKeyframeTelemetryTint(
         ? parkedIndexOrSnap
         : parkedIndexOrSnap >= 0 && keyframes[parkedIndexOrSnap]?.easing === "snap";
     if (isParkedSnap && editSide === "pre") {
-        return makeTint(PRE_COLOR);
+        return PRE_TINT;
     }
 
     const first = sorted[0]!;
     if (time < first.time) {
         if (first.easing === "snap" && first.pre?.time !== undefined && time >= first.pre.time) {
-            return makeTint(PRE_COLOR);
+            return PRE_TINT;
         }
         return NEUTRAL;
     }
@@ -52,20 +59,20 @@ export function getKeyframeTelemetryTint(
         if (time >= prev.time && time <= next.time) {
             if (next.easing === "snap") {
                 if (next.pre?.time !== undefined && time >= next.pre.time) {
-                    return makeTint(PRE_COLOR);
+                    return PRE_TINT;
                 }
-                return makeTint(prev.easing === "snap" ? PRE_COLOR : "var(--ui-accent)");
+                return prev.easing === "snap" ? PRE_TINT : ACCENT_TINT;
             }
             if (prev.easing === "snap") {
                 const span = Math.max(0.001, next.time - prev.time);
-                const pct = Math.round(clamp((time - prev.time) / span, 0, 1) * 10) * 10;
-                return makeTint(`color-mix(in oklch, var(--ui-accent) ${pct}%, ${PRE_COLOR})`);
+                const step = Math.round(clamp((time - prev.time) / span, 0, 1) * 10);
+                return BLEND_TINTS[step] ?? ACCENT_TINT;
             }
-            return makeTint("var(--ui-accent)");
+            return ACCENT_TINT;
         }
     }
 
-    return makeTint("var(--ui-accent)");
+    return ACCENT_TINT;
 }
 
 export interface KeyframeJumpStop {

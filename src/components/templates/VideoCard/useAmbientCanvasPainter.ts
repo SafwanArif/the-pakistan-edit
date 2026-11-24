@@ -16,6 +16,7 @@ interface UseAmbientCanvasPainterOptions {
     draft: VideoDraft;
     videoSrc: string;
     overlayOnly: boolean;
+    ambientBlurActive: boolean;
     ambientCrop: AmbientCropRect;
     ambientVisibility: AmbientVisibilityState;
     draftRef: React.RefObject<VideoDraft>;
@@ -33,6 +34,7 @@ export const useAmbientCanvasPainter = ({
     draft,
     videoSrc,
     overlayOnly,
+    ambientBlurActive,
     ambientCrop,
     ambientVisibility,
     draftRef,
@@ -50,12 +52,18 @@ export const useAmbientCanvasPainter = ({
     const lastAmbientPaintRef = useRef(0);
     const ambientTickCountRef = useRef(0);
     const lastPaintedVideoTimeRef = useRef(-1);
-    const prevBlurEnabledRef = useRef(draft.enableAmbientBlur);
+    const prevBlurActiveRef = useRef(ambientBlurActive);
+    const ambientBlurActiveRef = useRef(ambientBlurActive);
     const ambientCropRef = useRef<AmbientCropRect>(ambientCrop);
     const ambientVisibilityRef = useRef<AmbientVisibilityState>(ambientVisibility);
 
+    useEffect(() => {
+        ambientBlurActiveRef.current = ambientBlurActive;
+    }, [ambientBlurActive]);
+
     // Clear ambient reflection canvases immediately whenever the video source is cleared or replaced
     useEffect(() => {
+        if (!ambientBlurActive) return;
         for (const c of [
             ambientCanvasRef.current, midEdgeCanvasRef.current, nearEdgeCanvasRef.current,
             topAmbientCanvasRef.current, topMidEdgeCanvasRef.current, topNearEdgeCanvasRef.current,
@@ -63,14 +71,14 @@ export const useAmbientCanvasPainter = ({
             const ctx = get2dCtx(c);
             if (c && ctx) ctx.clearRect(0, 0, c.width, c.height);
         }
-    }, [videoSrc]);
+    }, [videoSrc, ambientBlurActive]);
 
     const paintAmbientCanvas = useCallback((video: HTMLVideoElement, force = false) => {
-        if (overlayOnly || draftRef.current.enableAmbientBlur === false || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+        if (overlayOnly || !ambientBlurActiveRef.current || draftRef.current.enableAmbientBlur === false || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
         const { topVisible, botVisible } = ambientVisibilityRef.current;
-        const doTop = topVisible || force;
-        const doBot = botVisible || force;
-        if (!doTop && !doBot) return;
+        if (!topVisible && !botVisible) return;
+        const doTop = topVisible;
+        const doBot = botVisible;
         if (!force && Math.abs(video.currentTime - lastPaintedVideoTimeRef.current) < 0.001) return;
         const now = performance.now();
         const minInterval = isCameraGlidingRef.current ? 64 : 48;
@@ -138,17 +146,18 @@ export const useAmbientCanvasPainter = ({
 
     // Repaint ambient canvases immediately whenever zoom, pan, posY, or blur toggle changes while paused/scrubbing or toggled
     useEffect(() => {
-        const prevBlurEnabled = prevBlurEnabledRef.current;
-        prevBlurEnabledRef.current = draft.enableAmbientBlur;
-        if (draft.enableAmbientBlur === false) return;
-        if (isPlayingRef.current && !isScrubbingRef.current && prevBlurEnabled === draft.enableAmbientBlur) return;
+        const prevActive = prevBlurActiveRef.current;
+        prevBlurActiveRef.current = ambientBlurActive;
+        if (!ambientBlurActive) return;
+        if (!ambientVisibility.topVisible && !ambientVisibility.botVisible) return;
+        if (isPlayingRef.current && !isScrubbingRef.current && prevActive === ambientBlurActive) return;
         if (!isPlayingRef.current || isScrubbingRef.current) {
             ambientCropRef.current = ambientCrop;
             ambientVisibilityRef.current = ambientVisibility;
         }
         const video = getActiveVideo();
         if (video) paintAmbientCanvas(video, true);
-    }, [ambientCrop, ambientVisibility, draft.zoom, draft.posX, draft.posY, draft.defaultFramingByRatio, draft.aspectRatio, draft.enableAmbientBlur, isPlayingRef, isScrubbingRef, getActiveVideo, paintAmbientCanvas]);
+    }, [ambientBlurActive, ambientCrop, ambientVisibility, draft.zoom, draft.posX, draft.posY, draft.defaultFramingByRatio, draft.aspectRatio, draft.enableAmbientBlur, isPlayingRef, isScrubbingRef, getActiveVideo, paintAmbientCanvas]);
 
     return {
         ambientCropRef,

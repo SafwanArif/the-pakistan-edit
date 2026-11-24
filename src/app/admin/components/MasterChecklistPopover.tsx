@@ -10,6 +10,7 @@ import {
     autoPadToMonetisationThreshold,
     resolveSceneFadeDurations,
     getTimelineStructure,
+    switchVideoAspectRatio,
     clamp,
 } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
@@ -117,7 +118,7 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
             detail: `Current aspect: ${draft.aspectRatio} (Creator Rewards requires vertical 9:16)`,
             passed: draft.aspectRatio === "9:16",
             fixLabel: "Set 9:16",
-            onFix: (d) => ({ ...d, aspectRatio: "9:16" }),
+            onFix: (d) => switchVideoAspectRatio(d, "9:16"),
         },
         {
             id: "rewards-transform",
@@ -182,10 +183,12 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
             id: "kinetic-motion",
             category: "psychology",
             label: "2026/2027 Kinetic Editorial Motion",
-            detail: draft.enableMotion !== false ? "Wordmark, headline & slash motion active" : "Static motion disabled",
-            passed: draft.enableMotion !== false,
+            detail: draft.enableMotion !== false && (draft.motionWordmark !== false || draft.motionText !== false)
+                ? "Wordmark, headline & slash motion active"
+                : "Static motion disabled",
+            passed: draft.enableMotion !== false && (draft.motionWordmark !== false || draft.motionText !== false),
             fixLabel: "Enable",
-            onFix: (d) => ({ ...d, enableMotion: true }),
+            onFix: (d) => ({ ...d, enableMotion: true, motionWordmark: true, motionText: true }),
         },
         {
             id: "branded-outro",
@@ -223,8 +226,9 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         const rect = parent.getBoundingClientRect();
         const width = 360;
         const maxLeft = Math.max(12, window.innerWidth - width - 12);
+        const maxTop = Math.max(12, window.innerHeight - 400);
         el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
-        el.style.top = `${clamp(rect.bottom + 6, 12, window.innerHeight - 400)}px`;
+        el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
     }, []);
 
     return (
@@ -237,6 +241,8 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
                 top: "96px",
                 left: "12px",
                 width: "min(360px, calc(100vw - 24px))",
+                maxHeight: "calc(100dvh - 24px)",
+                overflowY: "auto",
                 background: "var(--ui-bg-popover)",
                 border: "1px solid var(--ui-accent)",
                 boxShadow: "0 14px 36px rgba(0,0,0,0.85)",

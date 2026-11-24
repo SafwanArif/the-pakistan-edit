@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { useEditorialSelection } from "../hooks/useEditorialSelection";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { DraftResolver, VideoDraftResolver } from "../utils/dataAccessors";
 import { FormatButton } from "./EditorialTools";
 import { Draft, VideoDraft, PostMode } from "../../../types/news";
@@ -31,6 +32,38 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     activeSceneTime = 0,
 }) => {
     const { selection } = useEditorialSelection();
+    const isMobile = useMediaQuery("(max-width: 768px)");
+    const stateRef = useRef({
+        postMode,
+        carouselDraft,
+        onCarouselChange,
+        videoDraft,
+        onVideoChange,
+        activeSceneTime,
+        fieldId: selection?.fieldId ?? "",
+    });
+    useEffect(() => {
+        stateRef.current = {
+            postMode,
+            carouselDraft,
+            onCarouselChange,
+            videoDraft,
+            onVideoChange,
+            activeSceneTime,
+            fieldId: selection?.fieldId ?? "",
+        };
+    });
+
+    const handleUpdate = useCallback((newVal: string) => {
+        const s = stateRef.current;
+        if (!s.fieldId) return;
+        const videoMode = s.postMode === 'video' || s.fieldId.startsWith('video-');
+        if (videoMode) {
+            s.onVideoChange(VideoDraftResolver.set(s.fieldId, newVal, s.videoDraft, s.activeSceneTime));
+        } else {
+            s.onCarouselChange(DraftResolver.set(s.fieldId, newVal, s.carouselDraft));
+        }
+    }, []);
 
     if (!selection) return null;
 
@@ -40,7 +73,6 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
         ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime)
         : (DraftResolver.get(selection.fieldId, carouselDraft) as string);
     
-    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
     const flipBelow = !isMobile && selection.y < 64;
     const skyboxTop = isMobile ? '5px' : (flipBelow ? selection.bottom + 8 : selection.y);
     const skyboxLeft = isMobile
@@ -49,16 +81,9 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
             ? Math.min(Math.max(selection.x, 160), window.innerWidth - 160)
             : selection.x);
 
-    const handleUpdate = (newVal: string) => {
-        if (isVideo) {
-            onVideoChange(VideoDraftResolver.set(selection.fieldId, newVal, videoDraft, activeSceneTime));
-        } else {
-            onCarouselChange(DraftResolver.set(selection.fieldId, newVal, carouselDraft));
-        }
-    };
-
     return (
         <div 
+            data-editorial-popover="true"
             className="tpe-selection-popover"
             style={{ 
                 position: 'fixed',

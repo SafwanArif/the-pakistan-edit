@@ -322,6 +322,7 @@ export const evaluateSingleCueSpin = (
 
 /** Resolves the active emblem cue state across all scheduled cues for the current playback time. */
 export const getLogoEmblemState = (elapsed: number, cfg?: LogoMotionConfig): EmblemCueState => {
+    if (cfg?.enableLogo === false) return REST_CUE_STATE;
     const cues = cfg?.starCues ?? DEFAULT_STAR_CUES;
     if (!cues.length) return REST_CUE_STATE;
     const morphDur = clamp(cfg?.morphDuration ?? 0.45, 0.15, 2.0);

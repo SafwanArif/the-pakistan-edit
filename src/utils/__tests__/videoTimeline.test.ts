@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultVideoDraft, getTopBoxOffsetY, type VideoDraft, type VideoKeyframe } from "../../types/news";
+import { createDefaultVideoDraft, getTopBoxOffsetY, has45LetterboxFraming, switchVideoAspectRatio, type VideoDraft, type VideoKeyframe } from "../../types/news";
 import {
     autoPadToMonetisationThreshold,
     calculatePsychologyPacedScenes,
@@ -14,6 +14,9 @@ import {
     mediaTimeToTimelineTime,
     parseTimeInput,
     formatTimecode,
+    formatPreciseTimecode,
+    resolveKeyframeSpan,
+    snapTimeToSourceFrame,
     nudgeTimeToFrame,
     timelineTimeToMediaTime,
     wrapMediaTime,
@@ -31,19 +34,22 @@ import {
     evaluateEmblemCue,
     evaluateSingleCueSpin,
     getCueTotalDuration,
+    getLogoEmblemState,
     getStarAnimState,
     getStarDotTransform,
 } from "../starMorphMath";
 import { getKeyframeTelemetryTint, resolveKeyframeJumpStop } from "../../app/admin/utils/keyframeTelemetry";
 import { resolveStudioShortcutSeek } from "../../app/admin/hooks/useStudioShortcuts";
-import { VideoDraftResolver } from "../../app/admin/utils/dataAccessors";
+import { DraftResolver, VideoDraftResolver } from "../../app/admin/utils/dataAccessors";
+import { consumeNdjsonStream } from "../../app/admin/utils/ndjsonStream";
+import { createDefaultDraft } from "../../types/news";
 import { parseScrubPillInput } from "../../app/admin/components/ScrubPillSlider";
 import { resolveSceneSubtitleSeekTime } from "../../app/admin/components/TimelineStoryboard";
 import { normalizeHydratedVideoDraft } from "../../app/admin/hooks/useVideoDraftState";
 import { sanitize, getAnchorKeyword } from "../../app/admin/utils/textUtils";
 import { build45BoxHExpr, build45ScaleExpr, buildTopOffsetYExpr } from "../../lib/server/ffmpegFilters";
 import { buildSceneFilterStages } from "../../lib/server/ffmpegSceneGraph";
-import { createByteLimitTransform } from "../../lib/server/videoMedia";
+import { classifyFrameTimestamps, computeExportVbvCeiling, createByteLimitTransform, parseVideoFrameRate, parseWhisperProgressLine } from "../../lib/server/videoMedia";
 
 const makeDraft = (overrides: Partial<VideoDraft> = {}): VideoDraft => ({
     ...createDefaultVideoDraft(),
@@ -58,10 +64,12 @@ describe("parseTimeInput", () => {
     });
 
     describe("keyframe timecode precision", () => {
-        it("formats timecodes to four decimal places", () => {
-            expect(formatTimecode(0)).toBe("00:00.0000");
-            expect(formatTimecode(75.5)).toBe("01:15.5000");
-            expect(formatTimecode(75.5166666667)).toBe("01:15.5167");
+        it("formats compact transport timecodes to MM:SS.d and precise keyframe timecodes to MM:SS.ssss", () => {
+            expect(formatTimecode(0)).toBe("00:00.0");
+            expect(formatTimecode(75.5)).toBe("01:15.5");
+            expect(formatPreciseTimecode(0)).toBe("00:00.0000");
+            expect(formatPreciseTimecode(75.5)).toBe("01:15.5000");
+            expect(formatPreciseTimecode(75.5166666667)).toBe("01:15.5167");
         });
 
         it("nudge values at 30 fps remain frame quantized", () => {
@@ -76,7 +84,7 @@ describe("parseTimeInput", () => {
             expect(nudgeTimeToFrame(manual, 1, 60)).toBeCloseTo(75.51666666666667, 10);
         });
 
-        it("uses exact PTS values when nudging VFR source frame indices", () => {
+        it("uses exact PTS values when snapping and nudging VFR source frame indices", () => {
             const vfrIndex = {
                 mediaUrl: "/api/video/ingest?id=media-test.mp4",
                 fps: 60,
@@ -88,6 +96,7 @@ describe("parseTimeInput", () => {
                 keyframes: [0, 3],
                 pts: [0, 0.034, 0.083, 0.142, 0.200],
             };
+            expect(snapTimeToSourceFrame(0.09, 60, vfrIndex)).toBeCloseTo(0.083, 10);
             expect(nudgeTimeToFrame(0.083, -1, 60, vfrIndex)).toBeCloseTo(0.034, 10);
             expect(nudgeTimeToFrame(0.083, 1, 60, vfrIndex)).toBeCloseTo(0.142, 10);
         });
@@ -151,15 +160,35 @@ describe("interpolateKeyframe", () => {
         });
     });
 
-    it("interpolates smoothly between keyframes and respects snap", () => {
-        const kfs = [
+    it("interpolates smoothly between keyframes, holds letterbox posY across FILL transitions, and respects snap", () => {
+        const letterboxKfs = [
             { id: "k1", time: 0, zoom: 0, posX: 50, posY: 100, easing: "smooth" as const },
-            { id: "k2", time: 10, zoom: 100, posX: 0, posY: 0, easing: "smooth" as const },
+            { id: "k2", time: 10, zoom: 50, posX: 0, posY: 0, easing: "smooth" as const },
         ];
-        const mid = interpolateKeyframe(kfs, 5);
-        expect(mid.zoom).toBeCloseTo(50, 5);
-        expect(mid.posX).toBeCloseTo(25, 5);
-        expect(mid.posY).toBeCloseTo(50, 5);
+        const midLetterbox = interpolateKeyframe(letterboxKfs, 5);
+        expect(midLetterbox.zoom).toBeCloseTo(25, 5);
+        expect(midLetterbox.posX).toBeCloseTo(25, 5);
+        expect(midLetterbox.posY).toBeCloseTo(50, 5);
+
+        // FILL (100%, posY undefined/100) -> CONTAIN (0%, CTR posY=50) holds posY=50 so top & bottom pull in 50/50
+        const fillToCenter = [
+            { id: "f1", time: 0, zoom: 100, posX: 50, easing: "smooth" as const },
+            { id: "f2", time: 10, zoom: 0, posX: 50, posY: 50, easing: "smooth" as const },
+        ];
+        const midFillToCenter = interpolateKeyframe(fillToCenter, 5);
+        expect(midFillToCenter.zoom).toBeCloseTo(50, 5);
+        expect(midFillToCenter.posX).toBeCloseTo(50, 5);
+        expect(midFillToCenter.posY).toBe(50);
+
+        // CONTAIN (0%, CTR posY=50) -> FILL (100%) holds posY=50 so top & bottom expand outward 50/50
+        const centerToFill = [
+            { id: "c1", time: 0, zoom: 0, posX: 50, posY: 50, easing: "smooth" as const },
+            { id: "c2", time: 10, zoom: 100, posX: 50, easing: "smooth" as const },
+        ];
+        const midCenterToFill = interpolateKeyframe(centerToFill, 5);
+        expect(midCenterToFill.zoom).toBeCloseTo(50, 5);
+        expect(midCenterToFill.posX).toBeCloseTo(50, 5);
+        expect(midCenterToFill.posY).toBe(50);
 
         const snapKfs = [
             { id: "k1", time: 0, zoom: 10, posX: 20, posY: 100, easing: "smooth" as const },
@@ -767,5 +796,219 @@ describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic box
             },
         }).pipeThrough(createByteLimitTransform(10));
         await expect(new Response(overLimit).arrayBuffer()).rejects.toThrow(/exceeds/i);
+    });
+});
+
+describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect Migration)", () => {
+    it("parses broadcast frame rates accurately and rejects broken container timebases (>125fps)", () => {
+        expect(parseVideoFrameRate("30000/1001", "30000/1001")).toEqual({ exactFps: 29.97, nominalFps: 30 });
+        expect(parseVideoFrameRate("24000/1001", "24000/1001")).toEqual({ exactFps: 23.976, nominalFps: 24 });
+        expect(parseVideoFrameRate("60000/1001", "60000/1001")).toEqual({ exactFps: 59.94, nominalFps: 60 });
+        expect(parseVideoFrameRate("90000/1", "30/1")).toEqual({ exactFps: 30, nominalFps: 30 });
+        expect(parseVideoFrameRate("90000/1", "90000/1")).toEqual({ exactFps: 30, nominalFps: 30 });
+    });
+
+    it("classifies 29.97fps timebase jitter as CFR while flagging genuine VFR clips", () => {
+        // Simulate 29.97fps frames in 1/90000 container timebase (3003 +/- 3 ticks -> ~0.00033s jitter)
+        const ntsc2997 = Array.from({ length: 120 }, (_, i) => Number((i * (1001 / 30000) + (i % 3 === 0 ? 0.0003 : 0)).toFixed(6)));
+        expect(classifyFrameTimestamps(ntsc2997).cfr).toBe(true);
+
+        const genuineVfr = [0, 0.016, 0.052, 0.068, 0.125, 0.141, 0.210, 0.226];
+        expect(classifyFrameTimestamps(genuineVfr).cfr).toBe(false);
+    });
+
+    it("computes H.264 Level 4.2 VBV ceilings with 16Mbps broadcast floor and 50Mbps cap", () => {
+        expect(computeExportVbvCeiling(undefined)).toBeNull();
+        expect(computeExportVbvCeiling(4_000_000)).toEqual({ maxrateKbps: 16_000, bufsizeKbps: 32_000 });
+        expect(computeExportVbvCeiling(20_000_000)).toEqual({ maxrateKbps: 30_000, bufsizeKbps: 60_000 });
+        expect(computeExportVbvCeiling(80_000_000)).toEqual({ maxrateKbps: 50_000, bufsizeKbps: 100_000 });
+    });
+
+    it("honours enableLogo: false in getLogoEmblemState during live playback and scrubbing", () => {
+        const disabled = getLogoEmblemState(0.5, { enableLogo: false, starCues: [{ id: "s0", time: 0 }] });
+        expect(disabled).toEqual({ shapeA: "dot", shapeB: "dot", mix: 0, expandFactor: 0, angleDeg: 0 });
+    });
+
+    it("migrates both POST and PRE snap keyframe zoom/posY cleanly on aspect ratio switch", () => {
+        const draft45 = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 0,
+            posX: 40,
+            posY: 60,
+            keyframes: [
+                {
+                    id: "k1",
+                    time: 4,
+                    zoom: 0,
+                    posX: 50,
+                    posY: 50,
+                    easing: "snap",
+                    pre: { time: 3, zoom: 0, posX: 25, posY: 80 },
+                },
+            ],
+        });
+        const switched916 = switchVideoAspectRatio(draft45, "9:16");
+        expect(switched916.aspectRatio).toBe("9:16");
+        expect(switched916.zoom).toBe(100);
+        const kf = switched916.keyframes?.[0];
+        expect(kf?.zoom).toBe(100);
+        expect(kf?.posY).toBeUndefined();
+        if (kf?.easing === "snap") {
+            expect(kf.pre?.zoom).toBe(100);
+            expect(kf.pre?.posY).toBeUndefined();
+        }
+    });
+
+    it("migrates legacy /api/video/ingest/frame-index?name=... URLs on draft hydration", () => {
+        const hydrated = normalizeHydratedVideoDraft({
+            sourceFrameLogUrl: "/api/video/ingest/frame-index?name=media-123.mp4.tpe-frame-index.json",
+        });
+        expect(hydrated.sourceFrameLogUrl).toBe("/api/video/ingest?frameIndex=media-123.mp4.tpe-frame-index.json");
+    });
+
+    it("deactivates 4:5 ambient blur completely in FILL (>=100%) across DOM detection and FFmpeg filtergraph", () => {
+        const fillDraft = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 100,
+            defaultFramingByRatio: { "4:5": { zoom: 100, posX: 50, posY: 100 } },
+            enableAmbientBlur: true,
+            keyframes: [],
+        });
+        expect(has45LetterboxFraming(fillDraft)).toBe(false);
+        expect(has45LetterboxFraming({ ...fillDraft, aspectRatio: "9:16" })).toBe(false);
+
+        // Keyframe gliding 100% -> 140% (always FILL) must still report false and emit zero FFmpeg blur filters
+        const fillPunchDraft = makeDraft({
+            ...fillDraft,
+            keyframes: [
+                { id: "k1", time: 0, zoom: 100, posX: 50, easing: "smooth" },
+                { id: "k2", time: 5, zoom: 140, posX: 50, easing: "smooth" },
+            ],
+        });
+        expect(has45LetterboxFraming(fillPunchDraft)).toBe(false);
+        const stage = buildSceneFilterStages({
+            index: 0,
+            scene: fillPunchDraft.scenes[0]!,
+            scenes: fillPunchDraft.scenes,
+            draft: fillPunchDraft,
+            start: 0,
+            duration: 5,
+            width: 1080,
+            height: 1350,
+            targetFps: 30,
+            is45: true,
+            isImage: false,
+            hasReHook: false,
+            setupIdx: 1,
+            srcWidth: 1920,
+            srcHeight: 1080,
+            srcHasAudio: true,
+            mediaIdx: 0,
+            overlayIdx: 1,
+            customLoopVideoSource: null,
+            customLoopAudioSource: null,
+            loopTrim: "",
+            aLoopTrim: "",
+        });
+        expect(stage.filters.some((f) => f.includes("boxblur") || f.includes("bg_spill"))).toBe(false);
+
+        // If any keyframe dips below 100% (POST or snap PRE), ambient blur remains eligible
+        const mixedDraft = makeDraft({
+            ...fillDraft,
+            keyframes: [{ id: "k3", time: 3, zoom: 100, posX: 50, easing: "snap", pre: { zoom: 0, posX: 50, posY: 100 } }],
+        });
+        expect(has45LetterboxFraming(mixedDraft)).toBe(true);
+    });
+
+    it("parses whisper.cpp -pp progress lines and timestamped transcript lines into percentages", () => {
+        expect(parseWhisperProgressLine("whisper_print_progress_callback: progress =  45%", 60)).toBe(45);
+        expect(parseWhisperProgressLine("whisper_print_progress_callback: progress = 100%", 60)).toBe(100);
+        expect(parseWhisperProgressLine("[00:00:12.000 --> 00:00:30.000]  Hello Pakistan", 60)).toBe(50);
+        expect(parseWhisperProgressLine("whisper_init_from_file_with_params: loading model", 60)).toBeNull();
+    });
+
+    it("atomically patches Carousel slide fields for Slide 1 and Slide 2+ via DraftResolver.patchSlide", () => {
+        const base = createDefaultDraft();
+        const patchedS1 = DraftResolver.patchSlide(1, { image: "hero.png", imageWidth: 1920, imageHeight: 1080, imageZoom: 120 }, base);
+        expect(patchedS1.image).toBe("hero.png");
+        expect(patchedS1.imageWidth).toBe(1920);
+        expect(patchedS1.imageZoom).toBe(120);
+        expect(patchedS1.slideAssets).toEqual({});
+
+        const patchedS2 = DraftResolver.patchSlide(2, { image: "s2.png", imagePosX: 35, snapMode: "width" }, patchedS1);
+        expect(patchedS2.image).toBe("hero.png");
+        expect(patchedS2.slideAssets?.[2]).toEqual({ image: "s2.png", imagePosX: 35, snapMode: "width" });
+    });
+
+    it("streams multi-chunk NDJSON responses with split UTF-8 lines and trailing buffer flush", async () => {
+        const enc = new TextEncoder();
+        const chunks = [
+            enc.encode('{"stage":"A","percent":10}\n{"stage":'),
+            enc.encode('"B","percent":55}\n{"stage":"DONE","percent":100}'),
+        ];
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                for (const c of chunks) controller.enqueue(c);
+                controller.close();
+            },
+        });
+        const events: Array<{ stage: string; percent: number }> = [];
+        await consumeNdjsonStream<{ stage: string; percent: number }>(new Response(stream), (evt) => events.push(evt));
+        expect(events).toEqual([
+            { stage: "A", percent: 10 },
+            { stage: "B", percent: 55 },
+            { stage: "DONE", percent: 100 },
+        ]);
+    });
+
+    it("resolves canonical keyframe spans across smooth glides, split pre.time holds, and FILL <-> CONTAIN posY stability", () => {
+        const kfs: VideoKeyframe[] = [
+            { id: "k2", time: 8, zoom: 120, posX: 60, posY: 100, easing: "snap", pre: { time: 6, zoom: 0, posX: 40, posY: 50 } },
+            { id: "k1", time: 2, zoom: 100, posX: 50, posY: 100, easing: "smooth" },
+        ];
+        // Unsorted input still resolves [2, 6] FILL(100%, posY=100) -> CONTAIN(0%, posY=50) holding posY=50 throughout
+        expect(resolveKeyframeSpan(kfs, 4)).toEqual({
+            kind: "glide",
+            gStart: 2,
+            gEnd: 6,
+            start: { zoom: 100, posX: 50, posY: 50 },
+            end: { zoom: 0, posX: 40, posY: 50 },
+        });
+        // Dwell hold across [6, 8) stays constant at pre state
+        expect(resolveKeyframeSpan(kfs, 7)).toEqual({
+            kind: "constant",
+            framing: { zoom: 0, posX: 40, posY: 50 },
+        });
+        // At cut t=8, snaps to post state
+        expect(resolveKeyframeSpan(kfs, 8)).toEqual({
+            kind: "constant",
+            framing: { zoom: 120, posX: 60, posY: 100 },
+        });
+    });
+
+    it("keeps buildTopOffsetYExpr and build45BoxHExpr in parity across unsorted FILL -> CONTAIN + pre.time dwell curves", () => {
+        const draft = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 100,
+            posX: 50,
+            posY: 100,
+            keyframes: [
+                { id: "k2", time: 6, zoom: 100, posX: 50, posY: 100, easing: "snap", pre: { time: 4, zoom: 0, posX: 50, posY: 50 } },
+                { id: "k1", time: 0, zoom: 100, posX: 50, posY: 100, easing: "smooth" },
+            ],
+        });
+        const hContain = 608;
+        const boxInfo = build45BoxHExpr(draft, 0, 6, 1350, hContain);
+        const topInfo = buildTopOffsetYExpr(draft, 0, 6, 1350, hContain, true);
+
+        expect(boxInfo.isConstant).toBe(false);
+        expect(boxInfo.minH).toBeCloseTo(hContain, 0);
+        expect(boxInfo.maxH).toBeCloseTo(1350, 0);
+        // Glide [0, 4] + dwell [4, 6) both hold posY=50, so topOffsetY reaches exact center (371px) instead of drifting to 0px
+        expect(topInfo.isConstant).toBe(false);
+        expect(topInfo.minY).toBeCloseTo(0, 0);
+        expect(topInfo.maxY).toBeCloseTo((1350 - hContain) / 2, 0);
+        expect(topInfo.expr).toContain("if(lt(t,4.000),");
+        expect(topInfo.expr).toContain("if(lt(t,6.000),371.0000,");
     });
 });

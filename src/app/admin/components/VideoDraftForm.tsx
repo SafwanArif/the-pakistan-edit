@@ -56,9 +56,9 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     const assetContainerRef = useClickOutside(() => {
         setIsAssetTrayOpen(false);
         setShowLinkInput(false);
-    }, undefined, isAssetTrayOpen);
+    }, '[data-editorial-popover="true"]', isAssetTrayOpen);
     const exportContainerRef = useClickOutside(() => setIsExportMenuOpen(false), undefined, isExportMenuOpen);
-    const headerRowRef = useClickOutside(() => setFocusedField(null), undefined, focusedField !== null);
+    const headerRowRef = useClickOutside(() => setFocusedField(null), '[data-editorial-popover="true"]', focusedField !== null);
 
     const hasVideo = !!draft.videoUrl;
     const sceneRoleLabel = isOutro ? "🏁 OUTRO" : getSceneRoleLabel(draft.scenes, activeSceneIndex);
@@ -96,7 +96,16 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
         revokePreviousBlob();
         void set('tpe_video_blob', undefined);
         const videoName = clean.split('/').pop() || "Remote Video";
-        onChange({ ...draft, videoUrl: clean, videoName });
+        onChange({
+            ...draft,
+            videoUrl: clean,
+            videoName,
+            videoDuration: undefined,
+            sourceFps: undefined,
+            sourceFrameLogUrl: undefined,
+            sourceFrameIndex: undefined,
+            sourceMediaInfo: undefined,
+        });
         detectAspectRatioFromMedia(clean, videoName);
         setShowLinkInput(false);
         setIsAssetTrayOpen(false);
@@ -106,7 +115,18 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     const handleClearVideo = () => {
         revokePreviousBlob();
         void set('tpe_video_blob', undefined);
-        onChange({ ...draft, videoUrl: "", videoName: "", sourceName: "", creditName: "" });
+        onChange({
+            ...draft,
+            videoUrl: "",
+            videoName: "",
+            videoDuration: undefined,
+            sourceFps: undefined,
+            sourceFrameLogUrl: undefined,
+            sourceFrameIndex: undefined,
+            sourceMediaInfo: undefined,
+            sourceName: "",
+            creditName: "",
+        });
     };
 
     const updateActiveSceneText = (patch: { title?: string; subtitle?: string }) => {
@@ -222,7 +242,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                     <div className={`${isAssetTrayOpen ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>
                         <div className="tpe-flex-row" style={{ gap: '6px' }}>
                             <label className="tpe-asset-btn tpe-upload-label" title="Upload Video File (.mp4, .mov, .webm)" aria-label="Upload Video File">
-                                <input type="file" className="tpe-sr-only" accept="video/mp4,video/quicktime,video/webm" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} />
+                                <input type="file" className="tpe-sr-only" accept="video/mp4,video/quicktime,video/webm" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); e.currentTarget.value = ''; }} />
                                 <UploadIcon />
                             </label>
                             <button type="button" aria-pressed={showLinkInput} aria-label="Paste Video URL" onClick={() => setShowLinkInput(!showLinkInput)} className="tpe-asset-btn" data-active={showLinkInput} title="Paste Video URL"><LinkIcon /></button>

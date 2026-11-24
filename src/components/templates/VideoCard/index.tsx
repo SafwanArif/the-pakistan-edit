@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
+import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming, has45LetterboxFraming } from "../../../types/news";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { TPEVectorLogo, type LogoMotionConfig } from "../TPEVectorLogo";
 import { HighlightedText } from "../NewsCard/HighlightedText";
@@ -97,7 +97,8 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
 
     const defaultFraming = useMemo(
         () => getDefaultVideoFraming(draft, draft.aspectRatio),
-        [draft]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [draft.aspectRatio, draft.defaultFramingByRatio, draft.zoom, draft.posX, draft.posY]
     );
     const cardFraming = useMemo(
         () => pausedFramingOverride ?? (draft.keyframes?.length
@@ -108,7 +109,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
 
     const { effectiveScale, containerHeightPx, H_contain } = useMemo(() => {
         if (!is45) {
-            return { effectiveScale: Math.max(0.1, (cardFraming.zoom ?? 100) / 100), containerHeightPx: dimensions.height, H_contain: dimensions.height };
+            return { effectiveScale: Math.max(1.0, (cardFraming.zoom ?? 100) / 100), containerHeightPx: dimensions.height, H_contain: dimensions.height };
         }
         const r = mediaNaturalAspect > 0 ? mediaNaturalAspect : (16 / 9);
         const H_cont = Math.min(dimensions.height, dimensions.width / r);
@@ -125,17 +126,20 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
 
     const panXShift = is45 ? (0.5 - ((cardFraming.posX ?? 50) / 100)) * (effectiveScale - 1) * dimensions.width : 0;
     const topOffsetY = is45 ? getTopBoxOffsetY(cardFraming.posY, dimensions.height, containerHeightPx) : 0;
+    const mediaOffsetY45 = is45 ? topOffsetY - Math.max(0, H_contain * effectiveScale - containerHeightPx) / 2 : 0;
+    const has45Letterbox = useMemo(() => has45LetterboxFraming(draft), [draft]);
+    const ambientBlurActive = is45 && !overlayOnly && draft.enableAmbientBlur !== false && has45Letterbox;
     const ambientVisibility = useMemo(() => ({
-        topVisible: is45 && topOffsetY > 2,
-        botVisible: is45 && topOffsetY + containerHeightPx < dimensions.height - 2,
-    }), [is45, topOffsetY, containerHeightPx, dimensions.height]);
+        topVisible: ambientBlurActive && topOffsetY > 2,
+        botVisible: ambientBlurActive && topOffsetY + containerHeightPx < dimensions.height - 2,
+    }), [ambientBlurActive, topOffsetY, containerHeightPx, dimensions.height]);
     const ambientCrop = useMemo(() => {
-        if (!is45 || effectiveScale <= 1) return { xFrac: 0, wFrac: 1, yFrac: 0, hFrac: 1 };
+        if (!ambientBlurActive || effectiveScale <= 1) return { xFrac: 0, wFrac: 1, yFrac: 0, hFrac: 1 };
         const wFrac = Math.min(1, 1 / effectiveScale);
         const xFrac = Math.max(0, Math.min(1 - wFrac, 0.5 - panXShift / (dimensions.width * effectiveScale) - wFrac / 2));
         const hFrac = Math.min(1, containerHeightPx / Math.max(1, H_contain * effectiveScale));
         return { xFrac, wFrac, yFrac: (1 - hFrac) / 2, hFrac };
-    }, [is45, effectiveScale, panXShift, dimensions.width, containerHeightPx, H_contain]);
+    }, [ambientBlurActive, effectiveScale, panXShift, dimensions.width, containerHeightPx, H_contain]);
 
     const clipWrapperRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
@@ -156,12 +160,13 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         currentTime,
         effectiveMuted,
         overlayOnly,
+        ambientBlurActive,
         ambientCrop,
         ambientVisibility,
         onTimeUpdate,
         onAspectDetected: setMediaNaturalAspect
     });
-    const zoomScale = Math.max(0.1, (cardFraming.zoom ?? 100) / 100);
+    const zoomScale = Math.max(1.0, (cardFraming.zoom ?? 100) / 100);
     const posX = cardFraming.posX ?? 50;
     const rSafe = mediaNaturalAspect > 0 ? mediaNaturalAspect : 16 / 9;
     const coverH = Math.max(dimensions.height, dimensions.width / rSafe);
@@ -209,7 +214,8 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const sourceText = activeScene?.sourceName || draft.sourceName;
     const totalDuration = useMemo(
         () => getTotalVideoDuration(draft),
-        [draft]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [draft.scenes, draft.enableOutro, draft.outroDuration]
     );
     const progressPercent = Math.min(100, Math.max(0, (currentTime / (totalDuration || 1)) * 100));
     const hookFade = getHookTransitionFade(draft, currentTime);
@@ -276,7 +282,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
             <div className="tpe-full-absolute tpe-flex-col" style={{ background: (overlayOnly && !isOutro) ? 'transparent' : '#080808', visibility: isOutro ? 'hidden' : 'visible', pointerEvents: isOutro ? 'none' : undefined }}>
                 {!overlayOnly && hasMedia && (
                     <>
-                        {is45 && draft.enableAmbientBlur !== false && (
+                        {ambientBlurActive && (
                             <div aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 1 }}>
                                 {isImage ? (
                                     <Image
@@ -320,7 +326,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                     referrerPolicy="no-referrer"
                                     onLoad={(e) => { if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) setMediaNaturalAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight); }}
                                     style={is45
-                                        ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${topOffsetY}px, 0) scale(${effectiveScale}) translateZ(0)` }), willChange: 'transform' }
+                                        ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${mediaOffsetY45}px, 0) scale(${effectiveScale}) translateZ(0)` }), willChange: 'transform' }
                                         : { ...fullBleedMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${fullBleedPanX}px, 0, 0) scale(${kenBurnsScale}) translateZ(0)` }), willChange: 'transform' }}
                                 />
                             ) : (
@@ -343,7 +349,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                         onTimeUpdate={handleTimeUpdate}
                                         onEnded={handleEnded}
                                         style={is45
-                                            ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${topOffsetY}px, 0) scale(${effectiveScale}) translateZ(0)` }), willChange: 'transform' }
+                                            ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${mediaOffsetY45}px, 0) scale(${effectiveScale}) translateZ(0)` }), willChange: 'transform' }
                                             : { ...fullBleedMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${fullBleedPanX}px, 0, 0) scale(${zoomScale}) translateZ(0)` }), willChange: 'transform' }}
                                     />
                                     {useStandbyDeck && (
@@ -365,7 +371,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                             onTimeUpdate={handleTimeUpdate}
                                             onEnded={handleEnded}
                                             style={is45
-                                                ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${topOffsetY}px, 0) scale(${effectiveScale}) translateZ(0)` }), pointerEvents: 'none', willChange: 'transform' }
+                                                ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${mediaOffsetY45}px, 0) scale(${effectiveScale}) translateZ(0)` }), pointerEvents: 'none', willChange: 'transform' }
                                                 : { ...fullBleedMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${fullBleedPanX}px, 0, 0) scale(${zoomScale}) translateZ(0)` }), pointerEvents: 'none', willChange: 'transform' }}
                                         />
                                     )}

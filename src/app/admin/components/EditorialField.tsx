@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Draft } from "../../../types/news";
 import { DraftResolver } from "../utils/dataAccessors";
 import { EmojiToolbar } from "./EditorialTools";
@@ -28,10 +28,15 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
 }) => {
     const val = (DraftResolver.get(fieldId, draft) as string) || "";
     const inputId = `input-${fieldId}`;
+    const latestRef = useRef({ fieldId, draft, onChange });
+    useEffect(() => {
+        latestRef.current = { fieldId, draft, onChange };
+    });
 
-    const handleChange = (newVal: string) => {
-        onChange(DraftResolver.set(fieldId, newVal, draft));
-    };
+    const handleChange = useCallback((newVal: string) => {
+        const { fieldId: id, draft: curr, onChange: update } = latestRef.current;
+        update(DraftResolver.set(id, newVal, curr));
+    }, []);
 
     const inputClasses = [
         "tpe-input-field",

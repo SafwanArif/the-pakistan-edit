@@ -49,6 +49,8 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
         if (mode === 'height') baseScale = heightScale;
 
         const dynamicScale = baseScale * z;
+        // Skip mounting the full-res blur(80px) backdrop when the sharp foreground already fills 100% of the card
+        const coversCanvas = dynamicScale >= coverScale - 0.005;
 
         const containerStyle: CSSVarStyle = {
             position: 'absolute', inset: 0, overflow: 'hidden',
@@ -57,14 +59,16 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
 
         return (
             <div style={containerStyle}>
-                {/* Layer 1: Ambient Blurred Backdrop */}
-                <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
-                    objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
-                    filter: 'blur(80px) brightness(0.7)',
-                    transform: `scale(1.2)`,
-                    transformOrigin: 'var(--pos-x) var(--pos-y)',
-                    zIndex: 1, pointerEvents: 'none'
-                }} />
+                {/* Layer 1: Ambient Blurred Backdrop (only mounted when foreground leaves empty margins) */}
+                {!coversCanvas && (
+                    <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
+                        objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
+                        filter: 'blur(80px) brightness(0.7)',
+                        transform: `scale(1.2)`,
+                        transformOrigin: 'var(--pos-x) var(--pos-y)',
+                        zIndex: 1, pointerEvents: 'none'
+                    }} />
+                )}
 
                 {/* Layer 2: Sharp Foreground Asset */}
                 <Image src={bgImage} alt="asset" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
@@ -78,6 +82,7 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
     }
 
     // --- Fallback Standard CSS Mode ---
+    const fallbackCovers = mode !== 'width' && z >= 1;
     const fallbackStyle: CSSVarStyle = {
         position: 'absolute', inset: 0,
         '--zoom': `${z}`, '--pos-x': `${x}%`, '--pos-y': `${y}%`
@@ -85,19 +90,14 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
 
     return (
         <div style={fallbackStyle}>
-            <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
-                objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
-                filter: 'blur(80px) brightness(0.6)',
-                transform: 'scale(1.2)', transformOrigin: 'var(--pos-x) var(--pos-y)',
-                zIndex: 1, pointerEvents: 'none'
-            }} />
-            <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
-                objectFit: mode === 'grid' ? 'cover' : (mode === 'width' ? 'contain' : 'cover'),
-                objectPosition: 'var(--pos-x) var(--pos-y)',
-                filter: 'blur(100px) brightness(0.8)',
-                transform: 'scale(var(--zoom))', transformOrigin: 'var(--pos-x) var(--pos-y)',
-                zIndex: 2, pointerEvents: 'none'
-            }} />
+            {!fallbackCovers && (
+                <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
+                    objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
+                    filter: 'blur(80px) brightness(0.6)',
+                    transform: 'scale(1.2)', transformOrigin: 'var(--pos-x) var(--pos-y)',
+                    zIndex: 1, pointerEvents: 'none'
+                }} />
+            )}
             <Image src={bgImage} alt="asset" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
                 objectFit: mode === 'grid' ? 'cover' : (mode === 'width' ? 'contain' : 'cover'),
                 objectPosition: 'var(--pos-x) var(--pos-y)',

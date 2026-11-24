@@ -6,7 +6,7 @@ import path from "path";
 import type { VideoDraft } from "../../../../types/news";
 import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "../../../../types/news";
 import { VIDEO_FORMAT_CONFIGS } from "../../../../config/omnichannel";
-import { assertDiskHeadroom, CACHE_DIR, createFileWebStream, fileExists, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
+import { assertDiskHeadroom, CACHE_DIR, computeExportVbvCeiling, createFileWebStream, fileExists, probeMediaFile, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
 import { buildAssSubtitles, escapeFfmpegFilterPath } from "../../../../lib/server/ffmpegFilters";
 import { buildSceneFilterStages } from "../../../../lib/server/ffmpegSceneGraph";
 
@@ -14,59 +14,26 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const parseRatio = (rate?: string): number | null => {
-    if (!rate) return null;
-    const [numStr, denStr] = rate.split("/");
-    const num = Number(numStr);
-    const den = denStr ? Number(denStr) : 1;
-    if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0 || num <= 0) return null;
-    return num / den;
-};
-
-const parseFrameRate = (avgRate?: string, rRate?: string): number => {
-    const avg = parseRatio(avgRate);
-    const r = parseRatio(rRate);
-    const raw = (avg && avg <= 125) ? avg : ((r && r <= 125) ? r : 30);
-    if (Math.abs(raw - 23.976) < 0.1) return 24;
-    if (Math.abs(raw - 29.97) < 0.1) return 30;
-    if (Math.abs(raw - 59.94) < 0.1) return 60;
-    return Math.min(120, Math.max(24, Math.round(raw)));
-};
-
-const probeVideoInfo = async (filePath: string, signal?: AbortSignal): Promise<{ width: number; height: number; duration: number; hasAudio: boolean; fps: number; isHdr: boolean }> => {
-    const { stdout } = await spawnExec("ffprobe", [
-        "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate,avg_frame_rate,color_transfer:stream_tags=rotate:stream_side_data=rotation", "-of", "json", filePath,
-    ], { signal, timeoutMs: 30_000 });
-    const parsed = JSON.parse(stdout) as {
-        format?: { duration?: string };
-        streams?: {
-            codec_type?: string;
-            width?: number;
-            height?: number;
-            r_frame_rate?: string;
-            avg_frame_rate?: string;
-            color_transfer?: string;
-            tags?: { rotate?: string };
-            side_data_list?: { rotation?: number | string }[];
-        }[];
-    };
-    const vStream = parsed.streams?.find((s) => s.codec_type === "video");
-    const hasAudio = Boolean(parsed.streams?.some((s) => s.codec_type === "audio"));
-    const codedW = vStream?.width || 1920;
-    const codedH = vStream?.height || 1080;
-    const sideRot = vStream?.side_data_list?.find((sd) => sd.rotation !== undefined)?.rotation;
-    const rawRot = Number(sideRot ?? vStream?.tags?.rotate ?? 0);
-    const isQuarterTurn = Number.isFinite(rawRot) && Math.abs(Math.round(rawRot)) % 180 === 90;
-    const trc = (vStream?.color_transfer || "").toLowerCase();
-    const isHdr = trc === "arib-std-b67" || trc === "smpte2084";
+const probeVideoInfo = async (
+    filePath: string,
+    signal?: AbortSignal
+): Promise<{ width: number; height: number; duration: number; hasAudio: boolean; fps: number; isHdr: boolean; videoBitrate?: number }> => {
+    const { durationSec, hasAudio, mediaInfo } = await probeMediaFile(filePath, { signal });
     return {
-        width: isQuarterTurn ? codedH : codedW,
-        height: isQuarterTurn ? codedW : codedH,
-        duration: Number(parsed.format?.duration || 0) || 60,
+        width: mediaInfo.width,
+        height: mediaInfo.height,
+        duration: durationSec || 60,
         hasAudio,
-        fps: parseFrameRate(vStream?.avg_frame_rate, vStream?.r_frame_rate),
-        isHdr,
+        fps: mediaInfo.nominalFps,
+        isHdr: mediaInfo.isHdr,
+        videoBitrate: mediaInfo.videoBitrate,
     };
+};
+
+const resolveImageExt = (mimeType: string): string => {
+    if (mimeType === "image/jpeg" || mimeType === "image/jpg") return ".jpg";
+    if (mimeType === "image/webp") return ".webp";
+    return ".png";
 };
 
 /** Renders the multi-scene timeline via native FFmpeg (`libx264` + `48kHz AAC`) with zero dropped frames. */
@@ -106,8 +73,13 @@ export async function POST(request: Request) {
         const is45 = draft.aspectRatio === "4:5";
         const is916 = draft.aspectRatio === "9:16";
         const targetFps = masterInfo.fps || 30;
-        const bounds = getSceneBoundaries(scenes);
-        const { hasReHook, storyIdx: setupIdx, storyOffset: setupOffset } = getTimelineStructure(scenes);
+        const quantizedScenes = scenes.map((s) => {
+            const rawDur = Math.min(180, Math.max(0.5, Number(s.duration) || 5));
+            const dur = Math.max(1, Math.round(rawDur * targetFps)) / targetFps;
+            return { ...s, duration: dur };
+        });
+        const bounds = getSceneBoundaries(quantizedScenes);
+        const { hasReHook, storyIdx: setupIdx, storyOffset: setupOffset } = getTimelineStructure(quantizedScenes);
 
         const args: string[] = [];
         const filters: string[] = [];
@@ -121,11 +93,10 @@ export async function POST(request: Request) {
             return p;
         };
 
-        for (let i = 0; i < scenes.length; i++) {
-            const s = scenes[i]!;
+        for (let i = 0; i < quantizedScenes.length; i++) {
+            const s = quantizedScenes[i]!;
             const b = bounds[i]!;
-            const rawDur = Math.min(180, Math.max(0.5, Number(s.duration) || 5));
-            const dur = Math.max(1, Math.round(rawDur * targetFps)) / targetFps;
+            const dur = s.duration;
             const ovBlob = formData.get(`overlay_${i}`);
             if (!(ovBlob instanceof Blob)) {
                 return NextResponse.json({ error: `Missing overlay_${i}` }, { status: 400 });
@@ -139,7 +110,7 @@ export async function POST(request: Request) {
             let srcPath = masterPath;
             let srcInfo = masterInfo;
             if (customMediaBlob instanceof Blob) {
-                const ext = isImage ? ".png" : ".mp4";
+                const ext = isImage ? resolveImageExt(customMediaBlob.type) : ".mp4";
                 srcPath = await saveTempBlob(customMediaBlob, ext);
                 if (isImage) {
                     const probed = await probeVideoInfo(srcPath, request.signal).catch(() => null);
@@ -206,7 +177,7 @@ export async function POST(request: Request) {
             const stage = buildSceneFilterStages({
                 index: i,
                 scene: s,
-                scenes,
+                scenes: quantizedScenes,
                 draft,
                 start: b.start,
                 duration: dur,
@@ -245,7 +216,7 @@ export async function POST(request: Request) {
         }
 
         const segCount = concatInputs.length;
-        const assContent = buildAssSubtitles(draft, scenes, bounds, W, H, is45, is916, masterInfo.duration);
+        const assContent = buildAssSubtitles(draft, quantizedScenes, bounds, W, H, is45, is916, masterInfo.duration);
         const shouldLoudnorm = draft.normalizeAudio !== false && !draft.isMuted && (draft.volume ?? 1) > 0;
         let finalVideoMap = "[vout]";
         let finalAudioMap = "[aout]";
@@ -278,6 +249,7 @@ export async function POST(request: Request) {
         tempFiles.push(outPath);
 
         const renderThreads = String(Math.max(2, os.cpus().length - 2));
+        const vbvCeiling = computeExportVbvCeiling(draft.sourceMediaInfo?.videoBitrate ?? masterInfo.videoBitrate);
         await withExportSlot(() => spawnExec("ffmpeg", [
             "-y", "-hide_banner", "-loglevel", "error",
             ...args,
@@ -287,6 +259,7 @@ export async function POST(request: Request) {
             "-threads", renderThreads,
             "-max_muxing_queue_size", "4096",
             "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-profile:v", "high", "-level", "4.2",
+            ...(vbvCeiling ? ["-maxrate", `${vbvCeiling.maxrateKbps}k`, "-bufsize", `${vbvCeiling.bufsizeKbps}k`] : []),
             "-g", String(targetFps * 2), "-keyint_min", String(targetFps * 2), "-sc_threshold", "0",
             "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
             "-r", String(targetFps),

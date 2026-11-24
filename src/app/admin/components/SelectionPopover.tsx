@@ -73,12 +73,15 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
         ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime)
         : (DraftResolver.get(selection.fieldId, carouselDraft) as string);
     
-    const flipBelow = !isMobile && selection.y < 64;
-    const skyboxTop = isMobile ? '5px' : (flipBelow ? selection.bottom + 8 : selection.y);
+    const inCommandRibbon = selection.ribbonBottom !== null;
+    const flipBelow = inCommandRibbon || selection.y < 64;
+    const skyboxTop = inCommandRibbon
+        ? selection.ribbonBottom! + 6
+        : (flipBelow ? selection.bottom + 8 : selection.y);
     const skyboxLeft = isMobile
         ? '50%'
         : (typeof window !== 'undefined'
-            ? Math.min(Math.max(selection.x, 160), window.innerWidth - 160)
+            ? Math.min(Math.max(selection.x, 180), window.innerWidth - 180)
             : selection.x);
 
     return (
@@ -89,10 +92,10 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
                 position: 'fixed',
                 left: skyboxLeft, 
                 top: skyboxTop,
-                transform: (isMobile || flipBelow) ? 'translateX(-50%)' : 'translate(-50%, -100%)',
+                transform: flipBelow ? 'translateX(-50%)' : 'translate(-50%, -100%)',
                 pointerEvents: 'auto',
                 userSelect: 'none',
-                marginTop: (isMobile || flipBelow) ? '0' : '-8px',
+                marginTop: flipBelow ? '0' : '-8px',
                 zIndex: 9999
             }}
         >

@@ -26,10 +26,10 @@ interface VideoDraftFormProps {
 
 const textareaBaseStyle: React.CSSProperties = {
     fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', height: '34px',
-    resize: 'none', lineHeight: 1.35, paddingTop: '8px', overflowY: 'auto', whiteSpace: 'pre-wrap'
+    resize: 'none', lineHeight: 1.35, paddingTop: '8px', overflowY: 'auto'
 };
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
-const pipeStyle: React.CSSProperties = { opacity: 0.35, margin: '0 4px', fontSize: '14px', alignSelf: 'center' };
+const pipeStyle: React.CSSProperties = { opacity: 0.35, fontSize: '14px', alignSelf: 'center' };
 const loadingBadgeStyle: React.CSSProperties = {
     fontSize: '9px', fontWeight: 900, color: '#000', background: 'var(--ui-accent)', padding: '3px 8px',
     borderRadius: '4px', letterSpacing: '0.06em', whiteSpace: 'nowrap', boxShadow: '0 0 12px oklch(from var(--ui-accent) l c h / 0.45)',
@@ -161,13 +161,13 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
 
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
-            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={focusedField || undefined} style={{ gap: '10px' }}>
+            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={focusedField || undefined}>
                 <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 <div className="tpe-header-main" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
-                    <div className="tpe-header-tools" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <div {...getElasticProps('category', 1.4, 0.32)}>
-                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, position: 'relative' }}>
+                    <div className="tpe-header-tools">
+                        <div {...getElasticProps('category', 1.4, 0.45)}>
+                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                                 <input id="input-video-category" aria-label="Category" dir="auto" enterKeyHint="done" spellCheck={false} autoComplete="off" className="tpe-input-field tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} onFocus={() => setFocusedField('category')} style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', height: '34px' }} />
                             </div>
                         </div>
@@ -175,7 +175,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                         {!focusedField && <span className="tpe-separator-pipe" style={pipeStyle} aria-hidden="true">|</span>}
 
                         <div {...getElasticProps('headline', 2.4, 0.9)}>
-                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, position: 'relative' }}>
+                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                                 <textarea
                                     id="input-video-headline"
                                     aria-label="Scene headline"
@@ -188,7 +188,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     onChange={(e) => handleHeadlineChange(e.target.value)}
                                     onFocus={() => setFocusedField('headline')}
                                     rows={1}
-                                    style={{ ...textareaBaseStyle, fontWeight: 600, letterSpacing: '0.02em', paddingInlineEnd: '38px' }}
+                                    style={{ ...textareaBaseStyle, fontWeight: 600, letterSpacing: '0.02em' }}
                                 />
                                 <div className="tpe-field-tools" style={fieldToolsStyle}>
                                     <EmojiToolbar fieldId="video-headline" value={currentHeadlineValue} onUpdate={handleHeadlineChange} popDirection="down" />
@@ -199,7 +199,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                         {!focusedField && <span className="tpe-separator-pipe" style={pipeStyle} aria-hidden="true">|</span>}
 
                         <div {...getElasticProps('subtitle', 2.4, 1.15, isOutro)}>
-                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, position: 'relative' }}>
+                            <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                                 <textarea
                                     id="input-video-subtitle"
                                     aria-label="Scene subtitle"
@@ -213,7 +213,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     onChange={(e) => handleSubtitleChange(e.target.value)}
                                     onFocus={() => setFocusedField('subtitle')}
                                     rows={1}
-                                    style={{ ...textareaBaseStyle, opacity: isOutro ? 0.5 : 1, textTransform: 'none', fontWeight: 400, paddingInlineEnd: isOutro ? '8px' : '38px' }}
+                                    style={{ ...textareaBaseStyle, opacity: isOutro ? 0.5 : 1, textTransform: 'none', fontWeight: 400, ...(isOutro ? { paddingInlineEnd: '8px' } : {}) }}
                                 />
                                 {!isOutro && (
                                     <div className="tpe-field-tools" style={fieldToolsStyle}>

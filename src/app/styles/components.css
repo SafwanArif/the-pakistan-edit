@@ -33,6 +33,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-block-start: 10px;
+  padding-inline-end: 38px;
+  white-space: pre-wrap;
   scrollbar-width: none;
   -ms-overflow-style: none;
   
@@ -747,13 +749,50 @@
 @media (width <= 900px) {
   .tpe-desktop-only { display: none; }
 
+  .tpe-header-row {
+    gap: 6px;
+  }
+
+  .tpe-header-tools {
+    gap: 2px;
+  }
+
+  .tpe-separator-pipe {
+    margin-inline: 0;
+  }
+
+  .tpe-header-main .tpe-input-field,
+  .tpe-header-main .tpe-textarea {
+    padding-inline: 4px;
+  }
+
   .tpe-elastic-field-wrapper {
     min-inline-size: 32px;
+  }
+
+  .tpe-elastic-field-wrapper:not(.tpe-field-expanded) .tpe-textarea {
+    padding-inline-end: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .tpe-elastic-field-wrapper.tpe-field-expanded {
     min-inline-size: 0;
     max-inline-size: none;
+  }
+
+  .tpe-elastic-field-wrapper.tpe-field-expanded .tpe-textarea {
+    padding-inline-end: 36px;
+    white-space: pre-wrap;
+  }
+
+  .tpe-selection-popover {
+    max-inline-size: calc(100vw - 16px);
+    flex-wrap: wrap;
+    justify-content: center;
+    padding-inline: 8px;
+    gap: 4px;
   }
 
   .tpe-elastic-field-wrapper.tpe-field-shrunk {

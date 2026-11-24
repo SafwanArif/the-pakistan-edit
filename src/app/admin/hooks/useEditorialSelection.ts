@@ -10,7 +10,8 @@ export const useEditorialSelection = () => {
         text: string, 
         x: number, 
         y: number,
-        bottom: number
+        bottom: number,
+        ribbonBottom: number | null
     } | null>(null);
     const hasSelectionRef = useRef(false);
 
@@ -29,6 +30,8 @@ export const useEditorialSelection = () => {
 
         if (start !== null && end !== null && start !== end) {
             const rect = activeEl.getBoundingClientRect();
+            const ribbon = activeEl.closest('.command-ribbon');
+            const ribbonBottom = ribbon ? Math.round(ribbon.getBoundingClientRect().bottom) : null;
             const fieldId = activeEl.id.replace('input-', '');
             const text = activeEl.value.substring(start, end);
             const x = rect.left + (rect.width / 2);
@@ -36,9 +39,9 @@ export const useEditorialSelection = () => {
             const bottom = rect.bottom;
             hasSelectionRef.current = true;
             setSelection((prev) =>
-                prev && prev.fieldId === fieldId && prev.text === text && prev.x === x && prev.y === y && prev.bottom === bottom
+                prev && prev.fieldId === fieldId && prev.text === text && prev.x === x && prev.y === y && prev.bottom === bottom && prev.ribbonBottom === ribbonBottom
                     ? prev
-                    : { fieldId, text, x, y, bottom }
+                    : { fieldId, text, x, y, bottom, ribbonBottom }
             );
         } else if (hasSelectionRef.current) {
             hasSelectionRef.current = false;

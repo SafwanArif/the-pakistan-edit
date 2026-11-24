@@ -3,8 +3,7 @@ import { Draft } from "../../../types/news";
 import { DraftResolver } from "../utils/dataAccessors";
 import { EmojiToolbar } from "./EditorialTools";
 
-const wrapperStyle: React.CSSProperties = { flex: 1, position: 'relative' };
-const textareaStyle: React.CSSProperties = { paddingInlineEnd: '40px' };
+const wrapperStyle: React.CSSProperties = { flex: 1, minWidth: 0, position: 'relative' };
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
 
 interface EditorialFieldProps {
@@ -76,7 +75,6 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange(e.target.value)}
                         onFocus={onFocus}
                         onBlur={onBlur}
-                        style={textareaStyle}
                     />
                     <div className="tpe-field-tools" style={fieldToolsStyle}>
                         <EmojiToolbar fieldId={fieldId} value={val} onUpdate={handleChange} popDirection="down" />

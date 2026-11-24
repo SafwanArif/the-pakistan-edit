@@ -11,7 +11,8 @@ import { VideoOutroCard } from "./VideoOutroCard";
 import { AmbientBlurStack } from "./AmbientBlurStack";
 import { useVideoElementSync } from "./useVideoElementSync";
 import { useSmoothFramingLoop } from "./useSmoothFramingLoop";
-import { hasNonContiguousVideoCuts } from "./dualDeckHelpers";
+import { shouldUseStandbyDeck } from "./dualDeckHelpers";
+import { useMediaQuery } from "../../../app/admin/hooks/useMediaQuery";
 
 const SCRIM_STYLES: Record<'top' | 'center' | 'bottom', React.CSSProperties> = {
     center: { position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(5,5,5,0.72) 0%, rgba(5,5,5,0.36) 52%, transparent 82%)', pointerEvents: 'none', zIndex: 9 },
@@ -46,6 +47,7 @@ interface VideoCardProps {
     isScrubbing?: boolean;
     playbackMode?: 'play-all' | 'loop-angle';
     currentTime?: number;
+    seekNonce?: number;
     isMuted?: boolean;
     isLoadingStream?: boolean;
     ingestStatus?: string | null;
@@ -63,6 +65,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     isScrubbing = false,
     playbackMode = 'play-all',
     currentTime = 0,
+    seekNonce = 0,
     isMuted = false,
     isLoadingStream = false,
     ingestStatus = null,
@@ -150,6 +153,12 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const botAmbientWrapRef = useRef<HTMLDivElement>(null);
     const logoWordmarkDriveRef = useRef<((elapsedSec: number) => void) | null>(null);
 
+    const isCompactOrTouch = useMediaQuery("(max-width: 900px), (pointer: coarse)");
+    const isImage = activeScene?.mediaType === 'image' || (
+        Boolean(videoSrc) && (videoSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif|svg|avif)(\?.*)?$/i.test(videoSrc))
+    );
+    const useStandbyDeck = !isImage && !overlayOnly && shouldUseStandbyDeck(draft, isCompactOrTouch);
+
     const { videoRef, standbyVideoRef, activeVideoRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
         draft,
         videoSrc,
@@ -158,6 +167,8 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         isOutro,
         playbackMode,
         currentTime,
+        seekNonce,
+        useStandbyDeck,
         effectiveMuted,
         overlayOnly,
         ambientBlurActive,
@@ -171,11 +182,6 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const rSafe = mediaNaturalAspect > 0 ? mediaNaturalAspect : 16 / 9;
     const coverH = Math.max(dimensions.height, dimensions.width / rSafe);
     const coverW = coverH * rSafe;
-    const isImage = activeScene?.mediaType === 'image' || (
-        Boolean(videoSrc) && (videoSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif|svg|avif)(\?.*)?$/i.test(videoSrc))
-    );
-
-    const useStandbyDeck = !isImage && !overlayOnly && hasNonContiguousVideoCuts(draft);
 
     useSmoothFramingLoop({
         draft, is45, isImage, isPlaying, isScrubbing, isOutro, overlayOnly, currentTime, sceneStart, sceneDuration,

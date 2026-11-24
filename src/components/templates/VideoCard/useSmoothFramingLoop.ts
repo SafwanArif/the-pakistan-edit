@@ -2,8 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import {
     VideoDraft,
     clamp,
-    getTransitionAudioGain,
-    getHookTransitionFade,
+    evaluateSceneTransition,
     getTopBoxOffsetY,
     getTotalVideoDuration,
     getDefaultVideoFraming,
@@ -186,8 +185,8 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 return;
             }
 
-            // 2. Native-VSync Cosine Fade Overlay & 120Hz Audio Breath-Dip
-            const fade = getHookTransitionFade(o.draft, liveT);
+            // 2. Native-VSync Cosine Fade Overlay & 120Hz Audio Breath-Dip (single-pass, zero-allocation outside edge windows)
+            const { fade, audioGain } = evaluateSceneTransition(o.draft, liveT);
             const fadeEl = o.fadeOverlayRef.current;
             if (fadeEl && (!fadeEl.style.opacity || Number.isNaN(lastFade) || Math.abs(fade - lastFade) > 0.0005)) {
                 lastFade = fade;
@@ -195,7 +194,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 fadeEl.style.visibility = fade > 0.0005 ? 'visible' : 'hidden';
             }
             if (video && !o.isImage && !video.muted) {
-                const nextVol = clamp((o.draft.volume ?? 1) * getTransitionAudioGain(o.draft, liveT, fade), 0, 1);
+                const nextVol = clamp((o.draft.volume ?? 1) * audioGain, 0, 1);
                 if (Math.abs(video.volume - nextVol) > 0.002) {
                     video.volume = nextVol;
                 }

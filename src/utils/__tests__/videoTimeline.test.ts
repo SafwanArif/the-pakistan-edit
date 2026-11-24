@@ -4,6 +4,7 @@ import {
     autoPadToMonetisationThreshold,
     calculatePsychologyPacedScenes,
     ensureUniqueSceneIds,
+    evaluateSceneTransition,
     getActiveSceneAtTime,
     getHookTransitionFade,
     getTransitionAudioGain,
@@ -19,6 +20,7 @@ import {
     resolveAudioBoundaryModes,
     resolveKeyframeSpan,
     resolveSceneFade,
+    setSceneClipStartOffset,
     snapTimeToSourceFrame,
     nudgeTimeToFrame,
     timelineTimeToMediaTime,
@@ -50,8 +52,9 @@ import { parseScrubPillInput } from "../../app/admin/components/ScrubPillSlider"
 import { resolveSceneSubtitleSeekTime } from "../../app/admin/components/TimelineStoryboard";
 import { normalizeHydratedVideoDraft } from "../../app/admin/hooks/useVideoDraftState";
 import { sanitize, getAnchorKeyword } from "../../app/admin/utils/textUtils";
-import { build45BoxHExpr, build45ScaleExpr, buildTopOffsetYExpr } from "../../lib/server/ffmpegFilters";
+import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildTopOffsetYExpr } from "../../lib/server/ffmpegFilters";
 import { buildSceneFilterStages } from "../../lib/server/ffmpegSceneGraph";
+import { clampMediaTarget, shouldUseStandbyDeck } from "../../components/templates/VideoCard/dualDeckHelpers";
 import { classifyFrameTimestamps, computeExportVbvCeiling, createByteLimitTransform, parseVideoFrameRate, parseWhisperProgressLine } from "../../lib/server/videoMedia";
 
 const makeDraft = (overrides: Partial<VideoDraft> = {}): VideoDraft => ({
@@ -725,7 +728,6 @@ describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic box
 
         const stage = buildSceneFilterStages({
             index: 0,
-            scene: draft.scenes[0]!,
             scenes: draft.scenes,
             draft,
             start: 0,
@@ -735,8 +737,6 @@ describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic box
             targetFps: 30,
             is45: true,
             isImage: false,
-            hasReHook: false,
-            setupIdx: 1,
             srcWidth: 1920,
             srcHeight: 1080,
             srcHasAudio: true,
@@ -755,7 +755,6 @@ describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic box
         const draft = makeDraft({ aspectRatio: "4:5", zoom: 0, posX: 50, posY: 100, enableAmbientBlur: true });
         const stage = buildSceneFilterStages({
             index: 0,
-            scene: { ...draft.scenes[0]!, mediaType: "image" },
             scenes: draft.scenes,
             draft,
             start: 0,
@@ -765,8 +764,6 @@ describe("Portion G Stage 1 regressions (Bug #5 — 4:5 zoom glide & dynamic box
             targetFps: 30,
             is45: true,
             isImage: true,
-            hasReHook: false,
-            setupIdx: 1,
             srcWidth: 1920,
             srcHeight: 1080,
             srcHasAudio: false,
@@ -891,7 +888,6 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
         expect(has45LetterboxFraming(fillPunchDraft)).toBe(false);
         const stage = buildSceneFilterStages({
             index: 0,
-            scene: fillPunchDraft.scenes[0]!,
             scenes: fillPunchDraft.scenes,
             draft: fillPunchDraft,
             start: 0,
@@ -901,8 +897,6 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
             targetFps: 30,
             is45: true,
             isImage: false,
-            hasReHook: false,
-            setupIdx: 1,
             srcWidth: 1920,
             srcHeight: 1080,
             srcHasAudio: true,
@@ -1054,5 +1048,66 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
         // One-sided internal fade (Hook out ON, Story in OFF) uses declick -> steady 1.0 audio gain
         expect(resolveAudioBoundaryModes(outerFadeInDraft.scenes, 0, false).outAudioMode).toBe("declick");
         expect(getTransitionAudioGain(outerFadeInDraft, 3.98, 0.8)).toBe(1);
+    });
+
+    it("clamps Hook/Re-Hook/Story clipStartOffset cleanly and auto-adapts Story duration to avoid silent tail-looping", () => {
+        const draft = makeDraft({
+            videoDuration: 100,
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4 },
+                { id: "rehook-1", title: "R", subtitle: "S", duration: 4 },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 100 },
+            ],
+        });
+        // Hook offset clamps to clipDur - hookDur (96s)
+        const hookClamped = setSceneClipStartOffset(draft, 0, 99.5);
+        expect(hookClamped.scenes[0]?.clipStartOffset).toBe(96);
+
+        // Story offset trims 12.5s off front and auto-adapts Story duration 100s -> 87.5s
+        const storyTrimmed = setSceneClipStartOffset(draft, 2, 12.5);
+        expect(storyTrimmed.scenes[2]?.clipStartOffset).toBe(12.5);
+        expect(storyTrimmed.scenes[2]?.duration).toBe(87.5);
+
+        // Resetting Story offset restores full 100s adapted duration
+        const storyReset = setSceneClipStartOffset(storyTrimmed, 2, undefined);
+        expect(storyReset.scenes[2]?.clipStartOffset).toBeUndefined();
+        expect(storyReset.scenes[2]?.duration).toBe(100);
+
+        // Custom manual Story duration (e.g. 24s) is preserved untouched when nudging Story offset
+        const manualStoryDraft = makeDraft({
+            videoDuration: 100,
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4 },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 24 },
+            ],
+        });
+        const manualTrimmed = setSceneClipStartOffset(manualStoryDraft, 1, 10);
+        expect(manualTrimmed.scenes[1]?.clipStartOffset).toBe(10);
+        expect(manualTrimmed.scenes[1]?.duration).toBe(24);
+    });
+
+    it("enables dual-deck only on desktop non-contiguous timelines, clamps media targets, and skips unity FFmpeg volume filter", () => {
+        const cutDraft = makeDraft({
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4, clipStartOffset: 12 },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 40 },
+            ],
+        });
+        expect(shouldUseStandbyDeck(cutDraft, false)).toBe(true);
+        expect(shouldUseStandbyDeck(cutDraft, true)).toBe(false);
+        expect(clampMediaTarget(105, 100)).toBe(99.99);
+        expect(clampMediaTarget(19.6, 100)).toBeCloseTo(19.6, 5);
+
+        // Single-pass evaluateSceneTransition returns identical frozen object mid-scene (zero allocation)
+        const midA = evaluateSceneTransition(cutDraft, 20);
+        const midB = evaluateSceneTransition(cutDraft, 25);
+        expect(midA).toBe(midB);
+        expect(midA).toEqual({ fade: 0, audioGain: 1 });
+
+        // Unity gain omits redundant `volume=1.000`, non-unity preserves explicit gain
+        const unityFilters = buildAudioFadeFilters(1, 10, 0.18, 0.12, "breath", "full");
+        expect(unityFilters.some((f) => f === "volume=1.000")).toBe(false);
+        const scaledFilters = buildAudioFadeFilters(0.5, 10, 0.18, 0.12, "breath", "full");
+        expect(scaledFilters[0]).toBe("volume=0.500");
     });
 });

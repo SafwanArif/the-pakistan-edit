@@ -317,7 +317,7 @@ export const buildAudioFadeFilters = (
     inMode: AudioBoundaryFadeMode,
     outMode: AudioBoundaryFadeMode
 ): string[] => {
-    const filters: string[] = [`volume=${vol.toFixed(3)}`];
+    const filters: string[] = Math.abs(vol - 1) >= 0.001 ? [`volume=${vol.toFixed(3)}`] : [];
 
     if (inMode === "full" && inDur > 0.01) {
         filters.push(`afade=t=in:st=0:d=${inDur.toFixed(3)}:curve=hsin`);

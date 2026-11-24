@@ -96,6 +96,47 @@ export const autoPadToMonetisationThreshold = (draft: VideoDraft, targetSeconds:
     return { ...draft, scenes };
 };
 
+/**
+ * Canonical mutator for a scene's `clipStartOffset` (01 Hook, 02 Re-Hook, or 03 Story):
+ * clamps safely within `clipDuration`, rounds to 0.1s, and automatically keeps Story duration
+ * adapted to the remaining clip when previously matched (preventing silent tail-looping).
+ */
+export const setSceneClipStartOffset = (
+    draft: VideoDraft,
+    sceneIdx: number,
+    nextOffset?: number
+): VideoDraft => {
+    const scenes = [...(draft.scenes || [])];
+    const target = scenes[sceneIdx];
+    if (!target) return draft;
+
+    const { hasReHook, storyIdx } = getTimelineStructure(scenes);
+    const isStory = sceneIdx === storyIdx;
+    const isHookOrReHook = sceneIdx === 0 || (hasReHook && sceneIdx === 1);
+    const clipDur = !target.mediaUrl && draft.videoDuration && draft.videoDuration > 0 ? draft.videoDuration : 0;
+    const prevOffset = target.clipStartOffset ?? 0;
+
+    const copy: TimelineScene = { ...target };
+    if (nextOffset === undefined || !Number.isFinite(nextOffset) || nextOffset < 0) {
+        delete copy.clipStartOffset;
+    } else {
+        const maxOffset = clipDur > 0
+            ? (isHookOrReHook ? Math.max(0, clipDur - Math.max(0.5, target.duration || 0)) : Math.max(0, clipDur - 2))
+            : nextOffset;
+        copy.clipStartOffset = Math.round(clamp(nextOffset, 0, maxOffset) * 10) / 10;
+    }
+
+    if (isStory && clipDur > 0) {
+        const prevAdaptedDur = Math.max(4, Math.round((clipDur - prevOffset) * 10) / 10);
+        if (Math.abs((target.duration || 0) - prevAdaptedDur) <= 0.5) {
+            copy.duration = Math.max(4, Math.round((clipDur - (copy.clipStartOffset ?? 0)) * 10) / 10);
+        }
+    }
+
+    scenes[sceneIdx] = copy;
+    return { ...draft, scenes };
+};
+
 export interface ResolvedFraming {
     zoom: number;
     posX: number;
@@ -328,10 +369,24 @@ export const resolveAudioBoundaryModes = (
     return { inAudioMode, outAudioMode };
 };
 
-/** Computes broadcast dip-to-black intensity (0..1) across any scene Fade In / Fade Out boundary (zero-allocation outside edge windows). */
-export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): number => {
+const NO_TRANSITION: Readonly<{ fade: number; audioGain: number }> = Object.freeze({ fade: 0, audioGain: 1 });
+
+/** Computes soft -12dB J-cut breath-bridge audio gain (0.25..1.0), or full 0.0 dip at outer/silent edges. */
+export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = false): number => {
+    const f = clamp(fadeIntensity, 0, 1);
+    return allowFullZero ? (1 - Math.pow(f, 2)) : (0.25 + 0.75 * (1 - Math.pow(f, 2)));
+};
+
+/**
+ * Single-pass 120Hz transition evaluator returning both visual dip-to-black intensity (`0..1`)
+ * and FFmpeg-matched audio gain (`0..1`) with zero allocations outside the 0.20s edge window.
+ */
+export const evaluateSceneTransition = (
+    draft: VideoDraft,
+    currentTime: number
+): Readonly<{ fade: number; audioGain: number }> => {
     const scenes = draft.scenes || [];
-    if (scenes.length === 0) return 0;
+    if (scenes.length === 0) return NO_TRANSITION;
     let start = 0;
 
     for (let i = 0; i < scenes.length; i++) {
@@ -341,26 +396,34 @@ export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): n
         if (currentTime >= start && (isLast ? currentTime <= end : currentTime < end)) {
             const nearStart = currentTime - start <= MAX_FADE_WINDOW_SEC;
             const nearEnd = end - currentTime <= MAX_FADE_WINDOW_SEC;
-            if (!nearStart && !nearEnd) return 0;
+            if (!nearStart && !nearEnd) return NO_TRANSITION;
+
             const { inDur, outDur } = resolveSceneFade(scenes, i);
+            let fade = 0;
+            let isInEdge = false;
             if (nearStart && inDur > 0 && currentTime <= start + inDur) {
-                return (1 + Math.cos(((currentTime - start) / inDur) * Math.PI)) / 2;
+                fade = (1 + Math.cos(((currentTime - start) / inDur) * Math.PI)) / 2;
+                isInEdge = true;
+            } else if (nearEnd && outDur > 0 && currentTime >= end - outDur) {
+                fade = (1 - Math.cos(((currentTime - (end - outDur)) / outDur) * Math.PI)) / 2;
             }
-            if (nearEnd && outDur > 0 && currentTime >= end - outDur) {
-                return (1 - Math.cos(((currentTime - (end - outDur)) / outDur) * Math.PI)) / 2;
-            }
-            return 0;
+            if (fade <= 0.0005) return NO_TRANSITION;
+
+            const { inAudioMode, outAudioMode } = resolveAudioBoundaryModes(scenes, i, Boolean(draft.enableOutro));
+            const mode = isInEdge ? inAudioMode : outAudioMode;
+            const audioGain = mode === "full"
+                ? getBreathDipAudioGain(fade, true)
+                : (mode === "breath" ? getBreathDipAudioGain(fade, false) : 1);
+            return { fade, audioGain };
         }
         start = end;
     }
-    return 0;
+    return NO_TRANSITION;
 };
 
-/** Computes soft -12dB J-cut breath-bridge audio gain (0.25..1.0), or full 0.0 dip at outer/silent edges. */
-export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = false): number => {
-    const f = clamp(fadeIntensity, 0, 1);
-    return allowFullZero ? (1 - Math.pow(f, 2)) : (0.25 + 0.75 * (1 - Math.pow(f, 2)));
-};
+/** Computes broadcast dip-to-black intensity (0..1) across any scene Fade In / Fade Out boundary (zero-allocation outside edge windows). */
+export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): number =>
+    evaluateSceneTransition(draft, currentTime).fade;
 
 /**
  * Computes exact live preview audio gain (0..1) matching FFmpeg's per-boundary audio fade mode

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, getTimelineStructure, clamp } from "../../../types/news";
+import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
@@ -130,6 +130,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     const mobileDrawerRef = useClickOutside(onCloseMobileDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
     const mobileSceneRackRef = useRef<HTMLDivElement>(null);
     const carouselSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const offsetSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const mobileSceneIndexRef = useRef(mobileSceneIndex);
     const scenes = draft.scenes || [];
     const carouselItemCount = scenes.length + (draft.enableOutro ? 1 : 0);
@@ -204,6 +205,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
 
     useEffect(() => () => {
         if (carouselSeekTimeoutRef.current !== null) clearTimeout(carouselSeekTimeoutRef.current);
+        if (offsetSeekTimeoutRef.current !== null) clearTimeout(offsetSeekTimeoutRef.current);
     }, []);
 
     const handleMobileSceneScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
@@ -238,16 +240,18 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     }, [onChange]);
 
     const setSceneOffset = useCallback((sceneIdx: number, nextOffset?: number, snapToStart = false) => {
-        const curDraft = draftRef.current;
-        const newScenes = [...(curDraft.scenes || [])];
-        const target = newScenes[sceneIdx];
-        if (!target) return;
-        const copy = { ...target };
-        if (nextOffset === undefined || nextOffset < 0) delete copy.clipStartOffset;
-        else copy.clipStartOffset = Math.round(nextOffset * 10) / 10;
-        newScenes[sceneIdx] = copy;
-        onChange({ ...curDraft, scenes: newScenes });
-        if (snapToStart) seekTo(sceneBoundariesRef.current[sceneIdx]?.start ?? 0);
+        const nextDraft = setSceneClipStartOffset(draftRef.current, sceneIdx, nextOffset);
+        if (nextDraft === draftRef.current) return;
+        onChange(nextDraft);
+        if (snapToStart) {
+            const targetStart = sceneBoundariesRef.current[sceneIdx]?.start ?? 0;
+            if (offsetSeekTimeoutRef.current !== null) clearTimeout(offsetSeekTimeoutRef.current);
+            // Coalesce rapid consecutive nudger taps into one clean video seek while keeping UI numbers instant
+            offsetSeekTimeoutRef.current = setTimeout(() => {
+                offsetSeekTimeoutRef.current = null;
+                seekTo(targetStart);
+            }, 110);
+        }
     }, [onChange, seekTo]);
 
     const handleAddScene = useCallback(() => {

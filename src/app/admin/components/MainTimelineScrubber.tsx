@@ -111,6 +111,8 @@ interface MainTimelineScrubberProps {
     onPreviewHook?: () => void;
     onChangeRehookOffset?: (offset: number) => void;
     onPreviewRehook?: () => void;
+    onHookDragStart?: () => void;
+    onHookDragEnd?: (target: "hook" | "rehook", moved: boolean) => void;
     onScrubStart: () => void;
     onScrubMove: (time: number) => void;
     onScrubEnd: (time: number) => void;
@@ -138,6 +140,8 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     onPreviewHook,
     onChangeRehookOffset,
     onPreviewRehook,
+    onHookDragStart,
+    onHookDragEnd,
     onScrubStart,
     onScrubMove,
     onScrubEnd,
@@ -192,6 +196,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         setDragTarget(target);
+        onHookDragStart?.();
         const startX = e.clientX;
         const trackWidth = Math.max(1, trackRef.current?.getBoundingClientRect().width ?? 1);
         const startOffset = target === "hook" ? hookOffset : rehookOffset;
@@ -216,21 +221,20 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             handleDragCleanupRef.current = null;
         };
 
-        const onCancel = () => {
+        const finishDrag = (didMove: boolean) => {
             cleanup();
             setDragTarget(null);
             setHoverInfo(null);
-        };
-
-        const onUp = () => {
-            cleanup();
-            setDragTarget(null);
-            setHoverInfo(null);
-            if (!moved) {
+            if (onHookDragEnd) {
+                onHookDragEnd(target, didMove);
+            } else if (!didMove) {
                 if (target === "hook") onPreviewHook?.();
                 else onPreviewRehook?.();
             }
         };
+
+        const onCancel = () => finishDrag(moved);
+        const onUp = () => finishDrag(moved);
 
         handleDragCleanupRef.current?.();
         handleDragCleanupRef.current = cleanup;

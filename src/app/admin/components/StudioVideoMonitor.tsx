@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, snapTimeToSourceFrame, switchVideoAspectRatio, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
+import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, snapTimeToSourceFrame, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { PlayIcon, PauseIcon } from "../../../components/icons/TPEIcons";
@@ -288,9 +288,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     useStudioShortcuts({ togglePlay, seekTo, onToggleToolTab: handleToggleToolTab, sceneStarts, outroStart, enableOutro: Boolean(draft.enableOutro), activeDisplayTime, duration });
 
     const updateSceneOffset = (i: number, nextOffset: number) => {
-        const updated = [...draft.scenes];
-        updated[i] = { ...updated[i]!, clipStartOffset: nextOffset };
-        updateDraft({ ...draft, scenes: updated });
+        updateDraft(setSceneClipStartOffset(draft, i, nextOffset));
     };
 
     const monitorRef = useRef({
@@ -318,6 +316,19 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const handlePreviewHook = useCallback(() => monitorRef.current.seekTo(0), []);
     const handleChangeRehookOffset = useCallback((v: number) => monitorRef.current.updateSceneOffset(1, v), []);
     const handlePreviewRehook = useCallback(() => monitorRef.current.seekTo(monitorRef.current.hookDur), []);
+    const handleHookDragEnd = useCallback((target: "hook" | "rehook", moved: boolean) => {
+        setIsScrubbing(false);
+        const { seekTo: seek, togglePlay: toggle, hookDur, activeDisplayTime: t } = monitorRef.current;
+        if (!moved) {
+            seek(target === "hook" ? 0 : hookDur);
+        } else {
+            seek(t);
+        }
+        if (wasPlayingBeforeScrubRef.current) {
+            wasPlayingBeforeScrubRef.current = false;
+            toggle();
+        }
+    }, []);
 
     const telemetryTint = getKeyframeTelemetryTint(sortedKeyframes, activeDisplayTime, effectiveEditSide, isCutKeyframe, true);
 
@@ -364,7 +375,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
             <div ref={containerRef} tabIndex={-1} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '16px', background: 'radial-gradient(circle at center, #181d24 0%, #0e1115 100%)', outline: 'none' }}>
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
+                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
                 
@@ -402,6 +413,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                         showHookHandles={Boolean(draft.videoUrl && draft.videoDuration && draft.scenes?.[0])}
                         onChangeHookOffset={handleChangeHookOffset} onPreviewHook={handlePreviewHook}
                         onChangeRehookOffset={handleChangeRehookOffset} onPreviewRehook={handlePreviewRehook}
+                        onHookDragStart={handleScrubberPointerDown} onHookDragEnd={handleHookDragEnd}
                         onScrubStart={handleScrubberPointerDown} onScrubMove={setScrubTime} onScrubEnd={handleScrubberEnd} onJumpToTime={handleJumpToTime}
                     />
                 </div>

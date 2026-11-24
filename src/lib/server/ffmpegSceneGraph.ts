@@ -3,7 +3,6 @@ import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildPosXNorm
 
 interface SceneFilterContext {
     index: number;
-    scene: TimelineScene;
     scenes: TimelineScene[];
     draft: VideoDraft;
     start: number;
@@ -13,8 +12,6 @@ interface SceneFilterContext {
     targetFps: number;
     is45: boolean;
     isImage: boolean;
-    hasReHook: boolean;
-    setupIdx: number;
     srcWidth: number;
     srcHeight: number;
     srcHasAudio: boolean;

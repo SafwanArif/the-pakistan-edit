@@ -140,12 +140,12 @@ export async function POST(request: Request) {
             } else {
                 const rawStart = i === 0
                     ? (s.clipStartOffset ?? 0)
-                    : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath ? wrapMediaTime(draft, b.start, srcInfo.duration) : 0));
+                    : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath ? wrapMediaTime(draft, b.start, srcInfo.duration) : (s.clipStartOffset ?? 0)));
                 const needsLoop = rawStart + dur > srcInfo.duration - 0.1;
                 if (needsLoop) {
                     const loopStart = i === 0
                         ? (s.clipStartOffset ?? 0)
-                        : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath && i >= setupIdx ? setupOffset : 0));
+                        : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath && i >= setupIdx ? setupOffset : (s.clipStartOffset ?? 0)));
                     args.push("-fflags", "+genpts+discardcorrupt", "-stream_loop", "-1", "-i", srcPath);
                     const firstPassDur = Math.max(0.1, srcInfo.duration - rawStart);
                     if (rawStart > loopStart + 0.05 && firstPassDur < dur - 0.05) {
@@ -176,7 +176,6 @@ export async function POST(request: Request) {
 
             const stage = buildSceneFilterStages({
                 index: i,
-                scene: s,
                 scenes: quantizedScenes,
                 draft,
                 start: b.start,
@@ -186,8 +185,6 @@ export async function POST(request: Request) {
                 targetFps,
                 is45,
                 isImage,
-                hasReHook,
-                setupIdx,
                 srcWidth: srcInfo.width,
                 srcHeight: srcInfo.height,
                 srcHasAudio: srcInfo.hasAudio,

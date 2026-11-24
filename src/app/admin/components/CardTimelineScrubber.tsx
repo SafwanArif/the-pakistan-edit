@@ -6,10 +6,13 @@ import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers
 
 const cardScrubberShellStyle: React.CSSProperties = {
     position: "relative",
-    padding: "4px 8px",
+    padding: "3px 8px 4px",
     borderRadius: "6px",
     background: "rgba(0,0,0,0.28)",
     border: "1px solid var(--ui-border)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1px",
 };
 
 const cardTrackRailStyle: React.CSSProperties = {
@@ -51,12 +54,10 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
-    const [isHovering, setIsHovering] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
 
     const currentTime = start + localTime;
     const pct = duration > 0 ? clamp((localTime / duration) * 100, 0, 100) : 0;
-    const showTimecode = isSceneActive || isHovering || isDragging;
 
     const fadeInPct = duration > 0 && fadeInDur > 0 ? clamp((fadeInDur / duration) * 100, 3, 18) : 0;
     const fadeOutPct = duration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / duration) * 100, 3, 18) : 0;
@@ -79,32 +80,31 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     return (
         <div
             onClick={(e) => e.stopPropagation()}
-            onMouseEnter={() => setIsHovering(true)}
-            onMouseLeave={() => setIsHovering(false)}
             style={cardScrubberShellStyle}
         >
-            {showTimecode && (
-                <div
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    alignItems: "center",
+                    lineHeight: 1.1,
+                    pointerEvents: "none",
+                }}
+            >
+                <span
+                    className="tpe-tabular-nums"
                     style={{
-                        position: "absolute",
-                        top: "-15px",
-                        right: "6px",
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        background: "var(--ui-bg-popover)",
-                        border: "1px solid var(--ui-border)",
-                        fontSize: "8px",
+                        fontSize: "8.5px",
                         fontFamily: "monospace",
                         fontWeight: 800,
-                        color: isSceneActive ? "var(--ui-accent)" : "var(--ui-text-dim)",
-                        pointerEvents: "none",
-                        zIndex: 5,
+                        letterSpacing: "0.02em",
+                        color: isSceneActive || isDragging ? "var(--ui-accent)" : "var(--ui-text-dim)",
                         whiteSpace: "nowrap",
                     }}
                 >
                     {formatTimecode(localTime)} / {duration.toFixed(1)}s
-                </div>
-            )}
+                </span>
+            </div>
 
             <div
                 ref={trackRef}
@@ -164,7 +164,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 style={{
                     position: "relative",
                     width: "100%",
-                    height: "16px",
+                    height: "13px",
                     display: "flex",
                     alignItems: "center",
                     cursor: "ew-resize",
@@ -205,7 +205,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 <TimelinePlayheadNeedle
                     pct={pct}
                     active={isSceneActive || isDragging}
-                    height={isDragging || isHovering ? 14 : 11}
+                    height={isDragging ? 13 : 11}
                     zIndex={3}
                 />
             </div>

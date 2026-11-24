@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import {
     VideoDraft,
     clamp,
-    getBreathDipAudioGain,
+    getTransitionAudioGain,
     getHookTransitionFade,
     getTopBoxOffsetY,
     getTotalVideoDuration,
@@ -195,7 +195,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 fadeEl.style.visibility = fade > 0.0005 ? 'visible' : 'hidden';
             }
             if (video && !o.isImage && !video.muted) {
-                const nextVol = clamp((o.draft.volume ?? 1) * getBreathDipAudioGain(fade), 0, 1);
+                const nextVol = clamp((o.draft.volume ?? 1) * getTransitionAudioGain(o.draft, liveT, fade), 0, 1);
                 if (Math.abs(video.volume - nextVol) > 0.002) {
                     video.volume = nextVol;
                 }

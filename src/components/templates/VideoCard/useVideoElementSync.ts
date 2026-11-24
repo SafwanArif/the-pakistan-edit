@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, type SyntheticEvent } from "react";
-import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, getHookTransitionFade, getBreathDipAudioGain, getTimelineStructure, clamp } from "../../../types/news";
+import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, getHookTransitionFade, getTransitionAudioGain, getTimelineStructure, clamp } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 import { getNextCutMediaTarget, isStandbyReadyAt, preParkStandbyDeck } from "./dualDeckHelpers";
 import { useAmbientCanvasPainter } from "./useAmbientCanvasPainter";
@@ -60,6 +60,19 @@ export const useVideoElementSync = ({
     const currentTimeRef = useRef(currentTime);
     const draftRef = useRef(draft);
 
+    const lastPrimaryElRef = useRef<HTMLVideoElement | null>(null);
+    const lastStandbyElRef = useRef<HTMLVideoElement | null>(null);
+
+    const releaseDetachedDeck = useCallback((el: HTMLVideoElement | null) => {
+        // Guard with `!el.isConnected` so React 19 StrictMode's simulated dev cleanup never strips `src` off a live `<video>` deck
+        if (!el || el.isConnected) return;
+        try {
+            el.pause();
+            el.removeAttribute("src");
+            el.load();
+        } catch {}
+    }, []);
+
     useEffect(() => {
         isPlayingRef.current = isPlaying;
         isScrubbingRef.current = isScrubbing;
@@ -67,8 +80,15 @@ export const useVideoElementSync = ({
         playbackModeRef.current = playbackMode;
         draftRef.current = draft;
         effectiveMutedRef.current = effectiveMuted;
-        if (!activeVideoRef.current && videoRef.current) {
+        const prevPrimary = lastPrimaryElRef.current;
+        const prevStandby = lastStandbyElRef.current;
+        lastPrimaryElRef.current = videoRef.current;
+        lastStandbyElRef.current = standbyVideoRef.current;
+        if (prevPrimary && prevPrimary !== videoRef.current) releaseDetachedDeck(prevPrimary);
+        if (prevStandby && prevStandby !== standbyVideoRef.current) releaseDetachedDeck(prevStandby);
+        if ((!activeVideoRef.current || !activeVideoRef.current.isConnected) && videoRef.current) {
             activeVideoRef.current = videoRef.current;
+            activeDeckRef.current = 0;
         }
     });
 
@@ -125,24 +145,14 @@ export const useVideoElementSync = ({
         }
     }, []);
 
-    // Release hardware video decoders cleanly on unmount and clear pending seek/pre-park timers
-    useEffect(() => {
-        const primaryEl = videoRef.current;
-        const standbyEl = standbyVideoRef.current;
-        return () => {
-            cancelPendingSeekListener();
-            cancelPreParkTimer();
-            pendingScrubTargetRef.current = null;
-            for (const el of [primaryEl, standbyEl]) {
-                if (!el) continue;
-                try {
-                    el.pause();
-                    el.removeAttribute("src");
-                    el.load();
-                } catch {}
-            }
-        };
-    }, [cancelPendingSeekListener, cancelPreParkTimer]);
+    // Release hardware video decoders cleanly on real unmount and clear pending seek/pre-park timers
+    useEffect(() => () => {
+        cancelPendingSeekListener();
+        cancelPreParkTimer();
+        pendingScrubTargetRef.current = null;
+        releaseDetachedDeck(lastPrimaryElRef.current);
+        releaseDetachedDeck(lastStandbyElRef.current);
+    }, [cancelPendingSeekListener, cancelPreParkTimer, releaseDetachedDeck]);
 
     useEffect(() => {
         if (videoRef.current) {
@@ -164,7 +174,7 @@ export const useVideoElementSync = ({
         if (video) {
             video.muted = effectiveMuted;
             const fade = getHookTransitionFade(draftRef.current, currentTimeRef.current);
-            video.volume = clamp((draft.volume ?? 1) * getBreathDipAudioGain(fade), 0, 1);
+            video.volume = clamp((draft.volume ?? 1) * getTransitionAudioGain(draftRef.current, currentTimeRef.current, fade), 0, 1);
         }
         const standby = getStandbyVideo();
         if (standby) standby.muted = true;
@@ -273,7 +283,7 @@ export const useVideoElementSync = ({
 
             standby.muted = effectiveMutedRef.current;
             const fade = getHookTransitionFade(draftRef.current, nextTimelineTime);
-            standby.volume = clamp((draftRef.current.volume ?? 1) * getBreathDipAudioGain(fade), 0, 1);
+            standby.volume = clamp((draftRef.current.volume ?? 1) * getTransitionAudioGain(draftRef.current, nextTimelineTime, fade), 0, 1);
             if (isPlayingRef.current && !isScrubbingRef.current) {
                 standby.play().catch(() => { });
             }
@@ -413,8 +423,12 @@ export const useVideoElementSync = ({
         if (video.videoWidth && video.videoHeight) onAspectDetected(video.videoWidth / video.videoHeight);
         const vDur = video.duration || 10;
         const targetMediaTime = wrapMediaTime(draftRef.current, currentTimeRef.current, vDur);
-        if (Math.abs(video.currentTime - targetMediaTime) > 0.08) video.currentTime = targetMediaTime;
-        if (onTimeUpdate) onTimeUpdate(currentTimeRef.current, video.duration || 0);
+        if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current) {
+            seekAndSync(video, targetMediaTime, true);
+        } else {
+            if (Math.abs(video.currentTime - targetMediaTime) > 0.08) video.currentTime = targetMediaTime;
+            if (onTimeUpdate) onTimeUpdate(currentTimeRef.current, video.duration || 0);
+        }
         preParkStandbyDeck(getStandbyVideo(), getNextCutMediaTarget(draftRef.current, currentTimeRef.current, playbackModeRef.current === 'loop-angle'));
     };
 

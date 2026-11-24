@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFadeDurations, getTimelineStructure, clamp } from "../../../types/news";
+import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
@@ -142,7 +142,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         [draft.subtitles, draft.scenes, draft.videoDuration, sceneBoundaries]
     );
     const sceneFadesList = useMemo(
-        () => (draft.scenes || []).map((_, idx) => resolveSceneFadeDurations(draft.scenes || [], idx)),
+        () => (draft.scenes || []).map((_, idx) => resolveSceneFade(draft.scenes || [], idx)),
         [draft.scenes]
     );
     const outroStart = sceneBoundaries.length > 0 ? sceneBoundaries[sceneBoundaries.length - 1]!.end : 0;
@@ -410,9 +410,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                         : (isReHook ? "02. RE-HOOK" : (isSetup ? `${String(idx + 1).padStart(2, '0')}. THE STORY` : `${String(idx + 1).padStart(2, '0')}. ANGLE`));
 
                     const roleColor = getSceneRoleColor(idx, isReHook, isSetup);
-                    const rf = sceneFadesList[idx] ?? resolveSceneFadeDurations(scenes, idx);
-                    const effFadeIn = scene.fadeIn ?? (isSetup || isReHook);
-                    const effFadeOut = scene.fadeOut ?? (idx === 0 || isReHook);
+                    const rf = sceneFadesList[idx] ?? resolveSceneFade(scenes, idx);
                     const cardSubs = sceneSubtitlesList[idx] ?? [];
                     return (
                         <div
@@ -557,8 +555,8 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                     isSceneActive={isSceneActive}
                                     isPlaying={isPlaying}
                                     keyframes={draft.keyframes}
-                                    fadeInDur={effFadeIn ? rf.inDur : 0}
-                                    fadeOutDur={effFadeOut ? rf.outDur : 0}
+                                    fadeInDur={rf.inDur}
+                                    fadeOutDur={rf.outDur}
                                     onSeek={seekTo}
                                 />
                             )}
@@ -579,8 +577,8 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                     )}
                                     <FadePresetControl
                                         sceneIdx={idx}
-                                        fadeInEnabled={effFadeIn} fadeInPreset={rf.inPreset} fadeInDuration={rf.inDur}
-                                        fadeOutEnabled={effFadeOut} fadeOutPreset={rf.outPreset} fadeOutDuration={rf.outDur}
+                                        fadeInEnabled={rf.inEnabled} fadeInPreset={rf.inPreset} fadeInDuration={rf.rawInDur}
+                                        fadeOutEnabled={rf.outEnabled} fadeOutPreset={rf.outPreset} fadeOutDuration={rf.rawOutDur}
                                         defaultSide={isSetup || isReHook ? 'in' : 'out'}
                                         inHint={rf.inMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}
                                         outHint={rf.outMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFadeDurations, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
+import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFade, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
 import { PowerIcon } from "../../../components/icons/TPEIcons";
 import { detectFaceInHookWindow, getCachedFaceScan } from "../utils/autoTrackSubject";
 
@@ -60,8 +60,14 @@ export const FadePresetControl: React.FC<FadePresetControlProps> = React.memo(({
                         🌑 FADE
                     </span>
                     <div className="tpe-mode-cluster" role="group" aria-label="Fade side" style={{ padding: '1px', gap: '2px' }}>
-                        <button type="button" aria-pressed={isIn} onClick={() => setSide('in')} className="tpe-mode-btn" data-active={isIn} style={{ padding: '1px 6px', fontSize: '8px' }} title="Fade In from black">IN</button>
-                        <button type="button" aria-pressed={!isIn} onClick={() => setSide('out')} className="tpe-mode-btn" data-active={!isIn} style={{ padding: '1px 6px', fontSize: '8px' }} title="Fade Out to black">OUT</button>
+                        <button type="button" aria-pressed={isIn} onClick={() => setSide('in')} className="tpe-mode-btn" data-active={isIn} style={{ padding: '1px 6px', fontSize: '8px', gap: '3px' }} title={`Fade In from black (${fadeInEnabled ? 'ON' : 'OFF'})`}>
+                            IN
+                            <span aria-hidden="true" style={{ width: '4px', height: '4px', borderRadius: '50%', background: fadeInEnabled ? (isIn ? 'currentColor' : 'var(--ui-indicator)') : 'transparent', border: fadeInEnabled ? 'none' : '1px solid currentColor', opacity: fadeInEnabled ? 1 : 0.35 }} />
+                        </button>
+                        <button type="button" aria-pressed={!isIn} onClick={() => setSide('out')} className="tpe-mode-btn" data-active={!isIn} style={{ padding: '1px 6px', fontSize: '8px', gap: '3px' }} title={`Fade Out to black (${fadeOutEnabled ? 'ON' : 'OFF'})`}>
+                            OUT
+                            <span aria-hidden="true" style={{ width: '4px', height: '4px', borderRadius: '50%', background: fadeOutEnabled ? (!isIn ? 'currentColor' : 'var(--ui-indicator)') : 'transparent', border: fadeOutEnabled ? 'none' : '1px solid currentColor', opacity: fadeOutEnabled ? 1 : 0.35 }} />
+                        </button>
                     </div>
                 </div>
                 <button
@@ -149,7 +155,7 @@ export function getSceneCheckItems(
         const titleLead = titleStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
         const subLead = subStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
         const nonRedundant = Boolean(titleLead && subLead && titleLead !== subLead);
-        const resolvedHookFade = resolveSceneFadeDurations(draft.scenes || [], 0);
+        const resolvedHookFade = resolveSceneFade(draft.scenes || [], 0);
         const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > hookStart && s.start <= hookStart + 0.65);
         const highlightTokens = (titleStr.match(/(==|~~|\^\^|&&|\*\*)[\s\S]+?\1/g) || []).length;
         const cleanEmphasis = highlightTokens >= 1 && highlightTokens <= 3;
@@ -165,7 +171,7 @@ export function getSceneCheckItems(
             { ok: cleanEmphasis, label: highlightTokens > 3 ? `Over-highlighted (${highlightTokens} spans — keep ≤ 3)` : 'Selective focal emphasis (1–3 highlighted spans)' },
             { ok: hasMotionOrCut, label: 'Pattern interrupt in 5s (Re-Hook cut or camera beat)' },
             { ok: !draft.isMuted && (draft.volume ?? 1) > 0, label: 'Native voice / room audio active (> 0%)' },
-            { ok: scene.fadeOut !== false && (hasAnchorReHook ? resolvedHookFade.outMode === 'micro' : resolvedHookFade.outMode === 'editorial'), label: hasAnchorReHook ? `Micro-dip exit (${resolvedHookFade.outDur.toFixed(2)}s — Anchored Hook)` : `Editorial exit dip (${resolvedHookFade.outDur.toFixed(2)}s)`, fix: update ? () => update({ fadeOut: true, fadeOutPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
+            { ok: resolvedHookFade.outEnabled && (hasAnchorReHook ? resolvedHookFade.outMode === 'micro' : resolvedHookFade.outMode === 'editorial'), label: hasAnchorReHook ? `Micro-dip exit (${resolvedHookFade.rawOutDur.toFixed(2)}s — Anchored Hook)` : `Editorial exit dip (${resolvedHookFade.rawOutDur.toFixed(2)}s)`, fix: update ? () => update({ fadeOut: true, fadeOutPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
             { ok: draft.aspectRatio !== '9:16' || getVideoHeadingPreset(draft, '9:16') !== 'center', label: draft.aspectRatio === '9:16' && getVideoHeadingPreset(draft, '9:16') === 'center' ? 'Optical Center: verify headline clears speaker eyes' : 'Headline placement clears TikTok native UI' },
         ];
     }
@@ -175,7 +181,7 @@ export function getSceneCheckItems(
         const hook0 = draft.scenes?.[0];
         const hook1Offset = hook0?.clipStartOffset ?? 0;
         const hasVisualShift = Boolean(scene.mediaUrl) || (scene.clipStartOffset !== undefined && scene.clipStartOffset !== hook1Offset);
-        const resolved = resolveSceneFadeDurations(draft.scenes || [], 1);
+        const resolved = resolveSceneFade(draft.scenes || [], 1);
         const rehookMediaStart = scene.clipStartOffset ?? (hook1Offset + (hook0?.duration ?? 0));
         const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > rehookMediaStart && s.start <= rehookMediaStart + 0.65);
 
@@ -184,8 +190,8 @@ export function getSceneCheckItems(
             { ok: hasVisualShift, label: hasVisualShift ? 'Visual cut / angle shift from Hook 01' : 'Set Re-Hook in-point or custom clip (mirrors Hook 01)' },
             { ok: hasSubs ? instantSpeech : Boolean(scene.clipStartOffset && scene.clipStartOffset > 0), label: hasSubs ? (instantSpeech ? 'Zero dead air: speech starts < 0.6s' : 'Dead air at Re-Hook start (> 0.6s silence)') : 'Juicy Re-Hook in-point trimmed' },
             { ok: isAnchored || (titleWords > 0 && titleWords <= 8), label: isAnchored ? 'Anchor Hook locked (zero headline flash)' : `Un-anchored headline concise (${titleWords}/8 words)`, fix: isAnchored || !update ? undefined : () => update({ shareHookText: true }), fixLabel: 'Lock' },
-            { ok: scene.fadeIn !== false && (isAnchored ? resolved.inMode === 'micro' : resolved.inMode === 'editorial'), label: isAnchored ? `Micro-dip entry (${resolved.inDur.toFixed(2)}s — Anchored)` : `Editorial entry dip (${resolved.inDur.toFixed(2)}s)`, fix: update ? () => update({ fadeIn: true, fadeInPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
-            { ok: scene.fadeOut !== false && resolved.outMode === 'editorial', label: `Editorial exit to Story (${resolved.outDur.toFixed(2)}s)`, fix: update ? () => update({ fadeOut: true, fadeOutPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
+            { ok: resolved.inEnabled && (isAnchored ? resolved.inMode === 'micro' : resolved.inMode === 'editorial'), label: isAnchored ? `Micro-dip entry (${resolved.rawInDur.toFixed(2)}s — Anchored)` : `Editorial entry dip (${resolved.rawInDur.toFixed(2)}s)`, fix: update ? () => update({ fadeIn: true, fadeInPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
+            { ok: resolved.outEnabled && resolved.outMode === 'editorial', label: `Editorial exit to Story (${resolved.rawOutDur.toFixed(2)}s)`, fix: update ? () => update({ fadeOut: true, fadeOutPreset: 'auto' }) : undefined, fixLabel: 'Set Auto' },
         ];
     }
 

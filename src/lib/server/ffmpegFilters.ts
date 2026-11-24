@@ -1,4 +1,5 @@
 import {
+    AudioBoundaryFadeMode,
     VideoDraft,
     TimelineScene,
     SUBTITLE_FONT_OPTIONS,
@@ -300,7 +301,7 @@ export const buildAssSubtitles = (
     ].join("\n");
 };
 
-export type AudioBoundaryFadeMode = "full" | "breath" | "declick" | "none";
+export type { AudioBoundaryFadeMode };
 
 /**
  * Builds FFmpeg audio fade filters:

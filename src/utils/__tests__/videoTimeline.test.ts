@@ -6,6 +6,7 @@ import {
     ensureUniqueSceneIds,
     getActiveSceneAtTime,
     getHookTransitionFade,
+    getTransitionAudioGain,
     getSceneBoundaries,
     getSceneRoleLabel,
     getTimelineStructure,
@@ -15,7 +16,9 @@ import {
     parseTimeInput,
     formatTimecode,
     formatPreciseTimecode,
+    resolveAudioBoundaryModes,
     resolveKeyframeSpan,
+    resolveSceneFade,
     snapTimeToSourceFrame,
     nudgeTimeToFrame,
     timelineTimeToMediaTime,
@@ -1010,5 +1013,46 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
         expect(topInfo.maxY).toBeCloseTo((1350 - hContain) / 2, 0);
         expect(topInfo.expr).toContain("if(lt(t,4.000),");
         expect(topInfo.expr).toContain("if(lt(t,6.000),371.0000,");
+    });
+
+    it("unifies scene fade enablement, audio boundary modes, and live preview transition gain with FFmpeg", () => {
+        const draft = makeDraft({
+            enableOutro: false,
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4 },
+                { id: "rehook-1", title: "R", subtitle: "S", duration: 4, shareHookText: true },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 20 },
+            ],
+        });
+
+        // Anchored Hook -> Re-Hook uses micro dip (0.06s out / 0.08s in); Re-Hook -> Story uses editorial dip (0.12s / 0.18s)
+        const hookFade = resolveSceneFade(draft.scenes, 0);
+        const rehookFade = resolveSceneFade(draft.scenes, 1);
+        const storyFade = resolveSceneFade(draft.scenes, 2);
+        expect(hookFade).toMatchObject({ inEnabled: false, outEnabled: true, outMode: "micro", inDur: 0, outDur: 0.06 });
+        expect(rehookFade).toMatchObject({ inEnabled: true, outEnabled: true, inMode: "micro", outMode: "editorial", inDur: 0.08, outDur: 0.12 });
+        expect(storyFade).toMatchObject({ inEnabled: true, outEnabled: false, inMode: "editorial", inDur: 0.18, outDur: 0 });
+
+        // Audio boundary modes match FFmpeg: outer start/end = full, symmetric internal = breath
+        expect(resolveAudioBoundaryModes(draft.scenes, 0, false)).toEqual({ inAudioMode: "full", outAudioMode: "breath" });
+        expect(resolveAudioBoundaryModes(draft.scenes, 1, false)).toEqual({ inAudioMode: "breath", outAudioMode: "breath" });
+        expect(resolveAudioBoundaryModes(draft.scenes, 2, false)).toEqual({ inAudioMode: "breath", outAudioMode: "full" });
+
+        // Preview audio gain matches: mid-scene returns 1, symmetric internal peak dips to 0.25 (-12dB), outer fade-in dips to 0.0
+        expect(getHookTransitionFade(draft, 15)).toBe(0);
+        expect(getTransitionAudioGain(draft, 15, 0)).toBe(1);
+        expect(getTransitionAudioGain(draft, 4.0, 1)).toBeCloseTo(0.25, 5);
+
+        const outerFadeInDraft = makeDraft({
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4, fadeIn: true },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 20, fadeIn: false },
+            ],
+        });
+        expect(getHookTransitionFade(outerFadeInDraft, 0)).toBeCloseTo(1, 5);
+        expect(getTransitionAudioGain(outerFadeInDraft, 0, 1)).toBeCloseTo(0, 5);
+        // One-sided internal fade (Hook out ON, Story in OFF) uses declick -> steady 1.0 audio gain
+        expect(resolveAudioBoundaryModes(outerFadeInDraft.scenes, 0, false).outAudioMode).toBe("declick");
+        expect(getTransitionAudioGain(outerFadeInDraft, 3.98, 0.8)).toBe(1);
     });
 });

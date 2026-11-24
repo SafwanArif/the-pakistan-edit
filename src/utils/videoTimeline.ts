@@ -249,40 +249,107 @@ export const getActiveSceneAtTime = (draft: VideoDraft, currentTime: number): { 
     return { scene: scenes[0] ?? null, isOutro: false, sceneIndex: 0 };
 };
 
-/** Resolves effective scene fade durations from preset ('auto' | 'micro' | 'editorial'). */
-export const resolveSceneFadeDurations = (scenes: TimelineScene[], idx: number) => {
-    const anchored = isSharedReHookScene(scenes, 1);
+export type AudioBoundaryFadeMode = "full" | "breath" | "declick" | "none";
+
+export interface ResolvedSceneFade {
+    inEnabled: boolean;
+    outEnabled: boolean;
+    inPreset: 'auto' | 'micro' | 'editorial';
+    outPreset: 'auto' | 'micro' | 'editorial';
+    inMode: 'micro' | 'editorial';
+    outMode: 'micro' | 'editorial';
+    rawInDur: number;
+    rawOutDur: number;
+    inDur: number;
+    outDur: number;
+}
+
+const MAX_FADE_WINDOW_SEC = 0.2;
+
+/**
+ * Canonical single source of truth for scene fade enablement, preset mode, and clamped durations.
+ * Shared across TimelineStoryboard UI, retention checklists, 120Hz preview, and FFmpeg export.
+ */
+export const resolveSceneFade = (scenes: TimelineScene[], idx: number): ResolvedSceneFade => {
     const s = scenes[idx];
+    const { hasReHook, storyIdx } = getTimelineStructure(scenes);
+    const anchored = isSharedReHookScene(scenes, 1);
     const inPreset = s?.fadeInPreset || 'auto';
     const outPreset = s?.fadeOutPreset || 'auto';
     const inMode = inPreset === 'auto' ? (idx === 1 && anchored ? 'micro' : 'editorial') : inPreset;
     const outMode = outPreset === 'auto' ? (idx === 0 && anchored ? 'micro' : 'editorial') : outPreset;
-    return { inPreset, outPreset, inMode, outMode, inDur: inMode === 'micro' ? 0.08 : 0.18, outDur: outMode === 'micro' ? 0.06 : 0.12 };
+    const rawInDur = inMode === 'micro' ? 0.08 : 0.18;
+    const rawOutDur = outMode === 'micro' ? 0.06 : 0.12;
+    const inEnabled = s?.fadeIn ?? (idx === storyIdx || (hasReHook && idx === 1));
+    const outEnabled = s?.fadeOut ?? (idx === 0 || (hasReHook && idx === 1));
+    const halfDur = Math.max(0, (s?.duration || 0) * 0.5);
+    return {
+        inEnabled,
+        outEnabled,
+        inPreset,
+        outPreset,
+        inMode,
+        outMode,
+        rawInDur,
+        rawOutDur,
+        inDur: inEnabled ? Math.min(rawInDur, halfDur) : 0,
+        outDur: outEnabled ? Math.min(rawOutDur, halfDur) : 0,
+    };
 };
 
-/** Computes broadcast dip-to-black intensity (0..1) across any scene Fade In / Fade Out boundary. */
+/** Resolves effective scene fade durations from preset ('auto' | 'micro' | 'editorial'). */
+export const resolveSceneFadeDurations = (scenes: TimelineScene[], idx: number) => {
+    const f = resolveSceneFade(scenes, idx);
+    return { inPreset: f.inPreset, outPreset: f.outPreset, inMode: f.inMode, outMode: f.outMode, inDur: f.rawInDur, outDur: f.rawOutDur };
+};
+
+/**
+ * Resolves broadcast audio boundary fade modes ('full' | 'breath' | 'declick') for a scene,
+ * keeping 120Hz live preview audio dips in 1:1 parity with FFmpeg's audio filtergraph.
+ */
+export const resolveAudioBoundaryModes = (
+    scenes: TimelineScene[],
+    idx: number,
+    enableOutro = false
+): { inAudioMode: AudioBoundaryFadeMode; outAudioMode: AudioBoundaryFadeMode } => {
+    const cur = resolveSceneFade(scenes, idx);
+    const prevHasAudio = idx > 0 && scenes[idx - 1]?.mediaType !== "image";
+    const prevFadeOut = idx > 0 ? resolveSceneFade(scenes, idx - 1).outEnabled : false;
+    const nextHasAudio = idx < scenes.length - 1 && scenes[idx + 1]?.mediaType !== "image";
+    const nextFadeIn = idx < scenes.length - 1 ? resolveSceneFade(scenes, idx + 1).inEnabled : false;
+
+    const inAudioMode: AudioBoundaryFadeMode = idx === 0 || !prevHasAudio
+        ? "full"
+        : (cur.inEnabled && prevFadeOut ? "breath" : "declick");
+    const outAudioMode: AudioBoundaryFadeMode = (idx === scenes.length - 1 && !enableOutro) || (idx < scenes.length - 1 && !nextHasAudio)
+        ? "full"
+        : (cur.outEnabled && (idx === scenes.length - 1 || nextFadeIn) ? "breath" : "declick");
+
+    return { inAudioMode, outAudioMode };
+};
+
+/** Computes broadcast dip-to-black intensity (0..1) across any scene Fade In / Fade Out boundary (zero-allocation outside edge windows). */
 export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): number => {
     const scenes = draft.scenes || [];
     if (scenes.length === 0) return 0;
-    const { hasReHook, storyIdx } = getTimelineStructure(scenes);
     let start = 0;
 
     for (let i = 0; i < scenes.length; i++) {
-        const s = scenes[i]!;
-        const dur = s.duration || 0;
+        const dur = scenes[i]!.duration || 0;
         const end = start + dur;
-        const resolved = resolveSceneFadeDurations(scenes, i);
-        const inOn = s.fadeIn ?? (i === storyIdx || (hasReHook && i === 1));
-        const outOn = s.fadeOut ?? (i === 0 || (hasReHook && i === 1));
-        const inDur = inOn ? Math.min(resolved.inDur, dur * 0.5) : 0;
-        const outDur = outOn ? Math.min(resolved.outDur, dur * 0.5) : 0;
-
-        if (inDur > 0 && currentTime >= start && currentTime <= start + inDur) {
-            return (1 + Math.cos(((currentTime - start) / inDur) * Math.PI)) / 2;
-        }
-        const beforeEnd = i === scenes.length - 1 ? currentTime <= end : currentTime < end;
-        if (outDur > 0 && currentTime >= end - outDur && beforeEnd) {
-            return (1 - Math.cos(((currentTime - (end - outDur)) / outDur) * Math.PI)) / 2;
+        const isLast = i === scenes.length - 1;
+        if (currentTime >= start && (isLast ? currentTime <= end : currentTime < end)) {
+            const nearStart = currentTime - start <= MAX_FADE_WINDOW_SEC;
+            const nearEnd = end - currentTime <= MAX_FADE_WINDOW_SEC;
+            if (!nearStart && !nearEnd) return 0;
+            const { inDur, outDur } = resolveSceneFade(scenes, i);
+            if (nearStart && inDur > 0 && currentTime <= start + inDur) {
+                return (1 + Math.cos(((currentTime - start) / inDur) * Math.PI)) / 2;
+            }
+            if (nearEnd && outDur > 0 && currentTime >= end - outDur) {
+                return (1 - Math.cos(((currentTime - (end - outDur)) / outDur) * Math.PI)) / 2;
+            }
+            return 0;
         }
         start = end;
     }
@@ -293,6 +360,31 @@ export const getHookTransitionFade = (draft: VideoDraft, currentTime: number): n
 export const getBreathDipAudioGain = (fadeIntensity: number, allowFullZero = false): number => {
     const f = clamp(fadeIntensity, 0, 1);
     return allowFullZero ? (1 - Math.pow(f, 2)) : (0.25 + 0.75 * (1 - Math.pow(f, 2)));
+};
+
+/**
+ * Computes exact live preview audio gain (0..1) matching FFmpeg's per-boundary audio fade mode
+ * ('full' dips to 0.0, 'breath' dips to -12dB / 0.25, 'declick' keeps steady 1.0 across one-sided fades).
+ */
+export const getTransitionAudioGain = (draft: VideoDraft, currentTime: number, fadeIntensity: number): number => {
+    if (fadeIntensity <= 0.0005) return 1;
+    const scenes = draft.scenes || [];
+    if (scenes.length === 0) return 1;
+    let start = 0;
+    for (let i = 0; i < scenes.length; i++) {
+        const dur = scenes[i]!.duration || 0;
+        const end = start + dur;
+        const isLast = i === scenes.length - 1;
+        if (currentTime >= start && (isLast ? currentTime <= end : currentTime < end)) {
+            const { inAudioMode, outAudioMode } = resolveAudioBoundaryModes(scenes, i, Boolean(draft.enableOutro));
+            const mode = (currentTime - start) <= (end - currentTime) ? inAudioMode : outAudioMode;
+            if (mode === "full") return getBreathDipAudioGain(fadeIntensity, true);
+            if (mode === "breath") return getBreathDipAudioGain(fadeIntensity, false);
+            return 1;
+        }
+        start = end;
+    }
+    return getBreathDipAudioGain(fadeIntensity, false);
 };
 
 /** Formats seconds as compact `MM:SS.d` for studio transport, scrubbers, and pills. */

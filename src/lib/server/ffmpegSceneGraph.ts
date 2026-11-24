@@ -1,5 +1,5 @@
-import { clamp, getDefaultVideoFraming, interpolateKeyframe, isSharedReHookScene, resolveSceneFadeDurations, type TimelineScene, type VideoDraft } from "../../types/news";
-import { AudioBoundaryFadeMode, build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildPosXNormExpr, buildTopOffsetYExpr, buildZoomFactorExpr } from "./ffmpegFilters";
+import { clamp, getDefaultVideoFraming, interpolateKeyframe, isSharedReHookScene, resolveAudioBoundaryModes, resolveSceneFade, type TimelineScene, type VideoDraft } from "../../types/news";
+import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildPosXNormExpr, buildTopOffsetYExpr, buildZoomFactorExpr } from "./ffmpegFilters";
 
 interface SceneFilterContext {
     index: number;
@@ -30,8 +30,8 @@ interface SceneFilterContext {
 /** Builds the FFmpeg filtergraph stages for a single scene (4:5 ambient spill or 9:16/16:9 full bleed, fade, overlay, audio). */
 export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: string[]; vMap: string; aMap: string } {
     const {
-        index: i, scene: s, scenes, draft, start, duration: dur, width: W, height: H, targetFps,
-        is45, isImage, hasReHook, setupIdx, srcWidth, srcHeight, srcHasAudio, srcIsHdr,
+        index: i, scenes, draft, start, duration: dur, width: W, height: H, targetFps,
+        is45, isImage, srcWidth, srcHeight, srcHasAudio, srcIsHdr,
         mediaIdx, overlayIdx: ovIdx, customLoopVideoSource, customLoopAudioSource, loopTrim, aLoopTrim,
     } = ctx;
 
@@ -159,11 +159,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
         filters.push(`${vInputPad}${mediaPrep},scale=${sW}:${sH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${H}:x='(iw-${W})*${posXExpr}':y='(ih-${H})/2'${kenBurnsFull}[${vLabel}]`);
     }
 
-    const resolvedFade = resolveSceneFadeDurations(scenes, i);
-    const inOn = s.fadeIn ?? (i === setupIdx || (hasReHook && i === 1));
-    const outOn = s.fadeOut ?? (i === 0 || (hasReHook && i === 1));
-    const inDur = inOn ? Math.min(resolvedFade.inDur, dur * 0.5) : 0;
-    const outDur = outOn ? Math.min(resolvedFade.outDur, dur * 0.5) : 0;
+    const { inDur, outDur } = resolveSceneFade(scenes, i);
     const fadeColor = is45 ? "#080808" : "#050505";
 
     const fadeParts: string[] = [];
@@ -188,14 +184,7 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
     if (isImage || !srcHasAudio || vol === 0) {
         filters.push(`anullsrc=r=48000:cl=stereo:d=${dur.toFixed(3)}[${aLabel}]`);
     } else {
-        const prevHasAudio = i > 0 && scenes[i - 1]?.mediaType !== "image";
-        const prevFadeOut = i > 0 ? (scenes[i - 1]?.fadeOut ?? (i - 1 === 0 || (hasReHook && i - 1 === 1))) : false;
-        const nextHasAudio = i < scenes.length - 1 && scenes[i + 1]?.mediaType !== "image";
-        const nextFadeIn = i < scenes.length - 1 ? (scenes[i + 1]?.fadeIn ?? (i + 1 === setupIdx || (hasReHook && i + 1 === 1))) : false;
-        const inAudioMode: AudioBoundaryFadeMode = i === 0 || !prevHasAudio ? "full" : (inOn && prevFadeOut ? "breath" : "declick");
-        const outAudioMode: AudioBoundaryFadeMode = (i === scenes.length - 1 && !draft.enableOutro) || (i < scenes.length - 1 && !nextHasAudio)
-            ? "full"
-            : (outOn && (i === scenes.length - 1 || nextFadeIn) ? "breath" : "declick");
+        const { inAudioMode, outAudioMode } = resolveAudioBoundaryModes(scenes, i, Boolean(draft.enableOutro));
         const aFades: string[] = [
             `${aLoopTrim}asetpts=PTS-STARTPTS`,
             `aresample=48000`,

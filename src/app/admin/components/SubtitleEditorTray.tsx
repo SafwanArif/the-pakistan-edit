@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { SubtitleSegment, SubtitleFontId, SubtitleBackdropId, SUBTITLE_FONT_OPTIONS, SUBTITLE_BACKDROP_OPTIONS, VideoDraft, formatTimecode, downloadSrtFile, timelineTimeToMediaTime, wrapMediaTime, getDefaultSubtitleFontSize, getMediaSubtitleTimelineTime, getTimelineStructure } from "../../../types/news";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { consumeNdjsonStream } from "../utils/ndjsonStream";
@@ -36,55 +36,52 @@ export const getSceneSubtitles = (draft: VideoDraft, startSec: number, endSec: n
 
 interface SubtitleRowListProps {
     segments: SubtitleSegment[];
-    draft: VideoDraft;
-    onChange: (d: VideoDraft) => void;
+    onUpdateText: (id: string, text: string) => void;
+    onRemoveSeg: (id: string) => void;
     onSeekMedia: (mediaStart: number) => void;
 }
 
 export const SubtitleRowList: React.FC<SubtitleRowListProps> = React.memo(({
-    segments, draft, onChange, onSeekMedia
-}) => {
-    const allSubs = draft.subtitles || [];
-    const updateText = (id: string, text: string) =>
-        onChange({ ...draft, subtitles: allSubs.map((s) => (s.id === id ? { ...s, text } : s)) });
-    const removeSeg = (id: string) =>
-        onChange({ ...draft, subtitles: allSubs.filter((s) => s.id !== id) });
-
-    return (
-        <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
-            {segments.map((seg) => (
-                <div key={seg.id} className="tpe-flex-row tpe-subtitle-row" style={{ alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)' }}>
-                    <button
-                        type="button"
-                        onClick={() => onSeekMedia(seg.start)}
-                        className="tpe-tabular-nums"
-                        style={{ fontFamily: 'monospace', fontSize: '8.5px', fontWeight: 800, color: 'var(--ui-accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
-                        title={`Jump to ${formatTimecode(seg.start)}`}
-                    >
-                        {formatTimecode(seg.start)}
-                    </button>
-                    <input
-                        type="text"
-                        aria-label={`Subtitle text at ${formatTimecode(seg.start)}`}
-                        value={seg.text}
-                        onChange={(e) => updateText(seg.id, e.target.value)}
-                        style={{ flex: 1, minWidth: 0, fontSize: '10px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
-                    />
-                    <button
-                        type="button"
-                        aria-label="Delete subtitle line"
-                        onClick={() => removeSeg(seg.id)}
-                        className="tpe-asset-btn tpe-asset-btn-danger"
-                        style={{ width: '16px', height: '16px', fontSize: '9px', padding: 0 }}
-                        title="Delete subtitle line"
-                    >
-                        ×
-                    </button>
-                </div>
-            ))}
-        </div>
-    );
-});
+    segments, onUpdateText, onRemoveSeg, onSeekMedia
+}) => (
+    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+        {segments.map((seg) => (
+            <div key={seg.id} className="tpe-flex-row tpe-subtitle-row" style={{ alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)' }}>
+                <button
+                    type="button"
+                    onClick={() => onSeekMedia(seg.start)}
+                    className="tpe-tabular-nums"
+                    style={{ fontFamily: 'monospace', fontSize: '8.5px', fontWeight: 800, color: 'var(--ui-accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
+                    title={`Jump to ${formatTimecode(seg.start)}`}
+                >
+                    {formatTimecode(seg.start)}
+                </button>
+                <input
+                    type="text"
+                    dir="auto"
+                    enterKeyHint="done"
+                    autoCapitalize="sentences"
+                    spellCheck={true}
+                    aria-label={`Subtitle text at ${formatTimecode(seg.start)}`}
+                    value={seg.text}
+                    onChange={(e) => onUpdateText(seg.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                    style={{ flex: 1, minWidth: 0, fontSize: '10px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
+                />
+                <button
+                    type="button"
+                    aria-label="Delete subtitle line"
+                    onClick={() => onRemoveSeg(seg.id)}
+                    className="tpe-asset-btn tpe-asset-btn-danger"
+                    style={{ width: '16px', height: '16px', fontSize: '9px', padding: 0 }}
+                    title="Delete subtitle line"
+                >
+                    ×
+                </button>
+            </div>
+        ))}
+    </div>
+));
 SubtitleRowList.displayName = "SubtitleRowList";
 
 interface SubtitleEditorTrayProps {
@@ -104,13 +101,17 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
     const subtitles = draft.subtitles || [];
     const showSubtitles = draft.showSubtitles !== false;
 
-    const transcribeAbortRef = React.useRef<AbortController | null>(null);
+    const transcribeAbortRef = useRef<AbortController | null>(null);
+    const latestRef = useRef({ draft, onChange, seekTo });
+    useEffect(() => {
+        latestRef.current = { draft, onChange, seekTo };
+    });
 
-    React.useEffect(() => {
+    useEffect(() => {
         return () => transcribeAbortRef.current?.abort();
     }, []);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (!isTranscribing) {
             setElapsedSec(0);
             return;
@@ -169,11 +170,13 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                     }
                 );
                 if (finalSegments === null) throw new Error("Transcription ended without subtitle output.");
-                onChange({ ...draft, subtitles: finalSegments, showSubtitles: true });
+                const { draft: latestDraft, onChange: commit } = latestRef.current;
+                commit({ ...latestDraft, subtitles: finalSegments, showSubtitles: true });
             } else {
                 const data = await res.json() as { segments?: SubtitleSegment[]; error?: string };
                 if (data.error) throw new Error(data.error);
-                onChange({ ...draft, subtitles: data.segments || [], showSubtitles: true });
+                const { draft: latestDraft, onChange: commit } = latestRef.current;
+                commit({ ...latestDraft, subtitles: data.segments || [], showSubtitles: true });
             }
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -186,7 +189,22 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
         }
     };
 
-    const seekToMediaTime = (mediaStart: number) => seekTo(getMediaSubtitleTimelineTime(draft, mediaStart));
+    const seekToMediaTime = useCallback((mediaStart: number) => {
+        const { draft: latestDraft, seekTo: seek } = latestRef.current;
+        seek(getMediaSubtitleTimelineTime(latestDraft, mediaStart));
+    }, []);
+
+    const handleUpdateSubtitleText = useCallback((id: string, text: string) => {
+        const { draft: latestDraft, onChange: commit } = latestRef.current;
+        const allSubs = latestDraft.subtitles || [];
+        commit({ ...latestDraft, subtitles: allSubs.map((s) => (s.id === id ? { ...s, text } : s)) });
+    }, []);
+
+    const handleRemoveSubtitle = useCallback((id: string) => {
+        const { draft: latestDraft, onChange: commit } = latestRef.current;
+        const allSubs = latestDraft.subtitles || [];
+        commit({ ...latestDraft, subtitles: allSubs.filter((s) => s.id !== id) });
+    }, []);
 
     const ccSize = draft.subtitleFontSize ?? getDefaultSubtitleFontSize(draft.aspectRatio);
 
@@ -292,7 +310,17 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             >
                                 CC: {showSubtitles ? "ON" : "OFF"}
                             </button>
-                            <button type="button" onClick={() => void navigator.clipboard.writeText(subtitles.map(s => s.text).join(' '))} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px', boxShadow: 'none' }} title="Copy full transcript text">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    try {
+                                        void navigator.clipboard?.writeText(subtitles.map((s) => s.text).join(' '))?.catch(() => {});
+                                    } catch { /* clipboard unavailable on insecure LAN origins */ }
+                                }}
+                                className="tpe-mode-btn"
+                                style={{ padding: '2px 6px', fontSize: '8px', boxShadow: 'none' }}
+                                title="Copy full transcript text"
+                            >
                                 COPY
                             </button>
                             <button type="button" onClick={() => downloadSrtFile(draft)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px', boxShadow: 'none' }} title="Download .SRT file">
@@ -362,8 +390,8 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
             {subtitles.length > 0 && (
                 <SubtitleRowList
                     segments={subtitles}
-                    draft={draft}
-                    onChange={onChange}
+                    onUpdateText={handleUpdateSubtitleText}
+                    onRemoveSeg={handleRemoveSubtitle}
                     onSeekMedia={seekToMediaTime}
                 />
             )}

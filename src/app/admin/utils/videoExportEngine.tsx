@@ -6,9 +6,25 @@ import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
 import { createDomCaptureSession } from "./exportEngine";
 
+let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+const setExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
+    if (statusClearTimer !== null) {
+        clearTimeout(statusClearTimer);
+        statusClearTimer = null;
+    }
+    onStatus(msg);
+    if (autoClearMs && msg !== null) {
+        statusClearTimer = setTimeout(() => {
+            statusClearTimer = null;
+            onStatus(null);
+        }, autoClearMs);
+    }
+};
+
 /** Exports transparent PNG overlays for TikTok 9:16, 4:5, and 16:9 canvases. */
 export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: string | null) => void) => {
-    onStatus("Initializing Institutional Overlay Pipeline...");
+    setExportStatus(onStatus, "Initializing Institutional Overlay Pipeline...");
     const aspectRatios: VideoAspectRatio[] = ["9:16", "4:5", "16:9"];
     const zip = new JSZip();
 
@@ -44,12 +60,10 @@ export const runVideoOverlayExport = async (draft: VideoDraft, onStatus: (s: str
         onStatus("Generating ZIP Archive...");
         const zipBlob = await zip.generateAsync({ type: "blob" });
         downloadBlob(zipBlob, `tpe-video-overlays-${anchorKW}.zip`);
-        onStatus("Overlays exported successfully!");
-        setTimeout(() => onStatus(null), 1500);
+        setExportStatus(onStatus, "Overlays exported successfully!", 1500);
     } catch (err: unknown) {
         console.error("VIDEO_OVERLAY_EXPORT_ERROR:", err);
-        onStatus(`Export Error: ${err instanceof Error ? err.message : "Unknown export error"}`);
-        setTimeout(() => onStatus(null), 4000);
+        setExportStatus(onStatus, `Export Error: ${err instanceof Error ? err.message : "Unknown export error"}`, 4000);
     }
 };
 
@@ -61,7 +75,11 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
 
     try {
         if (!draft.videoUrl?.includes('/api/video/ingest')) {
-            throw new Error("Please upload a video clip first so FFmpeg can composite the stream.");
+            throw new Error(
+                draft.videoUrl?.startsWith('blob:')
+                    ? "Final MP4 compositing requires the local FFmpeg studio server — use PNG Overlays (.ZIP) or run locally for MP4 export."
+                    : "Please upload a video clip first so FFmpeg can composite the stream."
+            );
         }
 
         const sceneBounds = getSceneBoundaries(scenes);
@@ -125,11 +143,9 @@ export const runVideoMP4Export = async (draft: VideoDraft, onStatus: (s: string 
         const mp4Blob = await response.blob();
         const anchorKW = getAnchorKeyword(draft.headline || draft.category || "video");
         downloadBlob(mp4Blob, `the-pakistan-edit-${anchorKW}.mp4`);
-        onStatus("✅ Broadcast MP4 exported!");
-        setTimeout(() => onStatus(null), 2000);
+        setExportStatus(onStatus, "✅ Broadcast MP4 exported!", 2000);
     } catch (err: unknown) {
         console.error("VIDEO_MP4_EXPORT_ERROR:", err);
-        onStatus(`Export Error: ${err instanceof Error ? err.message : "Unknown export error"}`);
-        setTimeout(() => onStatus(null), 4000);
+        setExportStatus(onStatus, `Export Error: ${err instanceof Error ? err.message : "Unknown export error"}`, 4000);
     }
 };

@@ -6,12 +6,10 @@ import {
     getTopBoxOffsetY,
     interpolateKeyframe,
     resolveKeyframeSpan,
-    timelineTimeToMediaTime,
-    wrapMediaTime,
     getDefaultSubtitleFontSize,
     getDefaultVideoFraming,
-    findSubtitleAtMediaTime,
 } from "../../types/news";
+import { projectSubtitlesToTimeline } from "../../utils/subtitleTimeline";
 
 const formatAssTime = (sec: number): string => {
     const clamped = Math.max(0, sec);
@@ -247,40 +245,17 @@ export const buildAssSubtitles = (
                 ? `Style: Default,${fontName},${fontSize},&H00FFFFFF,&H00FFFFFF,&H78080808,&H78080808,-1,0,0,0,100,100,0.4,0,3,14,0,2,60,140,${marginV},1`
                 : `Style: Default,${fontName},${fontSize},&H00FFFFFF,&H00FFFFFF,&H24080808,&HC8080808,-1,0,0,0,100,100,0.4,0,3,14,0,2,60,140,${marginV},1`;
 
-    const events: string[] = [];
-    const step = 0.02;
+    const projected = projectSubtitlesToTimeline(draft, {
+        scenes,
+        bounds,
+        masterDuration,
+        minCueDuration: 0.08,
+    });
+    if (!projected.length) return null;
 
-    for (let i = 0; i < scenes.length; i++) {
-        const sc = scenes[i]!;
-        const b = bounds[i]!;
-        const captionsOn = sc.showSubtitles ?? (draft.showSubtitles !== false);
-        if (!captionsOn) continue;
-
-        let activeText = "";
-        let cueStart = b.start;
-
-        for (let t = b.start; t <= b.end + 0.001; t += step) {
-            const clampedT = Math.min(b.end, t);
-            const hasCustomMedia = Boolean(sc.mediaUrl) || sc.mediaType === "image";
-            const mediaT = hasCustomMedia
-                ? (sc.clipStartOffset ?? 0) + (clampedT - b.start)
-                : (masterDuration > 0
-                    ? wrapMediaTime(draft, clampedT, masterDuration)
-                    : timelineTimeToMediaTime(draft, clampedT));
-            const seg = clampedT < b.end ? findSubtitleAtMediaTime(subs, mediaT) : undefined;
-            const nextText = seg?.text.trim() || "";
-
-            if (nextText !== activeText) {
-                if (activeText && clampedT - cueStart >= 0.08) {
-                    events.push(`Dialogue: 0,${formatAssTime(cueStart)},${formatAssTime(clampedT)},Default,,0,0,0,,${escapeAssText(activeText)}`);
-                }
-                activeText = nextText;
-                cueStart = clampedT;
-            }
-        }
-    }
-
-    if (!events.length) return null;
+    const events = projected.map(
+        (cue) => `Dialogue: 0,${formatAssTime(cue.start)},${formatAssTime(cue.end)},Default,,0,0,0,,${escapeAssText(cue.text)}`
+    );
 
     return [
         "[Script Info]",

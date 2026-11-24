@@ -12,8 +12,34 @@ import {
     type SourceMediaInfo,
     type VideoFraming,
 } from '../../../types/news';
-import { get, set } from 'idb-keyval';
+import { del, get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
+import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
+
+/** Clears clip-specific state (subtitles, keyframes, star cues, master clipStartOffsets, probe metadata) when loading a new video. */
+export const resetClipBoundFields = (draft: VideoDraft): VideoDraft => ({
+    ...draft,
+    subtitles: [],
+    keyframes: [],
+    starCues: undefined,
+    sourceFps: undefined,
+    sourceFrameLogUrl: undefined,
+    sourceFrameIndex: undefined,
+    sourceMediaInfo: undefined,
+    scenes: (draft.scenes || []).map((s) => {
+        if (s.mediaUrl || s.clipStartOffset === undefined) return s;
+        const copy = { ...s };
+        delete copy.clipStartOffset;
+        return copy;
+    }),
+});
+
+const revokeDraftBlobUrls = (draft: VideoDraft) => {
+    if (draft.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(draft.videoUrl);
+    for (const s of draft.scenes || []) {
+        if (s.mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(s.mediaUrl);
+    }
+};
 
 /** Migrates legacy `/api/video/ingest/frame-index?name=...` URLs to the active `?frameIndex=...` route. */
 const normalizeFrameLogUrl = (raw?: string): string | undefined => {
@@ -184,7 +210,11 @@ export const normalizeHydratedVideoDraft = (
     if (!draft.scenes || draft.scenes.length === 0) {
         draft.scenes = baseDraft.scenes;
     } else {
-        draft.scenes = ensureUniqueSceneIds(draft.scenes);
+        draft.scenes = ensureUniqueSceneIds(draft.scenes).map((s) =>
+            s.mediaUrl?.startsWith('blob:')
+                ? { ...s, mediaUrl: undefined, mediaName: undefined, mediaType: 'video' }
+                : s
+        );
     }
     if (draft.keyframes?.length) {
         draft.keyframes = [...draft.keyframes].sort((a, b) => a.time - b.time);
@@ -253,19 +283,12 @@ export const useVideoDraftState = () => {
         scheduleDraftSave(newDraft);
     }, [scheduleDraftSave]);
 
-    /** Uploads a video blob to `/api/video/ingest` for untouched HTTP 206 byte-range streaming. */
+    /** Uploads a video blob to `/api/video/ingest` for untouched HTTP 206 byte-range streaming (or loads directly as `blob:` on serverless). */
     const ingestVideoBlob = useCallback(async (
         blob: Blob,
         name?: string,
         options?: { preserveScenes?: boolean }
     ) => {
-        setIsOptimisingVideo(true);
-        setIngestStatus("PREPARING UPLOAD STREAM...");
-        if (!options?.preserveScenes) {
-            setIsPlaying(false);
-            setCurrentTime(0);
-        }
-
         const displayName =
             name || (blob instanceof File ? blob.name : videoDraftRef.current.videoName) || "Imported Video.mp4";
         const previousUrl = videoDraftRef.current.videoUrl;
@@ -273,7 +296,50 @@ export const useVideoDraftState = () => {
         const controller = new AbortController();
         ingestAbortRef.current = controller;
 
+        const commitLocalBlobFallback = async () => {
+            if (options?.preserveScenes) return;
+            if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl);
+            else deleteServerCachedVideo(previousUrl);
+            const fallbackUrl = URL.createObjectURL(blob);
+            setIngestStatus("PROBING ASPECT RATIO & DURATION...");
+            const meta = await probeVideoMetadata(fallbackUrl);
+            if (controller.signal.aborted) {
+                URL.revokeObjectURL(fallbackUrl);
+                return;
+            }
+            const base = resetClipBoundFields(videoDraftRef.current);
+            const clipDuration = meta?.duration ?? base.videoDuration ?? 60;
+            try {
+                await set('tpe_video_blob', blob);
+            } catch (quotaErr) {
+                console.warn("IDB_VIDEO_BLOB_QUOTA_SKIPPED:", quotaErr);
+            }
+            await updateVideoDraft({
+                ...base,
+                videoUrl: fallbackUrl,
+                videoName: displayName,
+                videoDuration: clipDuration,
+                aspectRatio: meta?.aspectRatio ?? base.aspectRatio,
+                scenes: calculatePsychologyPacedScenes(clipDuration, base.scenes),
+            });
+        };
+
+        setIsOptimisingVideo(true);
+        setIngestStatus("PREPARING STREAM...");
+        if (!options?.preserveScenes) {
+            setIsPlaying(false);
+            setCurrentTime(0);
+        }
+
         try {
+            const serverIngestAvailable = await canUseServerIngest();
+            if (controller.signal.aborted) return;
+            if (!serverIngestAvailable) {
+                await commitLocalBlobFallback();
+                return;
+            }
+
+            setIngestStatus("PREPARING UPLOAD STREAM...");
             const formData = new FormData();
             formData.append('file', blob, displayName);
 
@@ -281,7 +347,8 @@ export const useVideoDraftState = () => {
             const url = upload.url;
             setIngestStatus("PROBING ASPECT RATIO & DURATION...");
             const meta = await probeVideoMetadata(url);
-            const current = videoDraftRef.current;
+            if (controller.signal.aborted) return;
+            const current = options?.preserveScenes ? videoDraftRef.current : resetClipBoundFields(videoDraftRef.current);
 
             const nextRatio = options?.preserveScenes
                 ? current.aspectRatio
@@ -318,24 +385,19 @@ export const useVideoDraftState = () => {
             };
 
             if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl);
-            await set('tpe_video_blob', undefined);
+            else if (!options?.preserveScenes && previousUrl && previousUrl !== url) deleteServerCachedVideo(previousUrl);
+            await del('tpe_video_blob').catch(() => {});
             await updateVideoDraft(nextDraft);
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return;
+            if (err instanceof Error && err.message === 'Upload aborted') return;
             console.error("VIDEO_INGEST_CLIENT_ERROR:", err);
-            if (!options?.preserveScenes) {
-                if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl);
-                const fallbackUrl = URL.createObjectURL(blob);
-                await set('tpe_video_blob', blob);
-                await updateVideoDraft({
-                    ...videoDraftRef.current,
-                    videoUrl: fallbackUrl,
-                    videoName: displayName,
-                });
-            }
+            await commitLocalBlobFallback();
         } finally {
-            setIsOptimisingVideo(false);
-            setIngestStatus(null);
+            if (ingestAbortRef.current === controller) {
+                setIsOptimisingVideo(false);
+                setIngestStatus(null);
+            }
         }
     }, [updateVideoDraft]);
 
@@ -378,14 +440,37 @@ export const useVideoDraftState = () => {
                 }).catch(() => {});
             }
 
+            // Validate that a persisted local server video still exists on disk (self-heals wiped `.next/cache`)
+            if (draft.videoUrl?.startsWith('/api/video/ingest')) {
+                const cachedUrl = draft.videoUrl;
+                void fetch(cachedUrl, { method: 'HEAD' }).then((res) => {
+                    if (!cancelled && res.status === 404) {
+                        setVideoDraft((curr) => {
+                            if (curr.videoUrl !== cachedUrl) return curr;
+                            const healed: VideoDraft = {
+                                ...curr,
+                                videoUrl: "",
+                                videoName: "",
+                                sourceFrameLogUrl: undefined,
+                                sourceFrameIndex: undefined,
+                            };
+                            scheduleDraftSave(healed);
+                            return healed;
+                        });
+                    }
+                }).catch(() => {});
+            }
+
             if (pendingMigrationBlob && !migrationStartedRef.current) {
                 migrationStartedRef.current = true;
-                void ingestVideoBlob(pendingMigrationBlob, draft.videoName, { preserveScenes: true });
+                if (await canUseServerIngest()) {
+                    void ingestVideoBlob(pendingMigrationBlob, draft.videoName, { preserveScenes: true });
+                }
             }
         };
         void init();
         return () => { cancelled = true; };
-    }, [ingestVideoBlob]);
+    }, [ingestVideoBlob, scheduleDraftSave]);
 
     // Native-VSync rAF timeline clock (60/120/144/240Hz): glides playheads & telemetry smoothly even on 24/30fps video, Photo scenes, or Outro
     useEffect(() => {
@@ -503,19 +588,45 @@ export const useVideoDraftState = () => {
         }
     }, [totalDuration, seekTo, scheduleDraftSave]);
 
+    const clearVideo = useCallback(async () => {
+        ingestAbortRef.current?.abort();
+        ingestAbortRef.current = null;
+        setIsOptimisingVideo(false);
+        setIngestStatus(null);
+        setIsPlaying(false);
+        setCurrentTime(0);
+        const current = videoDraftRef.current;
+        if (current.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(current.videoUrl);
+        else deleteServerCachedVideo(current.videoUrl);
+        await del('tpe_video_blob').catch(() => {});
+        await updateVideoDraft({
+            ...resetClipBoundFields(current),
+            videoUrl: "",
+            videoName: "",
+            videoDuration: undefined,
+            sourceName: "",
+            creditName: "",
+        });
+    }, [updateVideoDraft]);
+
     const resetVideoDraft = useCallback(async () => {
-        const prevUrl = videoDraftRef.current.videoUrl;
-        if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
+        ingestAbortRef.current?.abort();
+        ingestAbortRef.current = null;
+        setIsOptimisingVideo(false);
+        setIngestStatus(null);
+        const current = videoDraftRef.current;
+        revokeDraftBlobUrls(current);
+        deleteServerCachedVideo(current.videoUrl);
         const defaultDraft = createDefaultVideoDraft();
         setVideoDraft(defaultDraft);
         setIsPlaying(false);
         setCurrentTime(0);
         await saveDraftNow(defaultDraft);
-        await set('tpe_video_blob', undefined);
+        await del('tpe_video_blob').catch(() => {});
     }, [saveDraftNow]);
 
     return {
-        isMounted, videoDraft, updateVideoDraft, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
+        isMounted, videoDraft, updateVideoDraft, clearVideo, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
         isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, seekNonce,
         setCurrentTime, seekTo, isMuted, toggleMute, syncTimeFromVideo
     };

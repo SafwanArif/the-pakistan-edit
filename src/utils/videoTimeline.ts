@@ -191,6 +191,20 @@ export const resolveKeyframeSpan = (
         if (next.time <= 0) {
             return { kind: 'constant', framing: { zoom: next.zoom, posX: next.posX, posY: next.posY ?? fbY } };
         }
+    } else if (sorted.length > 6) {
+        let lo = 0;
+        let hi = sorted.length - 2;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if (sorted[mid]!.time <= currentTime) lo = mid;
+            else hi = mid - 1;
+        }
+        const p = sorted[lo]!;
+        prevTime = p.time;
+        prevZoom = p.zoom;
+        prevPosX = p.posX;
+        prevPosY = p.posY ?? fbY;
+        next = sorted[lo + 1]!;
     } else {
         for (let i = 0; i < sorted.length - 1; i++) {
             if (currentTime >= sorted[i]!.time && currentTime < sorted[i + 1]!.time) {

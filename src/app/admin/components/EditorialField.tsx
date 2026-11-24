@@ -52,12 +52,16 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                     aria-label={placeholder || fieldId}
                     dir="auto"
                     enterKeyHint="done"
+                    autoCapitalize="characters"
                     spellCheck={false}
                     autoComplete="off"
                     className={inputClasses}
                     placeholder={placeholder}
                     value={val}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange(e.target.value)}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     onFocus={onFocus}
                     onBlur={onBlur}
                 />
@@ -67,8 +71,10 @@ export const EditorialField: React.FC<EditorialFieldProps> = React.memo(({
                         id={inputId}
                         aria-label={placeholder || fieldId}
                         dir="auto"
+                        enterKeyHint="enter"
+                        autoCapitalize="sentences"
+                        spellCheck={true}
                         autoComplete="off"
-                        autoCorrect="off"
                         className={inputClasses}
                         placeholder={placeholder}
                         value={val}

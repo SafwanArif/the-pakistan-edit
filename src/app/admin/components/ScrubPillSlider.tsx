@@ -59,6 +59,10 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
             <input
                 type="text"
                 inputMode="decimal"
+                enterKeyHint="done"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
                 autoFocus
                 aria-label={`${label} numeric value`}
                 className="tpe-tabular-nums"
@@ -126,6 +130,11 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 }
             }}
             onPointerCancel={() => {
+                dragRef.current = null;
+                setIsDragging(false);
+            }}
+            onLostPointerCapture={() => {
+                if (!dragRef.current) return;
                 dragRef.current = null;
                 setIsDragging(false);
             }}

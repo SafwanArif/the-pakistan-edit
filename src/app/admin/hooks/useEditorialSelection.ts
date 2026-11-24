@@ -65,10 +65,18 @@ export const useEditorialSelection = () => {
 
         document.addEventListener('selectionchange', schedule);
         document.addEventListener('mouseup', schedule);
+        const vv = window.visualViewport;
+        const scheduleIfSelected = () => {
+            if (hasSelectionRef.current) schedule();
+        };
+        vv?.addEventListener('resize', scheduleIfSelected);
+        vv?.addEventListener('scroll', scheduleIfSelected);
         return () => {
             if (rafId !== null) cancelAnimationFrame(rafId);
             document.removeEventListener('selectionchange', schedule);
             document.removeEventListener('mouseup', schedule);
+            vv?.removeEventListener('resize', scheduleIfSelected);
+            vv?.removeEventListener('scroll', scheduleIfSelected);
         };
     }, [checkSelection]);
 

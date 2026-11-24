@@ -85,10 +85,11 @@ export function resolveKeyframeJumpStop(
     keyframes: VideoKeyframe[] | undefined,
     activeTime: number,
     direction: "prev" | "next",
-    tolerance = 0.06
+    tolerance = 0.06,
+    preSorted = false
 ): KeyframeJumpStop | null {
     if (!keyframes?.length) return null;
-    const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+    const sorted = preSorted ? keyframes : [...keyframes].sort((a, b) => a.time - b.time);
     const stops: KeyframeJumpStop[] = [];
     for (const k of sorted) {
         if (k.easing === "snap" && k.pre?.time !== undefined && k.pre.time < k.time - 0.01) {

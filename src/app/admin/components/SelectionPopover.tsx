@@ -32,7 +32,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     activeSceneTime = 0,
 }) => {
     const { selection } = useEditorialSelection();
-    const isMobile = useMediaQuery("(max-width: 768px)");
+    const isMobile = useMediaQuery("(max-width: 900px)");
     const stateRef = useRef({
         postMode,
         carouselDraft,

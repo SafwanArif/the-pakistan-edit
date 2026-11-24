@@ -94,6 +94,11 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                         ))}
                         <input
                             type="text"
+                            inputMode="decimal"
+                            enterKeyHint="done"
+                            spellCheck={false}
+                            autoCorrect="off"
+                            autoCapitalize="off"
                             aria-label="Clip start offset timecode"
                             value={draftText ?? formatTimecode(clipStartOffset)}
                             onFocus={(e) => { setDraftText(formatTimecode(clipStartOffset)); e.currentTarget.select(); }}

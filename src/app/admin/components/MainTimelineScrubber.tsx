@@ -194,13 +194,15 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
 
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
         e.stopPropagation();
-        e.currentTarget.setPointerCapture(e.pointerId);
+        const handleEl = e.currentTarget;
+        handleEl.setPointerCapture(e.pointerId);
         setDragTarget(target);
         onHookDragStart?.();
         const startX = e.clientX;
         const trackWidth = Math.max(1, trackRef.current?.getBoundingClientRect().width ?? 1);
         const startOffset = target === "hook" ? hookOffset : rehookOffset;
         const maxOff = target === "hook" ? hookMax : rehookMax;
+        let lastSent = startOffset;
         let moved = false;
 
         const onMove = (ev: PointerEvent) => {
@@ -208,16 +210,20 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             if (Math.abs(ev.clientX - startX) > 2) moved = true;
             const deltaRatio = (ev.clientX - startX) / trackWidth;
             const next = clamp(Math.round((startOffset + deltaRatio * safeDuration) * 10) / 10, 0, maxOff);
-            if (target === "hook") onChangeHookOffset?.(next);
-            else onChangeRehookOffset?.(next);
-            const nextTimelinePos = getHandleTimelinePos(next);
-            setHoverInfo({ pct: (nextTimelinePos / safeDuration) * 100, time: next });
+            if (next !== lastSent) {
+                lastSent = next;
+                if (target === "hook") onChangeHookOffset?.(next);
+                else onChangeRehookOffset?.(next);
+                const nextTimelinePos = getHandleTimelinePos(next);
+                setHoverInfo({ pct: (nextTimelinePos / safeDuration) * 100, time: next });
+            }
         };
 
         const cleanup = () => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onCancel);
+            handleEl.removeEventListener("lostpointercapture", onCancel);
             handleDragCleanupRef.current = null;
         };
 
@@ -241,6 +247,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
         window.addEventListener("pointercancel", onCancel);
+        handleEl.addEventListener("lostpointercapture", onCancel);
     };
 
     return (

@@ -63,31 +63,32 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     const logoOn = draft.enableLogo !== false;
 
     const rawCues = draft.starCues ?? DEFAULT_STAR_CUES;
+    const isLogoOpen = activeAsset === 'logo';
     const sortedCues = useMemo(
-        () => [...rawCues].sort((a, b) => a.time - b.time),
-        [rawCues]
+        () => (isLogoOpen ? [...rawCues].sort((a, b) => a.time - b.time) : rawCues),
+        [isLogoOpen, rawCues]
     );
 
     const parkedCue = useMemo(
-        () => sortedCues.find((c) => Math.abs(c.time - activeDisplayTime) <= 0.08),
-        [sortedCues, activeDisplayTime]
+        () => (isLogoOpen ? sortedCues.find((c) => Math.abs(c.time - activeDisplayTime) <= 0.08) : undefined),
+        [isLogoOpen, sortedCues, activeDisplayTime]
     );
 
     const hasHookCue = useMemo(
-        () => sortedCues.some((c) => c.time <= 0.15),
-        [sortedCues]
+        () => (isLogoOpen ? sortedCues.some((c) => c.time <= 0.15) : false),
+        [isLogoOpen, sortedCues]
     );
     const hasStoryCue = useMemo(
-        () => storyStart > 0.2 && sortedCues.some((c) => Math.abs(c.time - storyStart) <= 0.15),
-        [sortedCues, storyStart]
+        () => (isLogoOpen && storyStart > 0.2 ? sortedCues.some((c) => Math.abs(c.time - storyStart) <= 0.15) : false),
+        [isLogoOpen, sortedCues, storyStart]
     );
 
     const spinMode: StarSpinMode = draft.starSpinMode ?? 'ccw';
-    const spinVal = SPIN_MODES.findIndex((m) => m.mode === spinMode);
+    const spinVal = isLogoOpen ? SPIN_MODES.findIndex((m) => m.mode === spinMode) : 0;
     const sequenceMode: StarSequenceMode = draft.starSequence ?? 'star-crescent';
-    const sequenceVal = SEQUENCE_MODES.findIndex((m) => m.mode === sequenceMode);
+    const sequenceVal = isLogoOpen ? SEQUENCE_MODES.findIndex((m) => m.mode === sequenceMode) : 0;
     const holdFeel: StarHoldFeel = draft.starHoldFeel ?? 'drift';
-    const holdFeelVal = HOLD_FEEL_MODES.findIndex((m) => m.mode === holdFeel);
+    const holdFeelVal = isLogoOpen ? HOLD_FEEL_MODES.findIndex((m) => m.mode === holdFeel) : 0;
     const morphMs = Math.round((draft.starMorphDuration ?? 0.45) * 1000);
     const holdMs = Math.round((draft.starHoldDuration ?? 0.5) * 1000);
     const starScale = Math.round(draft.starScale ?? 100);

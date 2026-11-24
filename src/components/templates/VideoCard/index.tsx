@@ -130,7 +130,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const panXShift = is45 ? (0.5 - ((cardFraming.posX ?? 50) / 100)) * (effectiveScale - 1) * dimensions.width : 0;
     const topOffsetY = is45 ? getTopBoxOffsetY(cardFraming.posY, dimensions.height, containerHeightPx) : 0;
     const mediaOffsetY45 = is45 ? topOffsetY - Math.max(0, H_contain * effectiveScale - containerHeightPx) / 2 : 0;
-    const has45Letterbox = useMemo(() => has45LetterboxFraming(draft), [draft]);
+    const has45Letterbox = useMemo(() => (is45 ? has45LetterboxFraming(draft) : false), [is45, draft]);
     const ambientBlurActive = is45 && !overlayOnly && draft.enableAmbientBlur !== false && has45Letterbox;
     const ambientVisibility = useMemo(() => ({
         topVisible: ambientBlurActive && topOffsetY > 2,
@@ -224,7 +224,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         [draft.scenes, draft.enableOutro, draft.outroDuration]
     );
     const progressPercent = Math.min(100, Math.max(0, (currentTime / (totalDuration || 1)) * 100));
-    const hookFade = getHookTransitionFade(draft, currentTime);
+    const hookFade = isLiveMediaLoop || overlayOnly ? 0 : getHookTransitionFade(draft, currentTime);
     const activeSubtitle = useMemo(() => {
         const captionsOn = activeScene?.showSubtitles ?? (draft.showSubtitles !== false);
         if (!captionsOn || !draft.subtitles?.length) return undefined;

@@ -49,7 +49,24 @@ export const useEditorialState = () => {
             let step = 1;
 
             const savedDraft = await get<Draft>('tpe_active_draft');
-            if (savedDraft) draft = { ...draft, ...savedDraft };
+            if (savedDraft) {
+                draft = { ...draft, ...savedDraft };
+                // Ephemeral object URLs do not survive page reloads; strip dead blob: refs cleanly
+                if (draft.image?.startsWith('blob:')) {
+                    draft.image = '';
+                    draft.imageWidth = 0;
+                    draft.imageHeight = 0;
+                }
+                if (draft.slideAssets) {
+                    const cleanedAssets: NonNullable<Draft['slideAssets']> = {};
+                    for (const [k, asset] of Object.entries(draft.slideAssets)) {
+                        cleanedAssets[Number(k)] = asset.image?.startsWith('blob:')
+                            ? { ...asset, image: '', imageWidth: 0, imageHeight: 0 }
+                            : asset;
+                    }
+                    draft.slideAssets = cleanedAssets;
+                }
+            }
 
             const savedStep = await get<number>('tpe_current_step');
             if (savedStep) step = savedStep;

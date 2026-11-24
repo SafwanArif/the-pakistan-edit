@@ -46,6 +46,7 @@ export default function AdminDashboard() {
         isMounted: isVideoMounted,
         videoDraft,
         updateVideoDraft,
+        clearVideo,
         resetVideoDraft,
         isOptimisingVideo,
         ingestStatus,
@@ -148,6 +149,7 @@ export default function AdminDashboard() {
                             onChange={updateVideoDraft} 
                             onExportOverlay={handleExportVideoOverlay} 
                             onExportMP4={handleExportVideoMP4} 
+                            onClearVideo={clearVideo}
                             onReset={resetVideoDraft}
                             onUploadVideo={ingestVideoBlob}
                             isOptimisingVideo={isOptimisingVideo}

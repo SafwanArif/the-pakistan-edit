@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { canUseServerIngest } from "../utils/serverCapabilities";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { SceneChecklistPopover, FadePresetControl } from "./SceneChecklistPopover";
 import { SubtitleRowList, getSceneSubtitles } from "./SubtitleEditorTray";
@@ -289,6 +290,18 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         return () => ingestAbortRef.current?.abort();
     }, []);
 
+    const handleUpdateSubtitleText = useCallback((id: string, text: string) => {
+        const curDraft = draftRef.current;
+        const allSubs = curDraft.subtitles || [];
+        onChange({ ...curDraft, subtitles: allSubs.map((s) => (s.id === id ? { ...s, text } : s)) });
+    }, [onChange]);
+
+    const handleRemoveSubtitle = useCallback((id: string) => {
+        const curDraft = draftRef.current;
+        const allSubs = curDraft.subtitles || [];
+        onChange({ ...curDraft, subtitles: allSubs.filter((s) => s.id !== id) });
+    }, [onChange]);
+
     const handleSceneMediaUpload = async (idx: number, file: File) => {
         const prevUrl = scenes[idx]?.mediaUrl;
         if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
@@ -300,6 +313,11 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const controller = new AbortController();
         ingestAbortRef.current = controller;
         setSceneUploadWarning(null);
+        if (!(await canUseServerIngest())) {
+            if (controller.signal.aborted) return;
+            updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'video', mediaName: file.name });
+            return;
+        }
         try {
             const formData = new FormData();
             formData.append('file', file, file.name);
@@ -537,8 +555,8 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                         {cardSubs.length > 0 ? (
                                             <SubtitleRowList
                                                 segments={cardSubs}
-                                                draft={draft}
-                                                onChange={onChange}
+                                                onUpdateText={handleUpdateSubtitleText}
+                                                onRemoveSeg={handleRemoveSubtitle}
                                                 onSeekMedia={(ms) => seekTo(bounds ? resolveSceneSubtitleSeekTime(draft, bounds, scene.duration, ms, preStoryDur, storyOffset) : Math.max(0, ms - (scene.clipStartOffset ?? 0)))}
                                             />
                                         ) : (
@@ -599,10 +617,16 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                     </span>
                                     <input
                                         type="text"
+                                        inputMode="url"
+                                        enterKeyHint="done"
+                                        spellCheck={false}
+                                        autoCorrect="off"
+                                        autoCapitalize="off"
                                         aria-label="Scene media override URL"
                                         placeholder="Override URL or upload clip/photo..."
                                         value={scene.mediaUrl || ''}
                                         onChange={(e) => updateScene(idx, { mediaUrl: e.target.value || undefined, mediaName: undefined })}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                         style={{ flex: 1, minWidth: 0, fontSize: '9.5px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
                                     />
                                     <label className="tpe-upload-label" style={{ cursor: 'pointer', fontSize: '9px', fontWeight: 800, color: 'var(--ui-accent)', padding: '2px 6px', borderRadius: '4px', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', whiteSpace: 'nowrap' }} title="Upload custom video or photo for this angle">
@@ -647,5 +671,20 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
             </aside>
         </>
     );
+}, (prev, next) => {
+    // Skip 10Hz playback reconciliation completely when the mobile Scenes drawer is hidden off-screen
+    const isHiddenMobileDrawer = !prev.isMobileDrawerOpen
+        && !next.isMobileDrawerOpen
+        && typeof window !== "undefined"
+        && window.innerWidth <= 900;
+    return prev.draft === next.draft
+        && prev.onChange === next.onChange
+        && prev.isPlaying === next.isPlaying
+        && prev.seekTo === next.seekTo
+        && prev.playbackMode === next.playbackMode
+        && prev.onTogglePlaybackMode === next.onTogglePlaybackMode
+        && prev.isMobileDrawerOpen === next.isMobileDrawerOpen
+        && prev.onCloseMobileDrawer === next.onCloseMobileDrawer
+        && (isHiddenMobileDrawer || prev.currentTime === next.currentTime);
 });
 TimelineStoryboard.displayName = "TimelineStoryboard";

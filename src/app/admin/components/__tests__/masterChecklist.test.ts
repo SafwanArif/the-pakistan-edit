@@ -61,6 +61,29 @@ describe("getMasterChecklistItems", () => {
         const rewardsLong = getMasterChecklistItems(longDraft).find((i) => i.id === "rewards-60s");
         expect(rewardsLong?.passed).toBe(true);
     });
+
+    it("fails fade-pacing when Hook fadeOut is explicitly disabled (no false-pass on raw duration)", () => {
+        const disabledFadeDraft = makeDraft({
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4, fadeOut: false },
+                { id: "rehook-1", title: "R", subtitle: "S", duration: 4, fadeIn: true, shareHookText: true },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 52, fadeIn: true },
+            ],
+        });
+        const fadeOff = getMasterChecklistItems(disabledFadeDraft).find((i) => i.id === "fade-pacing");
+        expect(fadeOff?.passed).toBe(false);
+        expect(fadeOff?.detail).toContain("01 out 0.00s");
+
+        const enabledFadeDraft = makeDraft({
+            scenes: [
+                { id: "scene-1", title: "H", subtitle: "S", duration: 4, fadeOut: true },
+                { id: "rehook-1", title: "R", subtitle: "S", duration: 4, fadeIn: true, shareHookText: true },
+                { id: "scene-2", title: "Story", subtitle: "S", duration: 52, fadeIn: true },
+            ],
+        });
+        const fadeOn = getMasterChecklistItems(enabledFadeDraft).find((i) => i.id === "fade-pacing");
+        expect(fadeOn?.passed).toBe(true);
+    });
 });
 
 describe("getSceneCheckItems & normalizeEditorialPrefix (Portion E Stage 2)", () => {

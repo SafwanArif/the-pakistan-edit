@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { SOCIAL_ICONS } from "../../../config/editorial";
 import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+
+const isPrimaryPointer = (e: React.PointerEvent): boolean => e.pointerType !== "mouse" || e.button === 0;
 
 const LazyEmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -24,8 +26,9 @@ export const FormatButton: React.FC<{ label: string, syntaxOpen: string, syntaxC
     <button 
         type="button"
         aria-label={`Format ${label}`}
-        onMouseDown={(e) => { 
-            e.preventDefault(); 
+        onPointerDown={(e) => {
+            if (!isPrimaryPointer(e)) return;
+            e.preventDefault();
             wrapSelectionWithSyntax(fieldId, value, syntaxOpen, syntaxClose, onUpdate);
         }} 
         className="tpe-format-btn"
@@ -42,15 +45,9 @@ FormatButton.displayName = "FormatButton";
 export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdate: (val: string) => void, popDirection?: 'up' | 'down' }>(({ fieldId, value, onUpdate, popDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
     const isMobile = useMediaQuery("(max-width: 768px)");
-    const [viewportWidth, setViewportWidth] = useState(320);
-
-    useEffect(() => {
-        if (!open || !isMobile) return;
-        const sync = () => setViewportWidth(window.innerWidth);
-        sync();
-        window.addEventListener("resize", sync);
-        return () => window.removeEventListener("resize", sync);
-    }, [open, isMobile]);
+    const pickerWidth = isMobile && typeof window !== "undefined"
+        ? Math.max(240, Math.min(300, window.innerWidth - 32))
+        : 320;
 
     return (
         <div style={{ position: 'relative' }}>
@@ -59,9 +56,10 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                 aria-label="Insert emoji" 
                 aria-expanded={open} 
                 aria-haspopup="dialog" 
-                onMouseDown={(e) => { 
-                    e.preventDefault(); 
-                    setOpen(!open); 
+                onPointerDown={(e) => {
+                    if (!isPrimaryPointer(e)) return;
+                    e.preventDefault();
+                    setOpen((prev) => !prev);
                 }} 
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}
             >
@@ -78,7 +76,7 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                     searchPlaceHolder="Search emojis..."
                     lazyLoadEmojis={true}
                     skinTonesDisabled={true}
-                    width={isMobile ? Math.max(240, Math.min(300, viewportWidth - 32)) : 320}
+                    width={pickerWidth}
                     height={isMobile ? 350 : 400}
                 />
             </EditorialPopover>
@@ -111,9 +109,10 @@ const PrefixToolbar = React.memo<{
                 aria-label={`Change prefix (${prefix})`} 
                 aria-expanded={open} 
                 aria-haspopup="menu" 
-                onMouseDown={(e) => { 
-                    e.preventDefault(); 
-                    setOpen(!open); 
+                onPointerDown={(e) => {
+                    if (!isPrimaryPointer(e)) return;
+                    e.preventDefault();
+                    setOpen((prev) => !prev);
                 }} 
                 className="tpe-prefix-toggle"
             >
@@ -130,6 +129,9 @@ const PrefixToolbar = React.memo<{
                 ))}
                 <input 
                     aria-label="Custom prefix"
+                    enterKeyHint="done"
+                    autoCapitalize="characters"
+                    spellCheck={false}
                     placeholder="Custom..." 
                     onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { 
                         if (e.key === 'Enter') { 

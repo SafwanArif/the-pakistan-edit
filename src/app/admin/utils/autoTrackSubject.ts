@@ -90,7 +90,7 @@ export const detectFaceInHookWindow = async (
     video.crossOrigin = 'anonymous';
     video.muted = true;
     video.playsInline = true;
-    video.preload = 'auto';
+    video.preload = 'metadata';
     video.src = videoUrl;
 
     try {

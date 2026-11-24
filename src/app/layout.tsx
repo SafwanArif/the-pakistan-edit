@@ -41,6 +41,7 @@ const playfairDisplay = Playfair_Display({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  interactiveWidget: "resizes-content",
   themeColor: "#111c19",
   colorScheme: "dark",
 };

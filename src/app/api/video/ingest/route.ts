@@ -9,7 +9,7 @@ import type { SourceFrameIndex, SourceMediaInfo } from "../../../../types/news";
 
 export const runtime = "nodejs";
 
-const MAX_CACHED_VIDEOS = 5;
+const MAX_CACHED_VIDEOS = 8;
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const STALE_TEMP_AGE_MS = 60 * 60 * 1000;
 const FRAME_LOG_SUFFIX = ".tpe-frame-index.json";
@@ -174,7 +174,7 @@ const pruneCacheDir = async (keepFilename: string): Promise<void> => {
         }
         for (const idxFile of frameIndexFiles) {
             const ownerMedia = idxFile.name.slice(0, -FRAME_LOG_SUFFIX.length);
-            if (!keptMediaNames.has(ownerMedia) && Date.now() - idxFile.mtimeMs > STALE_TEMP_AGE_MS) {
+            if (!keptMediaNames.has(ownerMedia)) {
                 await fs.promises.unlink(path.join(CACHE_DIR, idxFile.name)).catch(() => {});
             }
         }
@@ -223,6 +223,13 @@ const resolveMediaFile = async (request: Request): Promise<{ filePath: string; t
 
 /** Stores uploaded video with lossless `-c:v copy` + smart AAC sync for HTTP 206 streaming. */
 export async function POST(request: Request) {
+    if (process.env.VERCEL === "1") {
+        return NextResponse.json(
+            { error: "Server video ingest is unavailable on serverless deployments." },
+            { status: 501 }
+        );
+    }
+
     let rawPath: string | null = null;
     let outPath: string | null = null;
 
@@ -374,4 +381,21 @@ export async function GET(request: Request) {
             "Cache-Control": "private, max-age=31536000, immutable",
         },
     });
+}
+
+/** Immediately removes a cached studio video and its frame-index sidecar on explicit clear/reset. */
+export async function DELETE(request: Request) {
+    if (process.env.VERCEL === "1") {
+        return new Response(null, { status: 204 });
+    }
+    const id = new URL(request.url).searchParams.get("id") || "";
+    if (!SAFE_MEDIA_ID_RE.test(id)) {
+        return NextResponse.json({ error: "Invalid video id" }, { status: 400 });
+    }
+    const base = path.basename(id);
+    await Promise.all([
+        fs.promises.unlink(path.join(CACHE_DIR, base)).catch(() => {}),
+        fs.promises.unlink(path.join(CACHE_DIR, `${base}${FRAME_LOG_SUFFIX}`)).catch(() => {}),
+    ]);
+    return new Response(null, { status: 204 });
 }

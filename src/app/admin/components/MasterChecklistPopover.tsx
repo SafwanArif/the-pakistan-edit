@@ -8,7 +8,7 @@ import {
     getDefaultSubtitleFontSize,
     getTotalVideoDuration,
     autoPadToMonetisationThreshold,
-    resolveSceneFadeDurations,
+    resolveSceneFade,
     getTimelineStructure,
     switchVideoAspectRatio,
     clamp,
@@ -47,8 +47,8 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
     const { hasReHook } = getTimelineStructure(scenes);
     const hook = scenes[0];
     const rehook = hasReHook ? scenes[1] : undefined;
-    const hookFades = scenes.length > 0 ? resolveSceneFadeDurations(scenes, 0) : { inDur: 0, outDur: 0 };
-    const rehookFades = hasReHook ? resolveSceneFadeDurations(scenes, 1) : { inDur: 0, outDur: 0 };
+    const hookFades = scenes.length > 0 ? resolveSceneFade(scenes, 0) : { inDur: 0, outDur: 0 };
+    const rehookFades = hasReHook ? resolveSceneFade(scenes, 1) : { inDur: 0, outDur: 0 };
 
     const targetCcSize = getDefaultSubtitleFontSize(draft.aspectRatio);
     const activeCcSize = draft.subtitleFontSize ?? targetCcSize;
@@ -204,19 +204,37 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
 
 interface MasterChecklistPopoverProps {
     draft: VideoDraft;
+    items?: MasterCheckItem[];
     onChange: (draft: VideoDraft) => void;
     onClose: () => void;
 }
 
 export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = React.memo(({
     draft,
+    items: providedItems,
     onChange,
     onClose,
 }) => {
     const [activeTab, setActiveTab] = useState<MasterChecklistTab>("seo");
-    const items = getMasterChecklistItems(draft);
-    const totalPassed = items.filter((item) => item.passed).length;
-    const tabItems = items.filter((item) => item.category === activeTab);
+    const items = useMemo(() => providedItems ?? getMasterChecklistItems(draft), [providedItems, draft]);
+    const grouped = useMemo(() => {
+        const byTab: Record<MasterChecklistTab, { items: MasterCheckItem[]; passed: number }> = {
+            seo: { items: [], passed: 0 },
+            rewards: { items: [], passed: 0 },
+            psychology: { items: [], passed: 0 },
+        };
+        let totalPassed = 0;
+        for (const item of items) {
+            const bucket = byTab[item.category];
+            bucket.items.push(item);
+            if (item.passed) {
+                bucket.passed++;
+                totalPassed++;
+            }
+        }
+        return { byTab, totalPassed };
+    }, [items]);
+    const tabItems = grouped.byTab[activeTab].items;
     const popoverRef = useRef<HTMLDivElement>(null);
 
     useLayoutEffect(() => {
@@ -224,9 +242,11 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         const parent = el?.parentElement;
         if (!el || !parent) return;
         const rect = parent.getBoundingClientRect();
-        const width = 360;
+        const elRect = el.getBoundingClientRect();
+        const width = elRect.width || Math.min(360, window.innerWidth - 24);
+        const height = elRect.height || 360;
         const maxLeft = Math.max(12, window.innerWidth - width - 12);
-        const maxTop = Math.max(12, window.innerHeight - 400);
+        const maxTop = Math.max(12, window.innerHeight - height - 12);
         el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
         el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
     }, []);
@@ -253,7 +273,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         >
             <div className="tpe-flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <span style={{ fontSize: "9px", fontWeight: 800, color: "var(--ui-accent)", letterSpacing: "0.08em" }}>
-                    VIDEO STANDARDS ({totalPassed}/{items.length})
+                    VIDEO STANDARDS ({grouped.totalPassed}/{items.length})
                 </span>
                 <button
                     type="button"
@@ -268,8 +288,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
 
             <div className="tpe-mode-cluster" role="tablist" aria-label="Master Video Standards categories" style={{ width: "100%", marginBottom: "8px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
                 {TAB_META.map((tab) => {
-                    const catItems = items.filter((i) => i.category === tab.id);
-                    const catPassed = catItems.filter((i) => i.passed).length;
+                    const bucket = grouped.byTab[tab.id];
                     return (
                         <button
                             key={tab.id}
@@ -281,7 +300,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
                             data-active={activeTab === tab.id}
                             style={{ justifyContent: "center", padding: "5px 4px", fontSize: "8px", whiteSpace: "nowrap" }}
                         >
-                            {tab.label} ({catPassed}/{catItems.length})
+                            {tab.label} ({bucket.passed}/{bucket.items.length})
                         </button>
                     );
                 })}
@@ -370,6 +389,7 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
             {isOpen && (
                 <MasterChecklistPopover
                     draft={draft}
+                    items={items}
                     onChange={onChange}
                     onClose={() => setIsOpen(false)}
                 />

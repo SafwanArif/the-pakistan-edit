@@ -71,6 +71,10 @@ export const KeyframeTimeChip: React.FC<{
             <input
                 type="text"
                 inputMode="decimal"
+                enterKeyHint="done"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
                 autoFocus
                 aria-label={`${prefix} timestamp`}
                 className="tpe-tabular-nums"

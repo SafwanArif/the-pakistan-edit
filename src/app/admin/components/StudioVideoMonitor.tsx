@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoAspectRatio, VideoKeyframe, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, snapTimeToSourceFrame, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, clamp, getDefaultVideoFraming } from "../../../types/news";
+import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, getDefaultVideoFraming } from "../../../types/news";
+import { findParkedKeyframe, toggleKeyframeEasing, updateKeyframeFraming, updateKeyframeTime, upsertKeyframe } from "../../../utils/videoKeyframes";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
 import { PlayIcon, PauseIcon } from "../../../components/icons/TPEIcons";
@@ -51,15 +52,14 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [draft.aspectRatio, draft.defaultFramingByRatio, draft.zoom, draft.posX, draft.posY]
     );
-    const existingKeyframeIndex = useMemo(
-        () => ((!isPlaying || isScrubbing) && draft.keyframes
-            ? draft.keyframes.findIndex(k => Math.abs(k.time - activeDisplayTime) < 0.05 || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - activeDisplayTime) < 0.05))
-            : -1),
+    const parkedKf = useMemo(
+        () => (!isPlaying || isScrubbing ? findParkedKeyframe(draft.keyframes, activeDisplayTime) : { index: -1, inferredSide: null }),
         [isPlaying, isScrubbing, draft.keyframes, activeDisplayTime]
     );
+    const existingKeyframeIndex = parkedKf.index;
     const activeKf = existingKeyframeIndex >= 0 ? draft.keyframes?.[existingKeyframeIndex] : undefined;
     const isCutKeyframe = activeKf?.easing === 'snap';
-    const effectiveEditSide: 'post' | 'pre' = isCutKeyframe ? kfEditSide : 'post';
+    const effectiveEditSide: 'post' | 'pre' = isCutKeyframe ? (parkedKf.inferredSide ?? kfEditSide) : 'post';
 
     const activeFraming = useMemo(() => {
         const fb = defaultFraming;
@@ -77,69 +77,58 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const zoomMin = isTopBox45 ? 0 : 100;
     const zoomMax = 200;
 
-    const handleAddOrUpdateKeyframe = (kind: 'smooth' | 'snap' = 'snap') => {
-        const keyframes: VideoKeyframe[] = draft.keyframes ? [...draft.keyframes] : [];
-        const sourceFps = draft.sourceFps ?? 30;
-        const roundedTime = snapTimeToSourceFrame(activeDisplayTime, sourceFps, draft.sourceFrameIndex);
-        const nextPosY = isLetterboxActive ? activeFraming.posY : undefined;
-        if (existingKeyframeIndex >= 0) {
-            const curr = keyframes[existingKeyframeIndex]!;
-            keyframes[existingKeyframeIndex] = curr.easing === 'snap' && effectiveEditSide === 'pre'
-                ? { ...curr, easing: 'snap', pre: { ...curr.pre, zoom: activeFraming.zoom, posX: activeFraming.posX, posY: nextPosY } }
-                : { ...curr, zoom: activeFraming.zoom, posX: activeFraming.posX, posY: nextPosY };
-        } else {
-            const base = { zoom: activeFraming.zoom, posX: activeFraming.posX, posY: nextPosY };
-            keyframes.push(kind === 'snap' ? { id: `kf-${Date.now()}`, time: roundedTime, ...base, easing: 'snap', pre: { ...base } } : { id: `kf-${Date.now()}`, time: roundedTime, ...base, easing: 'smooth' });
-            keyframes.sort((a, b) => a.time - b.time);
-            if (kind === 'snap') setKfEditSide('pre');
-        }
-        updateDraft({ ...draft, keyframes });
-    };
-
     const handleKeyframesToggle = useCallback(() => setActiveToolTab(p => (p === 'keyframes' ? null : 'keyframes')), []);
-    const handleClearAllKeyframes = () => updateDraft({ ...draft, keyframes: [] });
-    const handleRemoveKeyframe = () => {
-        if (existingKeyframeIndex >= 0 && draft.keyframes) updateDraft({ ...draft, keyframes: draft.keyframes.filter((_, i) => i !== existingKeyframeIndex) });
-    };
 
-    const handleUpdateKeyframeTime = (nextRawTime: number, side?: 'pre' | 'post', quantizeToFrame = false) => {
-        if (existingKeyframeIndex < 0 || !draft.keyframes) return;
-        const maxT = duration > 0 ? duration : Math.max(nextRawTime, 60);
-        const sourceFps = draft.sourceFps ?? 30;
-        const hasVfrPts = Boolean(draft.sourceFrameIndex && !draft.sourceFrameIndex.cfr && draft.sourceFrameIndex.pts.length > 0);
-        const clamped = quantizeToFrame
-            ? (hasVfrPts
-                ? clamp(nextRawTime, 0, maxT)
-                : clamp(snapTimeToSourceFrame(nextRawTime, sourceFps, draft.sourceFrameIndex), 0, maxT))
-            : clamp(Math.round(nextRawTime * 10000) / 10000, 0, maxT);
-        const keyframes = [...draft.keyframes];
-        const curr = keyframes[existingKeyframeIndex]!;
-        if (curr.easing === 'snap' && (side ?? effectiveEditSide) === 'pre') {
-            const preClamped = Math.min(curr.time, clamped);
-            const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), defaultFraming);
-            keyframes[existingKeyframeIndex] = { ...curr, easing: 'snap', pre: { ...basePre, time: preClamped } };
-            updateDraft({ ...draft, keyframes });
-            seekTo(preClamped);
-            return;
+    const handleAddOrUpdateKeyframe = useCallback((kind: 'smooth' | 'snap' = 'snap') => {
+        const s = monitorRef.current;
+        const { keyframes, nextEditSide } = upsertKeyframe(s.draft, {
+            activeDisplayTime: s.activeDisplayTime,
+            existingIndex: s.existingKeyframeIndex,
+            effectiveEditSide: s.effectiveEditSide,
+            activeFraming: s.activeFraming,
+            isLetterboxActive: s.isLetterboxActive,
+            kind,
+        });
+        if (nextEditSide) setKfEditSide(nextEditSide);
+        s.updateDraft({ ...s.draft, keyframes });
+    }, []);
+
+    const handleClearAllKeyframes = useCallback(() => {
+        const s = monitorRef.current;
+        s.updateDraft({ ...s.draft, keyframes: [] });
+    }, []);
+
+    const handleRemoveKeyframe = useCallback(() => {
+        const s = monitorRef.current;
+        if (s.existingKeyframeIndex >= 0 && s.draft.keyframes) {
+            s.updateDraft({ ...s.draft, keyframes: s.draft.keyframes.filter((_, i) => i !== s.existingKeyframeIndex) });
         }
-        const postClamped = curr.easing === 'snap' && curr.pre?.time !== undefined ? Math.max(curr.pre.time, clamped) : clamped;
-        keyframes[existingKeyframeIndex] = { ...curr, time: postClamped };
-        keyframes.sort((a, b) => a.time - b.time);
-        updateDraft({ ...draft, keyframes });
-        seekTo(postClamped);
-    };
+    }, []);
 
-    const toggleActiveKeyframeEasing = () => {
-        if (existingKeyframeIndex < 0 || !draft.keyframes) return;
-        const keyframes = [...draft.keyframes];
-        const curr = keyframes[existingKeyframeIndex]!;
-        keyframes[existingKeyframeIndex] = curr.easing === 'snap' ? { ...curr, easing: 'smooth', pre: undefined } : { ...curr, easing: 'snap' };
-        updateDraft({ ...draft, keyframes });
-    };
+    const handleUpdateKeyframeTime = useCallback((nextRawTime: number, side?: 'pre' | 'post', quantizeToFrame = false) => {
+        const s = monitorRef.current;
+        const result = updateKeyframeTime(s.draft, {
+            existingIndex: s.existingKeyframeIndex,
+            nextRawTime,
+            side: side ?? s.effectiveEditSide,
+            quantizeToFrame,
+            duration: s.duration,
+            defaultFraming: s.defaultFraming,
+        });
+        if (!result) return;
+        s.updateDraft({ ...s.draft, keyframes: result.keyframes });
+        s.seekTo(result.seekTime);
+    }, []);
+
+    const toggleActiveKeyframeEasing = useCallback(() => {
+        const s = monitorRef.current;
+        const next = toggleKeyframeEasing(s.draft, s.existingKeyframeIndex);
+        if (next) s.updateDraft({ ...s.draft, keyframes: next });
+    }, []);
 
     const handleJumpKeyframe = useCallback((direction: 'prev' | 'next') => {
         const { sortedKeyframes: kfs, activeDisplayTime: t, isPlaying: playing, togglePlay: toggle, seekTo: seek } = monitorRef.current;
-        const target = resolveKeyframeJumpStop(kfs, t, direction, playing ? 0.2 : 0.06);
+        const target = resolveKeyframeJumpStop(kfs, t, direction, playing ? 0.2 : 0.06, true);
         if (!target) return;
         if (playing) toggle();
         setKfEditSide(target.side);
@@ -180,62 +169,62 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     }, [activeDisplayTime, discreteKey, gatedCardTime.key, isPlaying, isScrubbing]);
     const videoCardTime = isPlaying && !isScrubbing && gatedCardTime.key === discreteKey ? gatedCardTime.time : activeDisplayTime;
 
-    const handleJumpSubtitle = (direction: 'prev' | 'next') => {
-        if (!activeSubtitleTimes.length) return;
+    const handleJumpSubtitle = useCallback((direction: 'prev' | 'next') => {
+        const { activeSubtitleTimes: times, activeDisplayTime: t, seekTo: seek } = monitorRef.current;
+        if (!times.length) return;
         const target = direction === 'prev'
-            ? ([...activeSubtitleTimes].reverse().find(t => t < activeDisplayTime - 0.2) ?? activeSubtitleTimes[activeSubtitleTimes.length - 1])
-            : (activeSubtitleTimes.find(t => t > activeDisplayTime + 0.2) ?? activeSubtitleTimes[0]);
-        if (target !== undefined) seekTo(target);
-    };
+            ? ([...times].reverse().find(ts => ts < t - 0.2) ?? times[times.length - 1])
+            : (times.find(ts => ts > t + 0.2) ?? times[0]);
+        if (target !== undefined) seek(target);
+    }, []);
 
     const handleJumpStarCue = useCallback((direction: 'prev' | 'next') => {
-        const cues = draft.starCues ?? DEFAULT_STAR_CUES;
+        const { draft: d, activeDisplayTime: t, seekTo: seek } = monitorRef.current;
+        const cues = d.starCues ?? DEFAULT_STAR_CUES;
         if (!cues.length) return;
         const sorted = [...cues].sort((a, b) => a.time - b.time);
         const target = direction === 'prev'
-            ? ([...sorted].reverse().find(c => c.time < activeDisplayTime - 0.2) ?? sorted[sorted.length - 1])
-            : (sorted.find(c => c.time > activeDisplayTime + 0.2) ?? sorted[0]);
-        if (target) seekTo(target.time);
-    }, [draft.starCues, activeDisplayTime, seekTo]);
+            ? ([...sorted].reverse().find(c => c.time < t - 0.2) ?? sorted[sorted.length - 1])
+            : (sorted.find(c => c.time > t + 0.2) ?? sorted[0]);
+        if (target) seek(target.time);
+    }, []);
 
     const handlePreviewStar = useCallback(() => setStarPreviewNonce((n) => n + 1), []);
 
-    const handleFramingSliderChange = (field: 'zoom' | 'posX' | 'posY', val: number) => {
-        if (field === 'posY' && !isLetterboxActive) return;
-        if (existingKeyframeIndex < 0 || !draft.keyframes?.[existingKeyframeIndex]) return;
-        const keyframes: VideoKeyframe[] = draft.keyframes ? [...draft.keyframes] : [];
-        if (keyframes[existingKeyframeIndex]) {
-            const nextZoom = field === 'zoom' ? val : activeFraming.zoom;
-            const fillAfterChange = !isTopBox45 || Math.round(nextZoom) >= 100;
-            const curr = keyframes[existingKeyframeIndex]!;
-            if (curr.easing === 'snap' && effectiveEditSide === 'pre') {
-                const basePre = curr.pre ?? interpolateKeyframe(draft.keyframes, Math.max(0, curr.time - 0.001), defaultFraming);
-                const postMatchesPre = curr.zoom === basePre.zoom && curr.posX === basePre.posX && (curr.posY ?? 100) === (basePre.posY ?? 100);
-                const nextPre = { ...basePre, [field]: val };
-                const finalPre = fillAfterChange ? { time: curr.pre?.time, zoom: nextPre.zoom, posX: nextPre.posX } : nextPre;
-                keyframes[existingKeyframeIndex] = postMatchesPre
-                    ? { ...curr, easing: 'snap', zoom: finalPre.zoom, posX: finalPre.posX, posY: finalPre.posY, pre: finalPre }
-                    : { ...curr, easing: 'snap', pre: finalPre };
-            } else {
-                const updated: VideoKeyframe = { ...curr, [field]: val };
-                keyframes[existingKeyframeIndex] = fillAfterChange ? { ...updated, posY: undefined } : updated;
-            }
-        }
-        updateDraft({ ...draft, keyframes });
-    };
+    const handleFramingSliderChange = useCallback((field: 'zoom' | 'posX' | 'posY', val: number) => {
+        const s = monitorRef.current;
+        const next = updateKeyframeFraming(s.draft, {
+            existingIndex: s.existingKeyframeIndex,
+            effectiveEditSide: s.effectiveEditSide,
+            field,
+            val,
+            activeFraming: s.activeFraming,
+            defaultFraming: s.defaultFraming,
+            isTopBox45: s.isTopBox45,
+            isLetterboxActive: s.isLetterboxActive,
+        });
+        if (next) s.updateDraft({ ...s.draft, keyframes: next });
+    }, []);
 
-    const handleDefaultFramingChange = (field: 'zoom' | 'posX' | 'posY', val: number) => {
-        if (field === 'posY' && !(isTopBox45 && Math.round(defaultFraming.zoom) < 100)) return;
-        const nextFraming = { ...defaultFraming, [field]: val };
-        updateDraft({
-            ...draft,
+    const handleDefaultFramingChange = useCallback((field: 'zoom' | 'posX' | 'posY', val: number) => {
+        const s = monitorRef.current;
+        if (field === 'posY' && !(s.isTopBox45 && Math.round(s.defaultFraming.zoom) < 100)) return;
+        const nextFraming = { ...s.defaultFraming, [field]: val };
+        s.updateDraft({
+            ...s.draft,
             ...nextFraming,
             defaultFramingByRatio: {
-                ...draft.defaultFramingByRatio,
-                [draft.aspectRatio]: nextFraming,
+                ...s.draft.defaultFramingByRatio,
+                [s.draft.aspectRatio]: nextFraming,
             },
         });
-    };
+    }, []);
+
+    const handleSetKfEditSide = useCallback((side: 'post' | 'pre') => {
+        setKfEditSide(side);
+        const { activeKf: kf, seekTo: seek } = monitorRef.current;
+        if (kf) seek(side === 'pre' && kf.easing === 'snap' ? (kf.pre?.time ?? kf.time) : kf.time);
+    }, []);
 
     const handleSelectAspectRatio = (ratio: VideoAspectRatio) => {
         if (draft.aspectRatio === ratio) return;
@@ -292,6 +281,17 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     };
 
     const monitorRef = useRef({
+        draft,
+        updateDraft,
+        duration,
+        defaultFraming,
+        activeFraming,
+        isTopBox45,
+        isLetterboxActive,
+        existingKeyframeIndex,
+        activeKf,
+        effectiveEditSide,
+        activeSubtitleTimes,
         sortedKeyframes,
         activeDisplayTime,
         isPlaying,
@@ -302,6 +302,17 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     });
     useLayoutEffect(() => {
         monitorRef.current = {
+            draft,
+            updateDraft,
+            duration,
+            defaultFraming,
+            activeFraming,
+            isTopBox45,
+            isLetterboxActive,
+            existingKeyframeIndex,
+            activeKf,
+            effectiveEditSide,
+            activeSubtitleTimes,
             sortedKeyframes,
             activeDisplayTime,
             isPlaying,
@@ -373,6 +384,36 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
             {/* Center Program Viewport */}
             <div ref={containerRef} tabIndex={-1} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '16px', background: 'radial-gradient(circle at center, #181d24 0%, #0e1115 100%)', outline: 'none' }}>
+                {isLoadingStream && (
+                    <div
+                        role="status"
+                        aria-live="polite"
+                        className="tpe-tabular-nums"
+                        title="Loading video into playback stream"
+                        style={{
+                            position: 'absolute',
+                            top: '4px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: 12,
+                            pointerEvents: 'none',
+                            fontSize: '9px',
+                            fontWeight: 900,
+                            color: '#000',
+                            background: 'var(--ui-accent)',
+                            padding: '3px 10px',
+                            borderRadius: '999px',
+                            letterSpacing: '0.06em',
+                            whiteSpace: 'nowrap',
+                            maxWidth: 'calc(100% - 24px)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            boxShadow: '0 4px 14px oklch(from var(--ui-accent) l c h / 0.45)',
+                        }}
+                    >
+                        ⚡ {ingestStatus || 'LOADING STREAM...'}
+                    </div>
+                )}
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
                         <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
@@ -463,7 +504,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     kfEditSide={effectiveEditSide} activeDisplayTime={activeDisplayTime} storyStart={timelineStruct.preStoryDur} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}
                     onJumpKeyframe={handleJumpKeyframe} onJumpSubtitle={handleJumpSubtitle} onJumpStarCue={handleJumpStarCue} onPreviewStar={handlePreviewStar} activeSubtitleCount={activeSubtitleTimes.length} onAddOrUpdateKeyframe={handleAddOrUpdateKeyframe}
                     onRemoveKeyframe={handleRemoveKeyframe} onUpdateKeyframeTime={handleUpdateKeyframeTime}
-                    onSetKfEditSide={(s) => { setKfEditSide(s); if (activeKf) seekTo(s === 'pre' && activeKf.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : activeKf.time); }}
+                    onSetKfEditSide={handleSetKfEditSide}
                     onToggleEasing={toggleActiveKeyframeEasing} onClearAllKeyframes={handleClearAllKeyframes}
                     onFramingSliderChange={handleFramingSliderChange} onDefaultFramingChange={handleDefaultFramingChange}
                 />

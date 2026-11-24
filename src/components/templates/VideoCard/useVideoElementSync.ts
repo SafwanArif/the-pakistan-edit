@@ -54,6 +54,10 @@ export const useVideoElementSync = ({
     const rVfcCallbackRef = useRef<VideoFrameRequestCallback | null>(null);
     const seekCleanupRef = useRef<(() => void) | null>(null);
     const playGateCleanupRef = useRef<(() => void) | null>(null);
+    const androidResyncCleanupRef = useRef<(() => void) | null>(null);
+    const needsAndroidAudioResyncRef = useRef(false);
+    const useStandbyDeckRef = useRef(useStandbyDeck);
+    const videoSrcRef = useRef(videoSrc);
     const preParkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const standbySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingSeekRef = useRef<{ target: number; shouldPlay: boolean } | null>(null);
@@ -87,6 +91,8 @@ export const useVideoElementSync = ({
         playbackModeRef.current = playbackMode;
         draftRef.current = draft;
         effectiveMutedRef.current = effectiveMuted;
+        useStandbyDeckRef.current = useStandbyDeck;
+        videoSrcRef.current = videoSrc;
         const prevPrimary = lastPrimaryElRef.current;
         const prevStandby = lastStandbyElRef.current;
         lastPrimaryElRef.current = videoRef.current;
@@ -140,9 +146,21 @@ export const useVideoElementSync = ({
         }
     }, [currentTime]);
 
+    const cancelAndroidResync = useCallback(() => {
+        androidResyncCleanupRef.current?.();
+        androidResyncCleanupRef.current = null;
+    }, []);
+
     const cancelPlayGate = useCallback(() => {
         playGateCleanupRef.current?.();
         playGateCleanupRef.current = null;
+        cancelAndroidResync();
+    }, [cancelAndroidResync]);
+
+    const markNeedsAndroidResync = useCallback((targetMediaTime: number) => {
+        if (!useStandbyDeckRef.current && videoSrcRef.current.startsWith('blob:') && targetMediaTime > 0.1) {
+            needsAndroidAudioResyncRef.current = true;
+        }
     }, []);
 
     const cancelPendingSeekListener = useCallback(() => {
@@ -172,6 +190,7 @@ export const useVideoElementSync = ({
     }, [cancelPendingSeekListener, cancelPreParkTimer, releaseDetachedDeck]);
 
     useEffect(() => {
+        needsAndroidAudioResyncRef.current = false;
         if (videoRef.current) {
             videoRef.current.style.opacity = activeDeckRef.current === 0 ? '1' : '0';
             videoRef.current.style.zIndex = activeDeckRef.current === 0 ? '2' : '1';
@@ -226,6 +245,33 @@ export const useVideoElementSync = ({
             if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current || video.seeking) return;
             paintAmbientCanvas(video);
             onTimeUpdate?.(currentTimeRef.current, video.duration || 0);
+            if (needsAndroidAudioResyncRef.current && !useStandbyDeckRef.current && videoSrcRef.current.startsWith('blob:')) {
+                // Single-shot micro-resync forces Android MediaCodec/AudioTrack to re-latch audio PTS onto video PTS after raw blob seeks
+                needsAndroidAudioResyncRef.current = false;
+                let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+                const onFirstPlaying = () => {
+                    if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current || video.seeking) {
+                        cancelAndroidResync();
+                        return;
+                    }
+                    video.pause();
+                    resyncTimer = setTimeout(() => {
+                        resyncTimer = null;
+                        androidResyncCleanupRef.current = null;
+                        if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current && !video.seeking) {
+                            video.play().catch(() => { });
+                        }
+                    }, 45);
+                };
+                androidResyncCleanupRef.current = () => {
+                    video.removeEventListener('playing', onFirstPlaying);
+                    if (resyncTimer !== null) {
+                        clearTimeout(resyncTimer);
+                        resyncTimer = null;
+                    }
+                };
+                video.addEventListener('playing', onFirstPlaying, { once: true });
+            }
             video.play().catch(() => { });
         };
         // Wait for HAVE_FUTURE_DATA (readyState >= 3) after seeks so mobile video & audio buffers start locked together
@@ -240,7 +286,7 @@ export const useVideoElementSync = ({
             video.removeEventListener('canplay', onCanPlay);
         };
         video.addEventListener('canplay', onCanPlay, { once: true });
-    }, [cancelPlayGate, onTimeUpdate, paintAmbientCanvas]);
+    }, [cancelAndroidResync, cancelPlayGate, onTimeUpdate, paintAmbientCanvas]);
 
     const refreshAmbientGlow = useCallback((e?: SyntheticEvent<HTMLVideoElement>) => {
         const video = getActiveVideo();
@@ -273,8 +319,10 @@ export const useVideoElementSync = ({
         if (!shouldPlay) {
             if (!video.paused) video.pause();
             if (video.seeking) {
+                markNeedsAndroidResync(clampedTarget);
                 pendingSeekRef.current = { target: clampedTarget, shouldPlay: false };
             } else if (needsSeek) {
+                markNeedsAndroidResync(clampedTarget);
                 pendingSeekRef.current = null;
                 video.currentTime = clampedTarget;
             } else {
@@ -284,6 +332,7 @@ export const useVideoElementSync = ({
         }
 
         if (needsSeek || video.seeking) {
+            markNeedsAndroidResync(clampedTarget);
             if (!video.paused) video.pause();
             pendingSeekRef.current = video.seeking ? { target: clampedTarget, shouldPlay: true } : null;
             const onSeeked = () => {
@@ -308,7 +357,7 @@ export const useVideoElementSync = ({
             pendingSeekRef.current = null;
             playWhenAudioPrimed(video);
         }
-    }, [cancelPendingSeekListener, playWhenAudioPrimed]);
+    }, [cancelPendingSeekListener, markNeedsAndroidResync, playWhenAudioPrimed]);
 
     useEffect(() => {
         const video = getActiveVideo();
@@ -404,8 +453,10 @@ export const useVideoElementSync = ({
         if (isScrubbing) {
             if (!video.paused) video.pause();
             if (video.seeking) {
+                markNeedsAndroidResync(clampedTarget);
                 pendingSeekRef.current = { target: clampedTarget, shouldPlay: false };
             } else if (Math.abs(video.currentTime - clampedTarget) > 0.015) {
+                markNeedsAndroidResync(clampedTarget);
                 pendingSeekRef.current = null;
                 const isLocalStream = videoSrc.includes('/api/video/ingest') || videoSrc.startsWith('blob:');
                 if (!isLocalStream && typeof video.fastSeek === 'function') {
@@ -427,7 +478,7 @@ export const useVideoElementSync = ({
         ) {
             transitionToMediaTime(video, targetMediaTime, currentTime);
         }
-    }, [currentTime, seekNonce, isPlaying, isScrubbing, isOutro, overlayOnly, videoSrc, draft.scenes, draft.videoDuration, getActiveVideo, seekAndSync, transitionToMediaTime]);
+    }, [currentTime, seekNonce, isPlaying, isScrubbing, isOutro, overlayOnly, videoSrc, draft.scenes, draft.videoDuration, getActiveVideo, markNeedsAndroidResync, seekAndSync, transitionToMediaTime]);
 
     const syncTimelineTick = useCallback((video: HTMLVideoElement, mediaTime: number) => {
         if (!onTimeUpdate || isOutroRef.current || video.seeking) return;

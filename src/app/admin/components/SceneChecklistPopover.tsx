@@ -244,7 +244,7 @@ export const SceneChecklistPopover: React.FC<SceneChecklistPopoverProps> = React
             : '03. THE STORY RETENTION CHECKLIST';
 
     return (
-        <div role="dialog" aria-label={checklistTitle} onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 0, top: '26px', width: '320px', maxHeight: '320px', overflowY: 'auto', padding: '10px', borderRadius: '8px', background: 'var(--ui-bg-popover)', border: '1px solid var(--ui-accent)', boxShadow: '0 14px 36px rgba(0,0,0,0.85)', zIndex: 40, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div role="dialog" aria-label={checklistTitle} onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 0, top: '26px', width: 'min(320px, calc(100vw - 24px))', maxHeight: '320px', overflowY: 'auto', padding: '10px', borderRadius: '8px', background: 'var(--ui-bg-popover)', border: '1px solid var(--ui-accent)', boxShadow: '0 14px 36px rgba(0,0,0,0.85)', zIndex: 40, display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-accent)', borderBlockEnd: '1px solid var(--ui-border)', paddingBlockEnd: '4px' }}>
                 {checklistTitle} ({checks.filter(c => c.ok).length}/{checks.length})
             </div>

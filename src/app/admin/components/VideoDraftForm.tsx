@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { set } from "idb-keyval";
+import { del, set } from "idb-keyval";
 import { PostMode, VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "../../../types/news";
 import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
-import { probeVideoMetadata } from "../hooks/useVideoDraftState";
+import { probeVideoMetadata, resetClipBoundFields } from "../hooks/useVideoDraftState";
+import { deleteServerCachedVideo } from "../utils/serverCapabilities";
 import { VideoCreditToolbar, SourcePrefixToolbar, EmojiToolbar } from "./EditorialTools";
 import { CommandRibbonMenu } from "./CommandRibbonMenu";
 
@@ -14,6 +15,7 @@ interface VideoDraftFormProps {
     onChange: (d: VideoDraft) => void;
     onExportOverlay: () => void;
     onExportMP4: () => void;
+    onClearVideo?: () => void | Promise<void>;
     onReset?: () => void;
     onUploadVideo?: (file: File, name?: string) => void | Promise<void>;
     isOptimisingVideo?: boolean;
@@ -30,15 +32,11 @@ const textareaBaseStyle: React.CSSProperties = {
 };
 const fieldToolsStyle: React.CSSProperties = { position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '8px', zIndex: 10 };
 const pipeStyle: React.CSSProperties = { opacity: 0.35, fontSize: '14px', alignSelf: 'center' };
-const loadingBadgeStyle: React.CSSProperties = {
-    fontSize: '9px', fontWeight: 900, color: '#000', background: 'var(--ui-accent)', padding: '3px 8px',
-    borderRadius: '4px', letterSpacing: '0.06em', whiteSpace: 'nowrap', boxShadow: '0 0 12px oklch(from var(--ui-accent) l c h / 0.45)',
-};
 const exportMenuBtnStyle: React.CSSProperties = { width: '100%', justifyContent: 'center', textAlign: 'center', padding: '7px 10px', fontSize: '10px' };
 
 /** Command ribbon interface for Video Post metadata, active scene copy, media upload, and exports. */
 export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
-    draft, onChange, onExportOverlay, onExportMP4, onReset, onUploadVideo, isOptimisingVideo = false, isExporting = false, mode, onModeChange, activeSceneIndex = 0, isOutro = false
+    draft, onChange, onExportOverlay, onExportMP4, onClearVideo, onReset, onUploadVideo, isExporting = false, mode, onModeChange, activeSceneIndex = 0, isOutro = false
 }) => {
     const [focusedField, setFocusedField] = useState<string | null>(null);
     const [isAssetTrayOpen, setIsAssetTrayOpen] = useState(false);
@@ -85,8 +83,8 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
         }
         revokePreviousBlob();
         const objectUrl = URL.createObjectURL(file);
-        void set('tpe_video_blob', file);
-        onChange({ ...draft, videoUrl: objectUrl, videoName: file.name });
+        void set('tpe_video_blob', file).catch(() => {});
+        onChange({ ...resetClipBoundFields(draft), videoUrl: objectUrl, videoName: file.name });
         detectAspectRatioFromMedia(objectUrl, file.name);
     };
 
@@ -94,17 +92,14 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
         const clean = urlInput.trim();
         if (!clean) return;
         revokePreviousBlob();
-        void set('tpe_video_blob', undefined);
+        deleteServerCachedVideo(draft.videoUrl);
+        void del('tpe_video_blob').catch(() => {});
         const videoName = clean.split('/').pop() || "Remote Video";
         onChange({
-            ...draft,
+            ...resetClipBoundFields(draft),
             videoUrl: clean,
             videoName,
             videoDuration: undefined,
-            sourceFps: undefined,
-            sourceFrameLogUrl: undefined,
-            sourceFrameIndex: undefined,
-            sourceMediaInfo: undefined,
         });
         detectAspectRatioFromMedia(clean, videoName);
         setShowLinkInput(false);
@@ -113,17 +108,18 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     };
 
     const handleClearVideo = () => {
+        if (onClearVideo) {
+            void onClearVideo();
+            return;
+        }
         revokePreviousBlob();
-        void set('tpe_video_blob', undefined);
+        deleteServerCachedVideo(draft.videoUrl);
+        void del('tpe_video_blob').catch(() => {});
         onChange({
-            ...draft,
+            ...resetClipBoundFields(draft),
             videoUrl: "",
             videoName: "",
             videoDuration: undefined,
-            sourceFps: undefined,
-            sourceFrameLogUrl: undefined,
-            sourceFrameIndex: undefined,
-            sourceMediaInfo: undefined,
             sourceName: "",
             creditName: "",
         });
@@ -168,7 +164,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                     <div className="tpe-header-tools">
                         <div {...getElasticProps('category', 1.4, 0.45)}>
                             <div className="tpe-flex-row tpe-textarea-wrapper" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
-                                <input id="input-video-category" aria-label="Category" dir="auto" enterKeyHint="done" spellCheck={false} autoComplete="off" className="tpe-input-field tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} onFocus={() => setFocusedField('category')} style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', height: '34px' }} />
+                                <input id="input-video-category" aria-label="Category" dir="auto" enterKeyHint="done" autoCapitalize="characters" spellCheck={false} autoComplete="off" className="tpe-input-field tpe-uppercase" placeholder="CATEGORY" value={draft.category} onChange={(e) => onChange({ ...draft, category: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} onFocus={() => setFocusedField('category')} style={{ fontFamily: 'var(--tpe-font-geist)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', height: '34px' }} />
                             </div>
                         </div>
 
@@ -180,8 +176,10 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     id="input-video-headline"
                                     aria-label="Scene headline"
                                     dir="auto"
+                                    enterKeyHint="enter"
+                                    autoCapitalize="sentences"
+                                    spellCheck={true}
                                     autoComplete="off"
-                                    autoCorrect="off"
                                     className="tpe-input-field tpe-textarea tpe-uppercase"
                                     placeholder={isOutro ? "OUTRO CALL TO ACTION..." : `${sceneRoleLabel} HEADLINE...`}
                                     value={currentHeadlineValue}
@@ -204,8 +202,10 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                                     id="input-video-subtitle"
                                     aria-label="Scene subtitle"
                                     dir="auto"
+                                    enterKeyHint="enter"
+                                    autoCapitalize="sentences"
+                                    spellCheck={true}
                                     autoComplete="off"
-                                    autoCorrect="off"
                                     className="tpe-input-field tpe-textarea"
                                     placeholder={isOutro ? "Outro stinger screen (5s)" : (activeSceneIndex === 0 ? "Hook subheading / juicy punchline..." : `${sceneRoleLabel} subheading...`)}
                                     value={currentSubtitleValue}
@@ -227,14 +227,6 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
 
                 {/* Asset Toolbar */}
                 <div className="tpe-flex-row tpe-ribbon-assets" style={{ gap: '8px', position: 'relative', alignItems: 'center' }} ref={assetContainerRef}>
-                    {isOptimisingVideo && (
-                        <span
-                            style={loadingBadgeStyle}
-                            title="Loading video into HTTP 206 byte-range stream (bit-for-bit original quality)"
-                        >
-                            LOADING STREAM...
-                        </span>
-                    )}
                     <button type="button" aria-label={hasVideo ? `Video loaded: ${draft.videoName || 'Custom Video'}` : "Upload video and source"} aria-expanded={isAssetTrayOpen} onClick={() => setIsAssetTrayOpen(!isAssetTrayOpen)} className="tpe-asset-btn" data-active={hasVideo || !!draft.sourceName} title={hasVideo ? `Video loaded: ${draft.videoName || 'Custom Video'}` : "Upload video & source"}>
                         <UploadIcon fill={hasVideo ? "var(--ui-accent)" : "currentColor"} />
                     </button>
@@ -262,11 +254,11 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                         <div className="tpe-flex-col" style={{ gap: '8px', paddingBlockStart: '8px', borderBlockStart: '1px solid var(--ui-border)' }}>
                             <div className="tpe-source-row-wrapper">
                                 <VideoCreditToolbar fieldId="video-creditName" value={draft.creditName || ""} prefix={draft.creditPrefix || "FOOTAGE:"} onPrefixChange={(p: string) => onChange({ ...draft, creditPrefix: p })} onUpdate={(v: string) => onChange({ ...draft, creditName: v })} />
-                                <input id="input-video-creditName" aria-label="Footage credit" className="tpe-input-field" placeholder="FOOTAGE CREDIT" value={draft.creditName || ""} onChange={(e) => onChange({ ...draft, creditName: e.target.value })} />
+                                <input id="input-video-creditName" aria-label="Footage credit" dir="auto" enterKeyHint="done" autoCapitalize="words" className="tpe-input-field" placeholder="FOOTAGE CREDIT" value={draft.creditName || ""} onChange={(e) => onChange({ ...draft, creditName: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
                             </div>
                             <div className="tpe-source-row-wrapper">
                                 <SourcePrefixToolbar fieldId="video-sourceName" value={draft.sourceName || ""} prefix={draft.sourcePrefix || "SOURCE:"} onPrefixChange={(p: string) => onChange({ ...draft, sourcePrefix: p })} onUpdate={(v: string) => onChange({ ...draft, sourceName: v })} />
-                                <input id="input-video-sourceName" aria-label="Source name" className="tpe-input-field" placeholder="SOURCE" value={draft.sourceName || ""} onChange={(e) => onChange({ ...draft, sourceName: e.target.value })} />
+                                <input id="input-video-sourceName" aria-label="Source name" dir="auto" enterKeyHint="done" autoCapitalize="words" className="tpe-input-field" placeholder="SOURCE" value={draft.sourceName || ""} onChange={(e) => onChange({ ...draft, sourceName: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
                             </div>
                         </div>
                     </div>

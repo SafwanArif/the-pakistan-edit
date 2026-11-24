@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeHydratedVideoDraft, probeVideoMetadata } from "../useVideoDraftState";
-import { getDefaultVideoFraming, getVideoHeadingPreset } from "../../../../types/news";
+import { normalizeHydratedVideoDraft, probeVideoMetadata, resetClipBoundFields } from "../useVideoDraftState";
+import { createDefaultVideoDraft, getDefaultVideoFraming, getVideoHeadingPreset } from "../../../../types/news";
+import { GET as healthGet } from "../../../api/health/route";
+import { POST as ingestPost } from "../../../api/video/ingest/route";
 
 describe("video aspect ratio presets", () => {
     afterEach(() => vi.unstubAllGlobals());
@@ -69,5 +71,68 @@ describe("video aspect ratio presets", () => {
         });
         expect(getDefaultVideoFraming(legacyDraft, "4:5")).toEqual({ zoom: 25, posX: 60, posY: 35 });
         expect(getDefaultVideoFraming(legacyDraft, "9:16")).toEqual({ zoom: 100, posX: 50, posY: 100 });
+    });
+
+    it("strips dead ephemeral blob: URLs from scene media overrides during hydration", () => {
+        const draft = normalizeHydratedVideoDraft({
+            scenes: [
+                { id: "scene-1", title: "Hook", subtitle: "", duration: 4 },
+                { id: "scene-2", title: "Story", subtitle: "", duration: 20, mediaUrl: "blob:http://localhost:3000/dead", mediaType: "image", mediaName: "dead.png" },
+                { id: "scene-3", title: "Keep", subtitle: "", duration: 10, mediaUrl: "/api/video/ingest?id=media-1.mp4", mediaType: "video" },
+            ],
+        });
+        expect(draft.scenes[1]?.mediaUrl).toBeUndefined();
+        expect(draft.scenes[1]?.mediaType).toBe("video");
+        expect(draft.scenes[2]?.mediaUrl).toBe("/api/video/ingest?id=media-1.mp4");
+    });
+
+    it("resetClipBoundFields wipes stale subtitles, keyframes, star cues, and master offsets while keeping copy and framing defaults", () => {
+        const dirty = {
+            ...createDefaultVideoDraft(),
+            category: "ECONOMY",
+            headline: "KEEP THIS HEADLINE",
+            defaultFramingByRatio: { "9:16": { zoom: 120, posX: 40, posY: 100 } },
+            subtitles: [{ id: "s1", start: 0, end: 2, text: "Old speech" }],
+            keyframes: [{ id: "k1", time: 5, zoom: 140, posX: 60, easing: "smooth" as const }],
+            starCues: [{ id: "st1", time: 12 }],
+            sourceFps: 25,
+            sourceFrameLogUrl: "/api/video/ingest?frameIndex=old",
+            scenes: [
+                { id: "scene-1", title: "Hook", subtitle: "Sub", duration: 4, clipStartOffset: 18.5 },
+                { id: "scene-2", title: "Story", subtitle: "Body", duration: 40, clipStartOffset: 24.0 },
+                { id: "scene-3", title: "Custom", subtitle: "B-roll", duration: 10, mediaUrl: "https://cdn.example/broll.mp4", clipStartOffset: 3.0 },
+            ],
+        };
+        const cleaned = resetClipBoundFields(dirty);
+        expect(cleaned.category).toBe("ECONOMY");
+        expect(cleaned.headline).toBe("KEEP THIS HEADLINE");
+        expect(cleaned.defaultFramingByRatio).toEqual({ "9:16": { zoom: 120, posX: 40, posY: 100 } });
+        expect(cleaned.subtitles).toEqual([]);
+        expect(cleaned.keyframes).toEqual([]);
+        expect(cleaned.starCues).toBeUndefined();
+        expect(cleaned.sourceFps).toBeUndefined();
+        expect(cleaned.scenes[0]?.clipStartOffset).toBeUndefined();
+        expect(cleaned.scenes[1]?.clipStartOffset).toBeUndefined();
+        expect(cleaned.scenes[2]?.clipStartOffset).toBe(3.0);
+    });
+
+    it("exposes serverless capability flags and short-circuits /api/video/ingest POST with 501 on Vercel", async () => {
+        const prevVercel = process.env.VERCEL;
+        try {
+            process.env.VERCEL = "1";
+            const healthRes = await healthGet();
+            const healthBody = await healthRes.json() as { capabilities?: { localIngest?: boolean } };
+            expect(healthBody.capabilities?.localIngest).toBe(false);
+
+            const ingestRes = await ingestPost(new Request("http://localhost/api/video/ingest", { method: "POST" }));
+            expect(ingestRes.status).toBe(501);
+
+            delete process.env.VERCEL;
+            const localHealth = await (await healthGet()).json() as { capabilities?: { localIngest?: boolean } };
+            expect(localHealth.capabilities?.localIngest).toBe(true);
+        } finally {
+            if (prevVercel === undefined) delete process.env.VERCEL;
+            else process.env.VERCEL = prevVercel;
+        }
     });
 });

@@ -19,9 +19,13 @@ export const useDebouncedIdbSave = <T,>(
         transformRef.current = transform;
     }, [transform]);
 
-    const persist = useCallback((value: T) => {
-        const payload = transformRef.current ? transformRef.current(value) : value;
-        return set(key, payload);
+    const persist = useCallback(async (value: T) => {
+        try {
+            const payload = transformRef.current ? transformRef.current(value) : value;
+            await set(key, payload);
+        } catch (err) {
+            console.warn("IDB_SAVE_FAILED:", key, err);
+        }
     }, [key]);
 
     const cancel = useCallback(() => {

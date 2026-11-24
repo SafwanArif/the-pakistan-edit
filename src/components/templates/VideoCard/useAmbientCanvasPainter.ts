@@ -3,12 +3,27 @@ import type { VideoDraft } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 
 const ctxCache = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
+const flippedCtxCache = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
+
 const get2dCtx = (canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null => {
     if (!canvas) return null;
     const cached = ctxCache.get(canvas);
     if (cached) return cached;
     const ctx = canvas.getContext('2d', { alpha: false });
     if (ctx) ctxCache.set(canvas, ctx);
+    return ctx;
+};
+
+/** Returns a cached 2D context pre-configured with a permanent vertical mirror transform (avoids per-frame save/restore). */
+const getFlipped2dCtx = (canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null => {
+    if (!canvas) return null;
+    const cached = flippedCtxCache.get(canvas);
+    if (cached) return cached;
+    const ctx = get2dCtx(canvas);
+    if (ctx) {
+        ctx.setTransform(1, 0, 0, -1, 0, canvas.height);
+        flippedCtxCache.set(canvas, ctx);
+    }
     return ctx;
 };
 
@@ -100,15 +115,11 @@ export const useAmbientCanvasPainter = ({
 
             if (doBot) {
                 const nearCanvas = nearEdgeCanvasRef.current;
-                const nearCtx = get2dCtx(nearCanvas);
+                const nearCtx = getFlipped2dCtx(nearCanvas);
                 if (nearCanvas && nearCtx) {
                     const botSrcY = visY + visH * 0.55;
                     const botSrcH = Math.max(1, visY + visH - botSrcY);
-                    nearCtx.save();
-                    nearCtx.translate(0, nearCanvas.height);
-                    nearCtx.scale(1, -1);
                     nearCtx.drawImage(video, sx, botSrcY, sw, botSrcH, 0, 0, nearCanvas.width, nearCanvas.height);
-                    nearCtx.restore();
 
                     if (paintMid) {
                         const midCtx = get2dCtx(midEdgeCanvasRef.current);
@@ -122,14 +133,10 @@ export const useAmbientCanvasPainter = ({
             }
             if (doTop) {
                 const topNearCanvas = topNearEdgeCanvasRef.current;
-                const topNearCtx = get2dCtx(topNearCanvas);
+                const topNearCtx = getFlipped2dCtx(topNearCanvas);
                 if (topNearCanvas && topNearCtx) {
                     const topSrcH = Math.max(1, visH * 0.45);
-                    topNearCtx.save();
-                    topNearCtx.translate(0, topNearCanvas.height);
-                    topNearCtx.scale(1, -1);
                     topNearCtx.drawImage(video, sx, visY, sw, topSrcH, 0, 0, topNearCanvas.width, topNearCanvas.height);
-                    topNearCtx.restore();
 
                     if (paintMid) {
                         const topMidCtx = get2dCtx(topMidEdgeCanvasRef.current);

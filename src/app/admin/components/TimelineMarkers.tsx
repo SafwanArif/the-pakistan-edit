@@ -250,6 +250,7 @@ interface TimelinePlayheadNeedleProps {
     height: number;
     width?: number;
     zIndex?: number;
+    railRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 /** Shared slim vertical playhead needle positioned via 100%-width GPU translate3d rail (zero layout reflow). */
@@ -259,8 +260,10 @@ export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = Rea
     height,
     width = 2,
     zIndex = 5,
+    railRef,
 }) => (
     <div
+        ref={railRef}
         style={{
             ...playheadRailBaseStyle,
             transform: `translate3d(${pct}%, 0, 0)`,

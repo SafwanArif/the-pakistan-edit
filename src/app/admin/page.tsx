@@ -56,6 +56,7 @@ export default function AdminDashboard() {
         playbackMode,
         setPlaybackMode,
         currentTime,
+        liveClock,
         seekNonce,
         seekTo,
         isMuted,
@@ -226,6 +227,7 @@ export default function AdminDashboard() {
                             draft={videoDraft}
                             onChange={updateVideoDraft}
                             currentTime={currentTime}
+                            liveClock={liveClock}
                             isPlaying={isPlaying}
                             seekTo={seekTo}
                             playbackMode={playbackMode}
@@ -242,6 +244,7 @@ export default function AdminDashboard() {
                             togglePlay={togglePlay}
                             playbackMode={playbackMode}
                             currentTime={currentTime}
+                            liveClock={liveClock}
                             seekNonce={seekNonce}
                             duration={totalVideoDuration}
                             seekTo={seekTo}

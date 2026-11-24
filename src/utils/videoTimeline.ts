@@ -260,6 +260,142 @@ export const resolveKeyframeSpan = (
 };
 
 /**
+ * Zero-allocation 120Hz keyframe interpolator writing directly into `out`.
+ * Keeps exact cosine parity with `resolveKeyframeSpan` & `interpolateKeyframe` while avoiding ~360 heap allocations/sec.
+ */
+export const interpolateKeyframeInto = (
+    keyframes: VideoKeyframe[] | undefined,
+    currentTime: number,
+    fallback: ResolvedFraming,
+    out: ResolvedFraming
+): ResolvedFraming => {
+    const fbZoom = fallback.zoom;
+    const fbX = fallback.posX;
+    const fbY = fallback.posY;
+
+    if (!keyframes || keyframes.length === 0) {
+        out.zoom = fbZoom;
+        out.posX = fbX;
+        out.posY = fbY;
+        return out;
+    }
+
+    let alreadySorted = true;
+    for (let i = 1; i < keyframes.length; i++) {
+        if (keyframes[i]!.time < keyframes[i - 1]!.time) {
+            alreadySorted = false;
+            break;
+        }
+    }
+    const sorted = alreadySorted ? keyframes : [...keyframes].sort((a, b) => a.time - b.time);
+
+    const last = sorted[sorted.length - 1]!;
+    if (currentTime >= last.time) {
+        out.zoom = last.zoom;
+        out.posX = last.posX;
+        out.posY = last.posY ?? fbY;
+        return out;
+    }
+
+    let prevTime = 0;
+    let prevZoom = fbZoom;
+    let prevPosX = fbX;
+    let prevPosY = fbY;
+    let next = sorted[0]!;
+    if (currentTime < next.time) {
+        if (next.easing === 'snap' && next.pre) {
+            out.zoom = next.pre.zoom;
+            out.posX = next.pre.posX;
+            out.posY = next.pre.posY ?? fbY;
+            return out;
+        }
+        if (next.time <= 0) {
+            out.zoom = next.zoom;
+            out.posX = next.posX;
+            out.posY = next.posY ?? fbY;
+            return out;
+        }
+    } else if (sorted.length > 6) {
+        let lo = 0;
+        let hi = sorted.length - 2;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if (sorted[mid]!.time <= currentTime) lo = mid;
+            else hi = mid - 1;
+        }
+        const p = sorted[lo]!;
+        prevTime = p.time;
+        prevZoom = p.zoom;
+        prevPosX = p.posX;
+        prevPosY = p.posY ?? fbY;
+        next = sorted[lo + 1]!;
+    } else {
+        for (let i = 0; i < sorted.length - 1; i++) {
+            if (currentTime >= sorted[i]!.time && currentTime < sorted[i + 1]!.time) {
+                const p = sorted[i]!;
+                prevTime = p.time;
+                prevZoom = p.zoom;
+                prevPosX = p.posX;
+                prevPosY = p.posY ?? fbY;
+                next = sorted[i + 1]!;
+                break;
+            }
+        }
+    }
+
+    if (next.time <= prevTime || (next.easing === 'snap' && !next.pre)) {
+        out.zoom = prevZoom;
+        out.posX = prevPosX;
+        out.posY = prevPosY;
+        return out;
+    }
+    if (currentTime >= next.time) {
+        out.zoom = next.zoom;
+        out.posX = next.posX;
+        out.posY = next.posY ?? fbY;
+        return out;
+    }
+
+    let gEnd = next.time;
+    let targetZoom = next.zoom;
+    let targetPosX = next.posX;
+    let targetPosY = next.posY ?? fbY;
+    const preTarget = next.easing === 'snap' ? next.pre : undefined;
+    if (preTarget) {
+        const preTime = preTarget.time !== undefined
+            ? Math.min(next.time, Math.max(prevTime, preTarget.time))
+            : next.time;
+        const preY = preTarget.posY ?? fbY;
+        if (currentTime >= preTime) {
+            out.zoom = preTarget.zoom;
+            out.posX = preTarget.posX;
+            out.posY = preY;
+            return out;
+        }
+        gEnd = preTime;
+        targetZoom = preTarget.zoom;
+        targetPosX = preTarget.posX;
+        targetPosY = preY;
+    }
+
+    if (gEnd <= prevTime) {
+        out.zoom = targetZoom;
+        out.posX = targetPosX;
+        out.posY = targetPosY;
+        return out;
+    }
+
+    const startPosY = prevZoom >= 100 && targetZoom < 100 ? targetPosY : prevPosY;
+    const endPosY = prevZoom < 100 && targetZoom >= 100 ? prevPosY : targetPosY;
+    const t = (currentTime - prevTime) / (gEnd - prevTime);
+    const smoothT = (1 - Math.cos(t * Math.PI)) / 2;
+    out.zoom = prevZoom + (targetZoom - prevZoom) * smoothT;
+    out.posX = prevPosX + (targetPosX - prevPosX) * smoothT;
+    out.posY = startPosY + (endPosY - startPosY) * smoothT;
+    return out;
+};
+
+/**
  * Smoothly interpolates Zoom, Pan X, and Pos Y across time-based keyframes.
  * Uses smooth cosine easing for organic camera gliding without abrupt cuts.
  */

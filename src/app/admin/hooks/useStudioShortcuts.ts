@@ -9,6 +9,7 @@ export interface StudioShortcutContext {
     outroStart: number;
     enableOutro: boolean;
     activeDisplayTime: number;
+    getLiveTime?: () => number;
     duration: number;
 }
 
@@ -70,7 +71,10 @@ export const useStudioShortcuts = (ctx: StudioShortcutContext) => {
             if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && target?.closest('[role="slider"]')) {
                 return;
             }
-            const nextTime = resolveStudioShortcutSeek(e.key, e.shiftKey, s);
+            const nextTime = resolveStudioShortcutSeek(e.key, e.shiftKey, {
+                ...s,
+                activeDisplayTime: s.getLiveTime ? s.getLiveTime() : s.activeDisplayTime,
+            });
             if (nextTime !== null) {
                 e.preventDefault();
                 s.seekTo(nextTime);

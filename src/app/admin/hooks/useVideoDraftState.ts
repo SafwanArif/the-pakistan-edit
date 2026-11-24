@@ -8,6 +8,9 @@ import {
     calculatePsychologyPacedScenes,
     ensureUniqueSceneIds,
     getSceneBoundaries,
+    getActiveSceneAtTime,
+    findSubtitleAtMediaTime,
+    wrapMediaTime,
     type SourceFrameIndex,
     type SourceMediaInfo,
     type VideoFraming,
@@ -15,6 +18,7 @@ import {
 import { del, get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
 import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
+import { createLivePlaybackClock } from '../utils/livePlaybackClock';
 
 /** Clears clip-specific state (subtitles, keyframes, star cues, master clipStartOffsets, probe metadata) when loading a new video. */
 export const resetClipBoundFields = (draft: VideoDraft): VideoDraft => ({
@@ -236,6 +240,7 @@ export const useVideoDraftState = () => {
     const [ingestStatus, setIngestStatus] = useState<string | null>(null);
 
     // Playback state synchronised across all preview cards
+    const [liveClock] = useState(() => createLivePlaybackClock(0));
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [seekNonce, setSeekNonce] = useState(0);
@@ -246,6 +251,7 @@ export const useVideoDraftState = () => {
     const ingestAbortRef = useRef<AbortController | null>(null);
     const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
     const rVfcAnchorRef = useRef<{ time: number; perfNow: number } | null>(null);
+    const lastDiscreteKeyRef = useRef("");
 
     useEffect(() => {
         sceneBoundsRef.current = getSceneBoundaries(videoDraft.scenes);
@@ -472,58 +478,51 @@ export const useVideoDraftState = () => {
         return () => { cancelled = true; };
     }, [ingestVideoBlob, scheduleDraftSave]);
 
-    // Native-VSync rAF timeline clock (60/120/144/240Hz): glides playheads & telemetry smoothly even on 24/30fps video, Photo scenes, or Outro
+    // Synthetic 120Hz clock ONLY when no native <video> is driving playback (no video, Photo scene, or Outro).
+    // During native video playback, `useSmoothFramingLoop` is the single 120Hz rAF PLL emitting directly to `liveClock`.
     useEffect(() => {
         if (!isPlaying) {
             rVfcAnchorRef.current = null;
             return;
         }
         const hasNativeVideo = !!videoDraft.videoUrl;
+        if (hasNativeVideo && !isOutroActive && !activeSceneIsImage) {
+            return;
+        }
+
         let animId = 0;
-        let lastReactPushNow = performance.now();
+        let lastNow = performance.now();
+        let liveT = currentTimeRef.current;
+        let lastSceneIdx = getActiveSceneAtTime(videoDraftRef.current, liveT).sceneIndex;
 
         const tick = (now: number) => {
-            const elapsedPushMs = now - lastReactPushNow;
-            const pushIntervalMs = (!hasNativeVideo || isOutroActive || activeSceneIsImage) ? 32 : 100;
-            // Pace React root state updates to 10Hz (~100ms, matching 0.1s MM:SS.d timecode resolution) during native video playback;
-            // all VideoCard motion (zoom, pan, posY, ambient, fades, progress bar, logo) runs at full 120/144Hz via rAF refs.
-            if (elapsedPushMs >= pushIntervalMs) {
-                const pushDt = elapsedPushMs / 1000;
-                lastReactPushNow = now;
-                if (!hasNativeVideo || isOutroActive || activeSceneIsImage) {
-                    setCurrentTime((prev: number) => {
-                        const next = prev + pushDt;
-                        let resolved = next;
-                        if (playbackModeRef.current === 'loop-angle') {
-                            const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
-                            if (active && next >= active.end) {
-                                resolved = active.start;
-                            } else if (totalDuration > 0 && next >= totalDuration) {
-                                resolved = 0;
-                            }
-                        } else if (totalDuration > 0 && next >= totalDuration) {
-                            resolved = 0;
-                        }
-                        currentTimeRef.current = resolved;
-                        return resolved;
-                    });
-                } else {
-                    const anchor = rVfcAnchorRef.current;
-                    if (anchor) {
-                        const elapsed = Math.min(0.12, Math.max(0, (now - anchor.perfNow) / 1000));
-                        const rawTarget = totalDuration > 0 ? Math.min(totalDuration, anchor.time + elapsed) : anchor.time + elapsed;
-                        // Never extrapolate across an upcoming scene cut before requestVideoFrameCallback executes the deck swap
-                        const activeScene = sceneBoundsRef.current.find(b => anchor.time >= b.start && anchor.time < b.end);
-                        const target = activeScene ? Math.min(rawTarget, activeScene.end - 0.001) : rawTarget;
-                        currentTimeRef.current = target;
-                        setCurrentTime((prev: number) => {
-                            const diff = target - prev;
-                            if (Math.abs(diff) >= 0.08) return target;
-                            if (diff > 0.002) return target;
-                            return prev;
-                        });
-                    }
+            const dt = Math.min(0.05, Math.max(0, (now - lastNow) / 1000));
+            lastNow = now;
+            const prev = liveT;
+            const next = prev + dt;
+            let resolved = next;
+            let wrapped = false;
+            if (playbackModeRef.current === 'loop-angle') {
+                const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
+                if (active && next >= active.end) {
+                    resolved = active.start;
+                    wrapped = true;
+                } else if (totalDuration > 0 && next >= totalDuration) {
+                    resolved = 0;
+                    wrapped = true;
                 }
+            } else if (totalDuration > 0 && next >= totalDuration) {
+                resolved = 0;
+                wrapped = true;
+            }
+            liveT = resolved;
+            currentTimeRef.current = resolved;
+            liveClock.emit(resolved);
+
+            const nextScene = getActiveSceneAtTime(videoDraftRef.current, resolved);
+            if (wrapped || nextScene.sceneIndex !== lastSceneIdx) {
+                lastSceneIdx = nextScene.sceneIndex;
+                setCurrentTime(resolved);
             }
 
             animId = requestAnimationFrame(tick);
@@ -531,17 +530,26 @@ export const useVideoDraftState = () => {
 
         animId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(animId);
-    }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage]);
+    }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage, liveClock]);
 
     const togglePlay = useCallback(() => {
-        setIsPlaying((prev: boolean) => !prev);
-    }, []);
+        setIsPlaying((prev: boolean) => {
+            if (prev) {
+                const exactPausedTime = liveClock.getTime();
+                currentTimeRef.current = exactPausedTime;
+                setCurrentTime(exactPausedTime);
+            }
+            return !prev;
+        });
+    }, [liveClock]);
 
     const seekTo = useCallback((time: number) => {
         rVfcAnchorRef.current = { time, perfNow: performance.now() };
+        currentTimeRef.current = time;
+        liveClock.emit(time);
         setCurrentTime(time);
         setSeekNonce((n) => n + 1);
-    }, []);
+    }, [liveClock]);
 
     const toggleMute = useCallback(() => {
         const nextDraft: VideoDraft = {
@@ -572,16 +580,26 @@ export const useVideoDraftState = () => {
             : currentTimeRef.current;
         const isJump = Math.abs(mediaTime - expectedT) >= 0.22;
         rVfcAnchorRef.current = { time: mediaTime, perfNow: now };
+        currentTimeRef.current = mediaTime;
 
-        if (isJump) {
-            currentTimeRef.current = mediaTime;
+        const curDraft = videoDraftRef.current;
+        const sceneState = getActiveSceneAtTime(curDraft, mediaTime);
+        const captionsOn = sceneState.scene?.showSubtitles ?? (curDraft.showSubtitles !== false);
+        const activeSubId = captionsOn && curDraft.subtitles?.length
+            ? (findSubtitleAtMediaTime(curDraft.subtitles, wrapMediaTime(curDraft, mediaTime, curDraft.videoDuration || 0))?.id ?? "")
+            : "";
+        const wordmarkPhase = mediaTime < 1.8 ? 1 : 0;
+        const discreteKey = `${sceneState.sceneIndex}:${sceneState.isOutro ? 1 : 0}:${activeSubId}:${wordmarkPhase}`;
+
+        // Only push React root state on discrete transitions (scene change, subtitle cue change, intro end, or jump)
+        if (isJump || discreteKey !== lastDiscreteKeyRef.current) {
+            lastDiscreteKeyRef.current = discreteKey;
             setCurrentTime(mediaTime);
         }
 
         if (mediaDuration && mediaDuration > 0 && !Number.isNaN(mediaDuration)) {
-            const prevDraft = videoDraftRef.current;
-            if (!prevDraft.videoDuration || Math.abs(prevDraft.videoDuration - mediaDuration) > 1.5) {
-                const updated: VideoDraft = { ...prevDraft, videoDuration: mediaDuration };
+            if (!curDraft.videoDuration || Math.abs(curDraft.videoDuration - mediaDuration) > 1.5) {
+                const updated: VideoDraft = { ...curDraft, videoDuration: mediaDuration };
                 setVideoDraft(updated);
                 scheduleDraftSave(updated);
             }
@@ -594,6 +612,8 @@ export const useVideoDraftState = () => {
         setIsOptimisingVideo(false);
         setIngestStatus(null);
         setIsPlaying(false);
+        currentTimeRef.current = 0;
+        liveClock.emit(0);
         setCurrentTime(0);
         const current = videoDraftRef.current;
         if (current.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(current.videoUrl);
@@ -607,7 +627,7 @@ export const useVideoDraftState = () => {
             sourceName: "",
             creditName: "",
         });
-    }, [updateVideoDraft]);
+    }, [liveClock, updateVideoDraft]);
 
     const resetVideoDraft = useCallback(async () => {
         ingestAbortRef.current?.abort();
@@ -620,14 +640,16 @@ export const useVideoDraftState = () => {
         const defaultDraft = createDefaultVideoDraft();
         setVideoDraft(defaultDraft);
         setIsPlaying(false);
+        currentTimeRef.current = 0;
+        liveClock.emit(0);
         setCurrentTime(0);
         await saveDraftNow(defaultDraft);
         await del('tpe_video_blob').catch(() => {});
-    }, [saveDraftNow]);
+    }, [liveClock, saveDraftNow]);
 
     return {
         isMounted, videoDraft, updateVideoDraft, clearVideo, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
-        isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, seekNonce,
+        isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, liveClock, seekNonce,
         setCurrentTime, seekTo, isMuted, toggleMute, syncTimeFromVideo
     };
 };

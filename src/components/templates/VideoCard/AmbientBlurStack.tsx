@@ -21,7 +21,6 @@ const WRAPPER_BASE_STYLE: React.CSSProperties = {
     pointerEvents: 'none',
     zIndex: 1,
     contain: 'strict',
-    willChange: 'transform',
 };
 
 const FAR_CANVAS_BASE_STYLE: React.CSSProperties = {
@@ -79,6 +78,7 @@ export const AmbientBlurStack: React.FC<AmbientBlurStackProps> = React.memo(({
             ref={wrapperRef}
             style={{
                 ...WRAPPER_BASE_STYLE,
+                ...(liveMode || visible ? { willChange: 'transform' } : {}),
                 ...(liveMode ? {} : {
                     transform: `translate3d(0, ${translateY}px, 0)`,
                     visibility: visible ? 'visible' : 'hidden',

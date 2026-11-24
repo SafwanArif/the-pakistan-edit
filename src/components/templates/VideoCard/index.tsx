@@ -13,6 +13,7 @@ import { useVideoElementSync } from "./useVideoElementSync";
 import { useSmoothFramingLoop } from "./useSmoothFramingLoop";
 import { shouldUseStandbyDeck } from "./dualDeckHelpers";
 import { useMediaQuery } from "../../../app/admin/hooks/useMediaQuery";
+import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
 
 const SCRIM_STYLES: Record<'top' | 'center' | 'bottom', React.CSSProperties> = {
     center: { position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(5,5,5,0.72) 0%, rgba(5,5,5,0.36) 52%, transparent 82%)', pointerEvents: 'none', zIndex: 9 },
@@ -56,6 +57,7 @@ interface VideoCardProps {
     overlayOnly?: boolean;
     pausedFramingOverride?: { zoom: number; posX: number; posY: number };
     starPreviewNonce?: number;
+    liveClock?: LivePlaybackClock;
 }
 
 /** Unified video renderer supporting 4:5 Contain, 9:16 Full-Bleed, and 16:9 Landscape formats. */
@@ -73,7 +75,8 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     onTogglePlay,
     overlayOnly = false,
     pausedFramingOverride,
-    starPreviewNonce = 0
+    starPreviewNonce = 0,
+    liveClock,
 }) => {
     const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
     const is916 = draft.aspectRatio === '9:16';
@@ -186,7 +189,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     useSmoothFramingLoop({
         draft, is45, isImage, isPlaying, isScrubbing, isOutro, overlayOnly, currentTime, sceneStart, sceneDuration,
         mediaNaturalAspect, dimensions, liveTimelineTimeRef: currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef,
-        videoRef: activeVideoRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef,
+        videoRef: activeVideoRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef, liveClock,
     });
     const sceneElapsed = Math.max(0, currentTime - sceneStart);
     const kenBurnsScale = isImage
@@ -264,6 +267,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
             data-slide-type="bulletin"
             data-platform="tiktok"
             data-motion={draft.enableMotion === false || draft.motionText === false || isScrubbing ? 'off' : 'on'}
+            data-playing={isPlaying ? 'true' : 'false'}
             data-overlay-only={overlayOnly ? "true" : undefined}
             data-step={1}
             style={{

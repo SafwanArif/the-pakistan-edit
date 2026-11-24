@@ -6,9 +6,10 @@ import {
     getTopBoxOffsetY,
     getTotalVideoDuration,
     getDefaultVideoFraming,
-    interpolateKeyframe,
     mediaTimeToTimelineTime,
 } from "../../../types/news";
+import { interpolateKeyframeInto } from "../../../utils/videoTimeline";
+import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
 
 export interface AmbientCropRect {
     xFrac: number;
@@ -48,6 +49,7 @@ interface SmoothFramingLoopOptions {
     topAmbientWrapRef: React.RefObject<HTMLDivElement | null>;
     botAmbientWrapRef: React.RefObject<HTMLDivElement | null>;
     logoWordmarkDriveRef?: React.MutableRefObject<((elapsedSec: number) => void) | null>;
+    liveClock?: LivePlaybackClock;
 }
 
 /**
@@ -90,11 +92,23 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
         let lastBotWrapY = NaN;
         let lastBotVis = "";
         let lastFade = NaN;
+        let lastBarScaleX = NaN;
+        let cachedDraft: VideoDraft | null = null;
+        let cachedRatio: VideoDraft["aspectRatio"] | null = null;
+        let cachedTotalDur = 1;
+        let cachedDefaultFraming = { zoom: 100, posX: 50, posY: 100 };
+        const frameOut = { zoom: 100, posX: 50, posY: 100 };
 
         const applyFrame = (now: number) => {
             const o = optsRef.current;
             const video = o.videoRef.current;
-            const totalDur = getTotalVideoDuration(o.draft) || 1;
+            if (o.draft !== cachedDraft || o.draft.aspectRatio !== cachedRatio) {
+                cachedDraft = o.draft;
+                cachedRatio = o.draft.aspectRatio;
+                cachedTotalDur = getTotalVideoDuration(o.draft) || 1;
+                cachedDefaultFraming = getDefaultVideoFraming(o.draft, o.draft.aspectRatio);
+            }
+            const totalDur = cachedTotalDur;
             const rawDt = Math.min(0.05, Math.max(0, (now - lastPerfNow) / 1000));
             if (rawDt >= 0.003 && rawDt <= 0.025) {
                 smoothedDt = smoothedDt * 0.8 + rawDt * 0.2;
@@ -174,7 +188,11 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
             // 1. Native-VSync Progress Bar & Video-Locked Logo Wordmark Wipe
             const bar = o.progressBarRef.current;
             if (bar) {
-                bar.style.transform = `scaleX(${clamp(liveT / totalDur, 0, 1)})`;
+                const nextScaleX = clamp(liveT / totalDur, 0, 1);
+                if (Number.isNaN(lastBarScaleX) || Math.abs(nextScaleX - lastBarScaleX) > 0.0002) {
+                    lastBarScaleX = nextScaleX;
+                    bar.style.transform = `scaleX(${nextScaleX})`;
+                }
             }
             if (o.logoWordmarkDriveRef?.current) {
                 o.logoWordmarkDriveRef.current(liveT);
@@ -182,6 +200,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
 
             if (o.isOutro) {
                 if (o.isCameraGlidingRef) o.isCameraGlidingRef.current = false;
+                o.liveClock?.emit(liveT);
                 return;
             }
 
@@ -200,6 +219,11 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 }
             }
 
+            const f = o.draft.keyframes?.length
+                ? interpolateKeyframeInto(o.draft.keyframes, liveT, cachedDefaultFraming, frameOut)
+                : cachedDefaultFraming;
+            o.liveClock?.emit(liveT, f.zoom, f.posX, f.posY, o.is45 && Math.round(f.zoom) < 100);
+
             // Hold camera transform steady while <video> is mid-seek so incoming scene framing never flashes on the outgoing frozen frame
             // (but always apply frame 0 if React just handed off transform control and style.transform is empty)
             if (video && !o.isImage && video.seeking && video.style.transform) return;
@@ -207,11 +231,6 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
             // 3. Native-VSync Camera Zoom / Pan X / Pos Y, 4:5 Clip-Path, Ambient GPU translate3d & Ken Burns
             const mediaEl = o.isImage ? o.imageRef.current : video;
             if (!mediaEl) return;
-
-            const defaultFraming = getDefaultVideoFraming(o.draft, o.draft.aspectRatio);
-            const f = o.draft.keyframes?.length
-                ? interpolateKeyframe(o.draft.keyframes, liveT, defaultFraming)
-                : defaultFraming;
 
             const kenBurnsMul = o.isImage
                 ? 1 + 0.04 * clamp((liveT - o.sceneStart) / Math.max(o.sceneDuration, 0.1), 0, 1)

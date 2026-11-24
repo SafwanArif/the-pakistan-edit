@@ -14,7 +14,7 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string, en
     useEffect(() => {
         if (!enabled) return;
 
-        const listener = (event: MouseEvent | TouchEvent) => {
+        const listener = (event: PointerEvent) => {
             const target = event.target as HTMLElement | null;
             if (!ref.current || ref.current.contains(target)) {
                 return;
@@ -29,13 +29,11 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string, en
             if (event.key === "Escape") handlerRef.current();
         };
 
-        document.addEventListener("mousedown", listener);
-        document.addEventListener("touchstart", listener, { passive: true });
+        document.addEventListener("pointerdown", listener);
         document.addEventListener("keydown", onKeyDown);
 
         return () => {
-            document.removeEventListener("mousedown", listener);
-            document.removeEventListener("touchstart", listener);
+            document.removeEventListener("pointerdown", listener);
             document.removeEventListener("keydown", onKeyDown);
         };
     }, [ignoreSelector, enabled]);

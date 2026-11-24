@@ -5,6 +5,7 @@ import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, form
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { canUseServerIngest } from "../utils/serverCapabilities";
+import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { SceneChecklistPopover, FadePresetControl } from "./SceneChecklistPopover";
 import { SubtitleRowList, getSceneSubtitles } from "./SubtitleEditorTray";
@@ -17,6 +18,7 @@ interface TimelineStoryboardProps {
     draft: VideoDraft;
     onChange: (d: VideoDraft) => void;
     currentTime: number;
+    liveClock?: LivePlaybackClock;
     isPlaying?: boolean;
     seekTo: (time: number) => void;
     playbackMode?: 'play-all' | 'loop-angle';
@@ -120,7 +122,7 @@ SceneDurationInput.displayName = "SceneDurationInput";
 
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
-    draft, onChange, currentTime, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
+    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
 }) => {
     const isMobileViewport = useMediaQuery("(max-width: 900px)");
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
@@ -574,6 +576,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                     end={bounds.end}
                                     duration={scene.duration}
                                     localTime={isSceneActive ? clamp(currentTime - bounds.start, 0, scene.duration) : (currentTime >= bounds.end ? scene.duration : 0)}
+                                    liveClock={liveClock}
                                     isSceneActive={isSceneActive}
                                     isPlaying={isPlaying}
                                     keyframes={draft.keyframes}
@@ -679,6 +682,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         && window.innerWidth <= 900;
     return prev.draft === next.draft
         && prev.onChange === next.onChange
+        && prev.liveClock === next.liveClock
         && prev.isPlaying === next.isPlaying
         && prev.seekTo === next.seekTo
         && prev.playbackMode === next.playbackMode

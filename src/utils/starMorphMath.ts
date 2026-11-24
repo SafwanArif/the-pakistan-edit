@@ -214,7 +214,7 @@ export const getCueTotalDuration = (
     sequence: StarSequenceMode = "star-crescent"
 ): number => (sequence === "star-crescent" ? morphDur * 3 + holdDur * 2 : morphDur * 2 + holdDur);
 
-const REST_CUE_STATE: EmblemCueState = {
+export const REST_CUE_STATE: EmblemCueState = {
     shapeA: "dot",
     shapeB: "dot",
     mix: 0,

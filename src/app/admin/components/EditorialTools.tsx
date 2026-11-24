@@ -59,6 +59,7 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                 onPointerDown={(e) => {
                     if (!isPrimaryPointer(e)) return;
                     e.preventDefault();
+                    e.stopPropagation();
                     setOpen((prev) => !prev);
                 }} 
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', filter: open ? 'none' : 'grayscale(100%) opacity(0.6)' }}
@@ -112,6 +113,7 @@ const PrefixToolbar = React.memo<{
                 onPointerDown={(e) => {
                     if (!isPrimaryPointer(e)) return;
                     e.preventDefault();
+                    e.stopPropagation();
                     setOpen((prev) => !prev);
                 }} 
                 className="tpe-prefix-toggle"

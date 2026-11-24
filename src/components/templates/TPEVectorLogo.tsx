@@ -4,6 +4,7 @@ import React, { useId, useLayoutEffect, useRef } from "react";
 import { clamp, DEFAULT_STAR_CUES } from "../../types/news";
 import {
     CIRCLE_PATH_R3,
+    REST_CUE_STATE,
     buildLogoEmblemPath,
     clamp01,
     easeOutQuart,
@@ -100,6 +101,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         const dotEl = dotPathRef.current;
         let lastDotPath = "";
         let lastDotTransform = "";
+        let dotAtRest = false;
         let wordmarkSettled = false;
 
         const applyProgress = (elapsed: number, forceRest = false) => {
@@ -126,8 +128,22 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
             }
             if (dotEl && !isPreviewingRef.current) {
                 const st = forceRest || elapsed <= 0
-                    ? { shapeA: "dot" as const, shapeB: "dot" as const, mix: 0, expandFactor: 0, angleDeg: 0 }
+                    ? REST_CUE_STATE
                     : getLogoEmblemState(elapsed, cfg);
+                if (st === REST_CUE_STATE) {
+                    if (dotAtRest) return;
+                    dotAtRest = true;
+                    if (lastDotPath !== CIRCLE_PATH_R3) {
+                        lastDotPath = CIRCLE_PATH_R3;
+                        dotEl.setAttribute("d", CIRCLE_PATH_R3);
+                    }
+                    if (lastDotTransform !== "translate(32 39)") {
+                        lastDotTransform = "translate(32 39)";
+                        dotEl.setAttribute("transform", "translate(32 39)");
+                    }
+                    return;
+                }
+                dotAtRest = false;
                 const starScale = cfg?.starScale ?? 100;
                 const nextD = buildLogoEmblemPath(st.shapeA, st.shapeB, st.mix, starScale);
                 const nextTransform = getStarDotTransform(st.expandFactor, st.angleDeg, starScale);

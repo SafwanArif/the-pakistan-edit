@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
+import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 interface SceneMarker {
     id: string;
@@ -94,6 +95,7 @@ MainTimelineSegments.displayName = "MainTimelineSegments";
 interface MainTimelineScrubberProps {
     duration: number;
     currentTime: number;
+    liveClock?: LivePlaybackClock;
     isPlaying: boolean;
     sceneMarkers: SceneMarker[];
     keyframes?: VideoKeyframe[];
@@ -123,6 +125,7 @@ interface MainTimelineScrubberProps {
 export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.memo(({
     duration,
     currentTime,
+    liveClock,
     isPlaying,
     sceneMarkers,
     keyframes = [],
@@ -148,11 +151,15 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     onJumpToTime,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
+    const sweepRef = useRef<HTMLDivElement>(null);
+    const needleRailRef = useRef<HTMLDivElement>(null);
+    const hoverWrapRef = useRef<HTMLDivElement>(null);
+    const hoverPillRef = useRef<HTMLDivElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
+    const lastScrubTimeRef = useRef<number | null>(null);
     const handleDragCleanupRef = useRef<(() => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
-    const [hoverInfo, setHoverInfo] = useState<{ pct: number; time: number } | null>(null);
 
     useEffect(() => () => {
         handleDragCleanupRef.current?.();
@@ -162,6 +169,52 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const pct = clamp((currentTime / safeDuration) * 100, 0, 100);
     const outroPct = enableOutro && duration > 0 ? Math.min(25, (outroDuration / safeDuration) * 100) : 0;
     const sceneEndPct = 100 - outroPct;
+
+    // Drive master playhead needle + progress sweep at native 120Hz/144Hz via GPU transforms (0 React renders)
+    useEffect(() => {
+        if (!isPlaying || isDragging || !liveClock) return;
+        let lastPct = NaN;
+        const applyTime = (t: number) => {
+            const nextPct = clamp((t / safeDuration) * 100, 0, 100);
+            if (!Number.isNaN(lastPct) && Math.abs(nextPct - lastPct) < 0.015) return;
+            lastPct = nextPct;
+            if (sweepRef.current) sweepRef.current.style.transform = `scaleX(${nextPct / 100})`;
+            if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+        };
+        applyTime(liveClock.getTime());
+        return liveClock.subscribe((frame) => applyTime(frame.time));
+    }, [isPlaying, isDragging, liveClock, safeDuration]);
+
+    const updateHoverDom = (nextPct: number, time: number, mode: "scrub" | "hook" | "rehook" = "scrub") => {
+        const wrap = hoverWrapRef.current;
+        const pill = hoverPillRef.current;
+        if (!wrap || !pill) return;
+        wrap.style.visibility = "visible";
+        wrap.style.transform = `translate3d(${Math.max(4, Math.min(96, nextPct))}%, 0, 0)`;
+        const accent = mode === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)";
+        pill.style.borderColor = accent;
+        pill.style.color = accent;
+        let prefix = "";
+        if (mode === "hook") {
+            prefix = "🪝 ";
+        } else if (mode === "rehook") {
+            prefix = "RE-HOOK ";
+        } else if (outroPct > 0 && nextPct >= 100 - outroPct) {
+            prefix = `${String(sceneMarkers.length + 1).padStart(2, '0')}. OUTRO • `;
+        } else {
+            for (let i = sceneMarkers.length - 1; i >= 0; i--) {
+                if (nextPct >= sceneMarkers[i]!.percent) {
+                    prefix = sceneMarkers[i]!.label ? `${sceneMarkers[i]!.label} • ` : "";
+                    break;
+                }
+            }
+        }
+        pill.textContent = `${prefix}${formatTimecode(time)}`;
+    };
+
+    const hideHoverDom = () => {
+        if (hoverWrapRef.current) hoverWrapRef.current.style.visibility = "hidden";
+    };
 
     const preSetupDur = hookDuration + rehookDuration;
     const getHandleTimelinePos = (sourceOffset: number) =>
@@ -215,7 +268,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 if (target === "hook") onChangeHookOffset?.(next);
                 else onChangeRehookOffset?.(next);
                 const nextTimelinePos = getHandleTimelinePos(next);
-                setHoverInfo({ pct: (nextTimelinePos / safeDuration) * 100, time: next });
+                updateHoverDom((nextTimelinePos / safeDuration) * 100, next, target);
             }
         };
 
@@ -230,7 +283,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         const finishDrag = (didMove: boolean) => {
             cleanup();
             setDragTarget(null);
-            setHoverInfo(null);
+            hideHoverDom();
             if (onHookDragEnd) {
                 onHookDragEnd(target, didMove);
             } else if (!didMove) {
@@ -295,14 +348,18 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     setIsDragging(true);
                     onScrubStart();
                     const next = timeAtClientX(e.clientX);
+                    lastScrubTimeRef.current = next.time;
                     onScrubMove(next.time);
-                    setHoverInfo(next);
+                    updateHoverDom(next.pct, next.time);
                 }}
                 onPointerMove={(e) => {
                     if (dragTarget) return;
                     const next = timeAtClientX(e.clientX);
-                    setHoverInfo(next);
-                    if (isDragging) onScrubMove(next.time);
+                    updateHoverDom(next.pct, next.time);
+                    if (isDragging && next.time !== lastScrubTimeRef.current) {
+                        lastScrubTimeRef.current = next.time;
+                        onScrubMove(next.time);
+                    }
                 }}
                 onPointerUp={(e) => {
                     if (!isDragging) return;
@@ -310,21 +367,27 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     setIsDragging(false);
                     const next = timeAtClientX(e.clientX);
                     dragRectRef.current = null;
+                    lastScrubTimeRef.current = null;
+                    if (e.pointerType !== "mouse") hideHoverDom();
                     onScrubEnd(next.time);
                 }}
                 onPointerCancel={() => {
                     if (!isDragging) return;
                     setIsDragging(false);
                     dragRectRef.current = null;
+                    lastScrubTimeRef.current = null;
+                    hideHoverDom();
                     onScrubEnd(currentTime);
                 }}
                 onLostPointerCapture={() => {
                     if (!isDragging) return;
                     setIsDragging(false);
                     dragRectRef.current = null;
+                    lastScrubTimeRef.current = null;
+                    hideHoverDom();
                     onScrubEnd(currentTime);
                 }}
-                onMouseLeave={() => { if (!isDragging && !dragTarget) { dragRectRef.current = null; setHoverInfo(null); } }}
+                onMouseLeave={() => { if (!isDragging && !dragTarget) { dragRectRef.current = null; hideHoverDom(); } }}
                 style={{
                     position: "relative",
                     width: "100%",
@@ -339,52 +402,39 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     transition: "height 0.14s ease",
                 }}
             >
-                {hoverInfo && (
+                {/* Zero-render hover & drag tooltip driven via GPU translate3d ref */}
+                <div
+                    ref={hoverWrapRef}
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        visibility: "hidden",
+                        transform: "translate3d(4%, 0, 0)",
+                        willChange: "transform",
+                        pointerEvents: "none",
+                        zIndex: 8,
+                    }}
+                >
                     <div
+                        ref={hoverPillRef}
                         style={{
                             position: "absolute",
-                            inset: 0,
-                            transform: `translate3d(${Math.max(4, Math.min(96, hoverInfo.pct))}%, 0, 0)`,
-                            willChange: "transform",
-                            pointerEvents: "none",
-                            zIndex: 8,
+                            left: 0,
+                            top: "-20px",
+                            transform: "translateX(-50%)",
+                            padding: "1px 6px",
+                            borderRadius: "4px",
+                            background: "var(--ui-bg-popover)",
+                            border: "1px solid var(--ui-accent)",
+                            fontSize: "8.5px",
+                            fontFamily: "monospace",
+                            fontWeight: 800,
+                            color: "var(--ui-accent)",
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
                         }}
-                    >
-                        <div
-                            style={{
-                                position: "absolute",
-                                left: 0,
-                                top: "-20px",
-                                transform: "translateX(-50%)",
-                                padding: "1px 6px",
-                                borderRadius: "4px",
-                                background: "var(--ui-bg-popover)",
-                                border: `1px solid ${dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)"}`,
-                                fontSize: "8.5px",
-                                fontFamily: "monospace",
-                                fontWeight: 800,
-                                color: dragTarget === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)",
-                                whiteSpace: "nowrap",
-                                boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
-                            }}
-                        >
-                            {dragTarget === "hook" ? "🪝 " : dragTarget === "rehook" ? "RE-HOOK " : (() => {
-                                if (outroPct > 0 && hoverInfo.pct >= 100 - outroPct) {
-                                    return `${String(sceneMarkers.length + 1).padStart(2, '0')}. OUTRO • `;
-                                }
-                                let hoveredLabel = "";
-                                for (let i = sceneMarkers.length - 1; i >= 0; i--) {
-                                    if (hoverInfo.pct >= sceneMarkers[i]!.percent) {
-                                        hoveredLabel = sceneMarkers[i]!.label ? `${sceneMarkers[i]!.label} • ` : "";
-                                        break;
-                                    }
-                                }
-                                return hoveredLabel;
-                            })()}
-                            {formatTimecode(hoverInfo.time)}
-                        </div>
-                    </div>
-                )}
+                    />
+                </div>
 
                 {/* Top Lane: Dedicated Keyframe Rail (visible when KEYFRAMES drawer is open) */}
                 {showKeyframesLane && (
@@ -408,10 +458,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     )}
 
                     {/* Played Progress Sweep (GPU scaleX) */}
-                    <div style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: "transform", background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
+                    <div ref={sweepRef} style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: "transform", background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
                 </div>
 
-                <TimelinePlayheadNeedle pct={pct} active={isPlaying || isDragging} height={showKeyframesLane ? 42 : 26} width={2.5} zIndex={6} />
+                <TimelinePlayheadNeedle railRef={needleRailRef} pct={pct} active={isPlaying || isDragging} height={showKeyframesLane ? 42 : 26} width={2.5} zIndex={6} />
             </div>
 
             {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail (GPU translate3d) */}

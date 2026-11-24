@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
+import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 const cardScrubberShellStyle: React.CSSProperties = {
     position: "relative",
@@ -30,6 +31,7 @@ interface CardTimelineScrubberProps {
     end: number;
     duration: number;
     localTime: number;
+    liveClock?: LivePlaybackClock;
     isSceneActive: boolean;
     isPlaying?: boolean;
     keyframes?: VideoKeyframe[];
@@ -45,6 +47,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     end,
     duration,
     localTime,
+    liveClock,
     isSceneActive,
     isPlaying = false,
     keyframes = [],
@@ -53,11 +56,39 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     onSeek,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
+    const fillRef = useRef<HTMLDivElement>(null);
+    const needleRailRef = useRef<HTMLDivElement>(null);
+    const timeLabelRef = useRef<HTMLSpanElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
+    const lastSentSeekRef = useRef<number | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
     const currentTime = start + localTime;
     const pct = duration > 0 ? clamp((localTime / duration) * 100, 0, 100) : 0;
+
+    // Glide active scene card scrubber needle, fill bar, and timestamp at native 120Hz (0 React renders)
+    useEffect(() => {
+        if (!isSceneActive || !isPlaying || isDragging || !liveClock || duration <= 0) return;
+        let lastPct = NaN;
+        let lastLabel = "";
+        const durLabel = duration.toFixed(1);
+        const applyTime = (t: number) => {
+            const loc = clamp(t - start, 0, duration);
+            const nextPct = clamp((loc / duration) * 100, 0, 100);
+            if (Number.isNaN(lastPct) || Math.abs(nextPct - lastPct) >= 0.02) {
+                lastPct = nextPct;
+                if (fillRef.current) fillRef.current.style.transform = `scaleX(${nextPct / 100})`;
+                if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+            }
+            const nextLabel = `${formatTimecode(loc)} / ${durLabel}s`;
+            if (nextLabel !== lastLabel) {
+                lastLabel = nextLabel;
+                if (timeLabelRef.current) timeLabelRef.current.textContent = nextLabel;
+            }
+        };
+        applyTime(liveClock.getTime());
+        return liveClock.subscribe((frame) => applyTime(frame.time));
+    }, [isSceneActive, isPlaying, isDragging, liveClock, start, duration]);
 
     const fadeInPct = duration > 0 && fadeInDur > 0 ? clamp((fadeInDur / duration) * 100, 3, 18) : 0;
     const fadeOutPct = duration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / duration) * 100, 3, 18) : 0;
@@ -69,7 +100,10 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         const maxT = Math.max(start, end - 0.05);
         const raw = start + ratio * duration;
         const snapped = Math.round(clamp(raw, start, maxT) * 100) / 100;
-        onSeek(snapped);
+        if (snapped !== lastSentSeekRef.current) {
+            lastSentSeekRef.current = snapped;
+            onSeek(snapped);
+        }
     };
 
     const handleJumpKeyframe = useCallback(
@@ -92,6 +126,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 }}
             >
                 <span
+                    ref={timeLabelRef}
                     className="tpe-tabular-nums"
                     style={{
                         fontSize: "8.5px",
@@ -139,6 +174,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     e.stopPropagation();
                     e.currentTarget.setPointerCapture(e.pointerId);
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
+                    lastSentSeekRef.current = null;
                     setIsDragging(true);
                     scrubAtClientX(e.clientX);
                 }}
@@ -151,14 +187,17 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     e.currentTarget.releasePointerCapture(e.pointerId);
                     setIsDragging(false);
                     dragRectRef.current = null;
+                    lastSentSeekRef.current = null;
                 }}
                 onPointerCancel={() => {
                     setIsDragging(false);
                     dragRectRef.current = null;
+                    lastSentSeekRef.current = null;
                 }}
                 onLostPointerCapture={() => {
                     setIsDragging(false);
                     dragRectRef.current = null;
+                    lastSentSeekRef.current = null;
                 }}
                 title={`Scrub inside ${sceneLabel} (${formatTimecode(start)} – ${formatTimecode(end)})`}
                 style={{
@@ -180,6 +219,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                         <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: `${fadeOutPct}%`, background: "linear-gradient(to left, rgba(168,85,247,0.45), transparent)" }} />
                     )}
                     <div
+                        ref={fillRef}
                         style={{
                             width: "100%",
                             height: "100%",
@@ -203,6 +243,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 />
 
                 <TimelinePlayheadNeedle
+                    railRef={needleRailRef}
                     pct={pct}
                     active={isSceneActive || isDragging}
                     height={isDragging ? 13 : 11}

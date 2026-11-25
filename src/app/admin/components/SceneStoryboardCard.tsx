@@ -87,6 +87,8 @@ export interface SceneStoryboardCardProps {
     checklistRef?: React.Ref<HTMLDivElement>;
     checklistDraft?: VideoDraft;
     onSeekTo: (time: number) => void;
+    onScrubStart?: () => void;
+    onScrubEnd?: (finalTime: number) => void;
     onUpdateScene: (index: number, patch: Partial<TimelineScene>) => void;
     onDeleteScene: (index: number) => void;
     onSetOffset: (sceneIdx: number, nextOffset?: number, snapToStart?: boolean) => void;
@@ -151,6 +153,8 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     checklistRef,
     checklistDraft,
     onSeekTo,
+    onScrubStart,
+    onScrubEnd,
     onUpdateScene,
     onDeleteScene,
     onSetOffset,
@@ -336,6 +340,8 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                     fadeInDur={rf.inDur}
                     fadeOutDur={rf.outDur}
                     onSeek={onSeekTo}
+                    onScrubStart={onScrubStart}
+                    onScrubEnd={onScrubEnd}
                 />
             )}
 
@@ -430,6 +436,8 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     && areFadesEqual(prev.rf, next.rf)
     && areSubArraysEqual(prev.cardSubs, next.cardSubs)
     && prev.onSeekTo === next.onSeekTo
+    && prev.onScrubStart === next.onScrubStart
+    && prev.onScrubEnd === next.onScrubEnd
     && prev.onUpdateScene === next.onUpdateScene
     && prev.onDeleteScene === next.onDeleteScene
     && prev.onSetOffset === next.onSetOffset

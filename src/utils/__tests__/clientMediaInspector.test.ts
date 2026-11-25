@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
     classifyPlaybackProfile,
+    extractKeyframeTimesFromFrameIndex,
     findNearestKeyframe,
     inspectVideoBlob,
     parseMoovBuffer,
@@ -183,6 +184,72 @@ describe("clientMediaInspector", () => {
         expect(findNearestKeyframe([0, 5, 10, 15, 20], 11.4)).toBe(10);
         expect(findNearestKeyframe([0, 5, 10, 15, 20], 13.8)).toBe(15);
         expect(findNearestKeyframe([], 10)).toBeNull();
+    });
+
+    it("converts SourceFrameIndex frame indices into seconds for both CFR and VFR clips", () => {
+        expect(extractKeyframeTimesFromFrameIndex(undefined)).toBeUndefined();
+        expect(extractKeyframeTimesFromFrameIndex({
+            mediaUrl: "/api/video/ingest?name=test.mp4",
+            fps: 25,
+            nominalFps: 25,
+            startTime: 0,
+            duration: 15,
+            frameCount: 375,
+            cfr: true,
+            keyframes: [0, 125, 250],
+            pts: [],
+        })).toEqual([0, 5, 10]);
+
+        expect(extractKeyframeTimesFromFrameIndex({
+            mediaUrl: "/api/video/ingest?name=vfr.mp4",
+            fps: 30,
+            nominalFps: 30,
+            startTime: 0,
+            duration: 10,
+            frameCount: 5,
+            cfr: false,
+            keyframes: [0, 2, 4],
+            pts: [0, 0.033, 2.415, 3.1, 6.789],
+        })).toEqual([0, 2.415, 6.789]);
+    });
+
+    it("detects fragmented MP4 (`mvex`) and All-Intra MP4 (`!hasStss`) cleanly", () => {
+        const fragMoov = makeBox(
+            "moov",
+            makeMvhd(1000, 0),
+            makeBox("mvex", new Uint8Array(16)),
+            makeBox(
+                "trak",
+                makeTkhd(1080, 1920),
+                makeBox("mdia", makeMdhd(30000, 0), makeHdlr("vide"), makeBox("minf", makeBox("stbl", makeVisualStsd("avc1", 1080, 1920))))
+            ),
+            makeBox(
+                "trak",
+                makeBox("mdia", makeMdhd(48000, 0), makeHdlr("soun"), makeBox("minf", makeBox("stbl", makeAudioStsd("mp4a", 2, 48000))))
+            )
+        );
+        const fragBuf = fragMoov.buffer.slice(fragMoov.byteOffset, fragMoov.byteOffset + fragMoov.byteLength) as ArrayBuffer;
+        const fragParsed = parseMoovBuffer(fragBuf, { container: "mp4", moovBeforeMdat: true });
+        expect(fragParsed?.mediaInfo.isFragmented).toBe(true);
+        expect(classifyPlaybackProfile(fragParsed?.mediaInfo, true, true)).toBe("decoupled-audio-lock");
+
+        const intraMoov = makeBox(
+            "moov",
+            makeMvhd(1000, 10000),
+            makeBox(
+                "trak",
+                makeTkhd(1080, 1920),
+                makeBox("mdia", makeMdhd(30000, 300000), makeHdlr("vide"), makeBox("minf", makeBox("stbl", makeVisualStsd("avc1", 1080, 1920), makeStts(300, 1000))))
+            ),
+            makeBox(
+                "trak",
+                makeBox("mdia", makeMdhd(48000, 480000), makeHdlr("soun"), makeBox("minf", makeBox("stbl", makeAudioStsd("mp4a", 2, 48000))))
+            )
+        );
+        const intraBuf = intraMoov.buffer.slice(intraMoov.byteOffset, intraMoov.byteOffset + intraMoov.byteLength) as ArrayBuffer;
+        const intraParsed = parseMoovBuffer(intraBuf, { container: "mp4", moovBeforeMdat: true });
+        expect(intraParsed?.mediaInfo.maxGopSec).toBe(0.033);
+        expect(classifyPlaybackProfile(intraParsed?.mediaInfo, true, true)).toBe("standard");
     });
 
     it("detects WebM EBML header codecs", async () => {

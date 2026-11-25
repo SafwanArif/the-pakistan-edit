@@ -21,6 +21,8 @@ interface VideoStudioProps {
 export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     const [exporting, setExporting] = useState<string | null>(null);
     const [isMobileScenesOpen, setIsMobileScenesOpen] = useState(false);
+    const [isCardScrubbing, setIsCardScrubbing] = useState(false);
+    const wasPlayingBeforeCardScrubRef = useRef(false);
     const exportAbortRef = useRef<AbortController | null>(null);
 
     const {
@@ -45,9 +47,26 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     } = useVideoDraftState();
 
     const videoDraftRef = useRef(videoDraft);
+    const isPlayingRef = useRef(isPlaying);
     useEffect(() => {
         videoDraftRef.current = videoDraft;
-    }, [videoDraft]);
+        isPlayingRef.current = isPlaying;
+    }, [videoDraft, isPlaying]);
+
+    const handleCardScrubStart = useCallback(() => {
+        setIsCardScrubbing(true);
+        wasPlayingBeforeCardScrubRef.current = isPlayingRef.current;
+        if (isPlayingRef.current) togglePlay();
+    }, [togglePlay]);
+
+    const handleCardScrubEnd = useCallback((finalTime: number) => {
+        setIsCardScrubbing(false);
+        seekTo(finalTime);
+        if (wasPlayingBeforeCardScrubRef.current) {
+            wasPlayingBeforeCardScrubRef.current = false;
+            togglePlay();
+        }
+    }, [seekTo, togglePlay]);
 
     useEffect(() => () => {
         exportAbortRef.current?.abort();
@@ -150,6 +169,8 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         liveClock={liveClock}
                         isPlaying={isPlaying}
                         seekTo={seekTo}
+                        onScrubStart={handleCardScrubStart}
+                        onScrubEnd={handleCardScrubEnd}
                         playbackMode={playbackMode}
                         onTogglePlaybackMode={handleTogglePlaybackMode}
                         isMobileDrawerOpen={isMobileScenesOpen}
@@ -174,6 +195,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         onTimeUpdate={syncTimeFromVideo}
                         isMobileScenesOpen={isMobileScenesOpen}
                         onToggleMobileScenes={handleToggleMobileScenes}
+                        externalIsScrubbing={isCardScrubbing}
                     />
                 </div>
             </main>

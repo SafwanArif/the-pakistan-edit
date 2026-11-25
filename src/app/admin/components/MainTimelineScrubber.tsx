@@ -197,7 +197,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         pill.style.color = accent;
         let prefix = "";
         if (mode === "hook") {
-            prefix = "🪝 ";
+            prefix = "HOOK ";
         } else if (mode === "rehook") {
             prefix = "RE-HOOK ";
         } else if (outroPct > 0 && nextPct >= 100 - outroPct) {

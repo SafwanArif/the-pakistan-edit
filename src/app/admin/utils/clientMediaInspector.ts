@@ -1,4 +1,4 @@
-import type { PlaybackSyncProfile, SourceMediaInfo } from "../../../types/news";
+import type { PlaybackSyncProfile, SourceFrameIndex, SourceMediaInfo } from "../../../types/news";
 
 export interface ClientMediaInspectionResult {
     mediaInfo: SourceMediaInfo;
@@ -123,6 +123,7 @@ const parseTrackBox = (view: DataView, trakStart: number, trakEnd: number): Pars
 
     const sttsEntries: Array<{ count: number; delta: number }> = [];
     const stssIndices: number[] = [];
+    let hasStssBox = false;
 
     for (const child of iterChildBoxes(view, trakStart, trakEnd)) {
         if (child.type === 'tkhd' && child.dataStart + 4 <= child.end) {
@@ -199,6 +200,7 @@ const parseTrackBox = (view: DataView, trakStart: number, trakEnd: number): Pars
                                     off += 8;
                                 }
                             } else if (sChild.type === 'stss' && sChild.dataStart + 8 <= sChild.end) {
+                                hasStssBox = true;
                                 const count = view.getUint32(sChild.dataStart + 4, false);
                                 let off = sChild.dataStart + 8;
                                 const maxEntries = Math.min(count, Math.floor((sChild.end - off) / 4));
@@ -297,6 +299,11 @@ const parseTrackBox = (view: DataView, trakStart: number, trakEnd: number): Pars
                 out.maxGopSec = Math.round(out.durationSec * 1000) / 1000;
                 out.avgGopSec = out.maxGopSec;
             }
+        } else if (!hasStssBox && out.frameCount > 0 && out.exactFps > 0) {
+            // ISO-BMFF spec: absence of an `stss` box means every sample is an IDR sync frame (All-Intra)
+            const frameDur = Math.round((1 / out.exactFps) * 1000) / 1000;
+            out.maxGopSec = frameDur;
+            out.avgGopSec = frameDur;
         }
     }
 
@@ -318,6 +325,7 @@ export const parseMoovBuffer = (
     let videoTrack: ParsedTrackSummary | null = null;
     let audioTrack: ParsedTrackSummary | null = null;
     let mvhdDurationSec = 0;
+    let isFragmented = false;
 
     for (const child of iterChildBoxes(view, startOffset, moovBuf.byteLength)) {
         if (child.type === 'mvhd' && child.dataStart + 4 <= child.end) {
@@ -331,6 +339,8 @@ export const parseMoovBuffer = (
                 const dur = view.getUint32(child.dataStart + 16, false);
                 if (ts > 0) mvhdDurationSec = dur / ts;
             }
+        } else if (child.type === 'mvex') {
+            isFragmented = true;
         } else if (child.type === 'trak') {
             const parsed = parseTrackBox(view, child.dataStart, child.end);
             if (parsed.kind === 'vide' && !videoTrack) videoTrack = parsed;
@@ -369,6 +379,7 @@ export const parseMoovBuffer = (
             keyframeCount: videoTrack.keyframeTimes.length || undefined,
             hasBFrames: videoTrack.hasBFrames,
             isVfr: videoTrack.isVfr,
+            isFragmented: isFragmented || undefined,
             moovBeforeMdat: options?.moovBeforeMdat,
             container: options?.container ?? 'mp4',
             isHdr: false,
@@ -500,9 +511,39 @@ export const findNearestKeyframe = (
 };
 
 /**
+ * Converts server-indexed `SourceFrameIndex` (which stores 0-based frame indices in `keyframes`)
+ * into sorted keyframe timestamps in seconds, handling both CFR (`idx / fps`) and VFR (`pts[idx]`).
+ */
+export const extractKeyframeTimesFromFrameIndex = (
+    frameIndex: SourceFrameIndex | undefined
+): number[] | undefined => {
+    if (!frameIndex || !frameIndex.keyframes || frameIndex.keyframes.length === 0) return undefined;
+    const fps = frameIndex.fps > 0 ? frameIndex.fps : frameIndex.nominalFps;
+    const times: number[] = [];
+    for (const frameIdx of frameIndex.keyframes) {
+        if (!Number.isFinite(frameIdx) || frameIdx < 0) continue;
+        let t: number | undefined;
+        if (!frameIndex.cfr && frameIndex.pts && frameIdx < frameIndex.pts.length) {
+            const ptsVal = frameIndex.pts[frameIdx];
+            if (ptsVal !== undefined && Number.isFinite(ptsVal)) t = ptsVal;
+        }
+        if (t === undefined && fps > 0) {
+            t = frameIdx / fps;
+        }
+        if (t !== undefined && Number.isFinite(t)) {
+            const rounded = Math.max(0, Math.round(t * 1000) / 1000);
+            if (times.length === 0 || rounded > times[times.length - 1]!) {
+                times.push(rounded);
+            }
+        }
+    }
+    return times.length > 0 ? times : undefined;
+};
+
+/**
  * Classifies a clip + runtime environment into a deterministic playback sync strategy:
- * - `'decoupled-audio-lock'`: Muted `<video>` + `rVFC`-locked companion `<audio>` rail (isolates Android Chrome's
- *   4K AV1 / HEVC / long-GOP / tail-`moov` `MediaCodec` seek desync completely).
+ * - `'decoupled-audio-lock'`: Muted `<video>` + audio-master companion `<audio>` rail (isolates Android Chrome's
+ *   4K AV1 / HEVC / long-GOP / fragmented / tail-`moov` `MediaCodec` seek desync completely).
  * - `'keyframe-scrub'`: Native `<video>` audio with real `stss` keyframe-snapped scrubbing during drags.
  * - `'standard'`: Fast native `<video>` playback + desktop dual-deck standby.
  */
@@ -519,9 +560,10 @@ export const classifyPlaybackProfile = (
     const maxGop = mediaInfo?.maxGopSec ?? 0;
     const isTailMoovLarge = mediaInfo?.moovBeforeMdat === false && (mediaInfo?.fileSize ?? 0) >= 20 * 1024 * 1024;
     const hasAvDelta = Math.abs(mediaInfo?.avDurationDeltaSec ?? 0) > 0.5;
+    const isFragmented = mediaInfo?.isFragmented === true;
 
     if ((isCompactOrTouch || isBlobUrl) && hasAudio) {
-        if (isAv1 || isHevc || isHighRes || maxGop >= 3.5 || isTailMoovLarge || hasAvDelta) {
+        if (isAv1 || isHevc || isHighRes || maxGop >= 3.5 || isTailMoovLarge || hasAvDelta || isFragmented) {
             return 'decoupled-audio-lock';
         }
         // Fail-safe on mobile blob URLs when container metadata could not be inspected

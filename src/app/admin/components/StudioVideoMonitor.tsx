@@ -31,13 +31,15 @@ interface StudioVideoMonitorProps {
     onTimeUpdate?: (current: number, duration: number) => void;
     isMobileScenesOpen: boolean;
     onToggleMobileScenes: () => void;
+    externalIsScrubbing?: boolean;
 }
 
 /** Program Monitor with viewport auto-fit, platform switcher, scrubber, keyframe controls, and focal tuning. */
 export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
-    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, liveClock, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate, isMobileScenesOpen, onToggleMobileScenes
+    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, liveClock, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate, isMobileScenesOpen, onToggleMobileScenes, externalIsScrubbing = false
 }) => {
     const [isScrubbing, setIsScrubbing] = useState(false);
+    const effectiveIsScrubbing = isScrubbing || externalIsScrubbing;
     const [scrubTime, setScrubTime] = useState<number | null>(null);
     const [timeDraftText, setTimeDraftText] = useState<string | null>(null);
     const [activeToolTab, setActiveToolTab] = useState<'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume' | null>(null);
@@ -61,8 +63,8 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         [draft]
     );
     const parkedKf = useMemo(
-        () => (!isPlaying || isScrubbing ? findParkedKeyframe(draft.keyframes, activeDisplayTime) : { index: -1, inferredSide: null }),
-        [isPlaying, isScrubbing, draft.keyframes, activeDisplayTime]
+        () => (!isPlaying || effectiveIsScrubbing ? findParkedKeyframe(draft.keyframes, activeDisplayTime) : { index: -1, inferredSide: null }),
+        [isPlaying, effectiveIsScrubbing, draft.keyframes, activeDisplayTime]
     );
     const existingKeyframeIndex = parkedKf.index;
     const activeKf = existingKeyframeIndex >= 0 ? draft.keyframes?.[existingKeyframeIndex] : undefined;
@@ -119,6 +121,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         seekTo,
         updateSceneOffset,
         hookDur: timelineStruct.hookDur,
+        preStoryDur: timelineStruct.preStoryDur,
     });
     useLayoutEffect(() => {
         monitorRef.current = {
@@ -141,8 +144,14 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
             seekTo,
             updateSceneOffset,
             hookDur: timelineStruct.hookDur,
+            preStoryDur: timelineStruct.preStoryDur,
         };
     });
+
+    const handleTogglePlay = useCallback(() => {
+        audioUnlockRef.current?.();
+        monitorRef.current.togglePlay();
+    }, []);
 
     const handleKeyframesToggle = useCallback(() => setActiveToolTab(p => (p === 'keyframes' ? null : 'keyframes')), []);
 
@@ -201,7 +210,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
     // Update transport timecode & live framing telemetry directly via DOM refs at 120Hz (0 React renders during playback)
     useEffect(() => {
-        if (!isPlaying || isScrubbing || !liveClock) return;
+        if (!isPlaying || effectiveIsScrubbing || !liveClock) return;
         let lastTimeStr = "";
         let lastTelemetryStr = "";
         const applyFrame = (t: number, zoom?: number, posX?: number, posY?: number, letterbox?: boolean) => {
@@ -225,7 +234,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         };
         applyFrame(liveClock.getTime());
         return liveClock.subscribe((frame) => applyFrame(frame.time, frame.zoom, frame.posX, frame.posY, frame.isLetterbox));
-    }, [isPlaying, isScrubbing, liveClock]);
+    }, [isPlaying, effectiveIsScrubbing, liveClock]);
 
     const handleJumpKeyframe = useCallback((direction: 'prev' | 'next') => {
         const { sortedKeyframes: kfs, activeDisplayTime: t, isPlaying: playing, togglePlay: toggle, seekTo: seek, liveClock: clock } = monitorRef.current;
@@ -349,7 +358,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         []
     );
 
-    useStudioShortcuts({ togglePlay, seekTo, onToggleToolTab: handleToggleToolTab, sceneStarts, outroStart, enableOutro: Boolean(draft.enableOutro), activeDisplayTime, getLiveTime: getLiveShortcutTime, duration });
+    useStudioShortcuts({ togglePlay: handleTogglePlay, seekTo, onToggleToolTab: handleToggleToolTab, sceneStarts, outroStart, enableOutro: Boolean(draft.enableOutro), activeDisplayTime, getLiveTime: getLiveShortcutTime, duration });
 
     const handleChangeHookOffset = useCallback((v: number) => monitorRef.current.updateSceneOffset(0, v), []);
     const handlePreviewHook = useCallback(() => monitorRef.current.seekTo(0), []);
@@ -357,10 +366,10 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const handlePreviewRehook = useCallback(() => monitorRef.current.seekTo(monitorRef.current.hookDur), []);
     const handleHookDragEnd = useCallback((target: "hook" | "rehook", moved: boolean) => {
         setIsScrubbing(false);
-        const { seekTo: seek, togglePlay: toggle, hookDur, activeDisplayTime: t } = monitorRef.current;
+        const { seekTo: seek, togglePlay: toggle, hookDur, preStoryDur, activeDisplayTime: t } = monitorRef.current;
         if (!moved) {
             seek(target === "hook" ? 0 : hookDur);
-        } else {
+        } else if (t < preStoryDur) {
             seek(t);
         }
         if (wasPlayingBeforeScrubRef.current) {
@@ -444,7 +453,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 )}
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onRegisterAudioUnlock={handleRegisterAudioUnlock} onTimeUpdate={onTimeUpdate} />
+                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !effectiveIsScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={effectiveIsScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={handleTogglePlay} onRegisterAudioUnlock={handleRegisterAudioUnlock} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
                 
@@ -490,7 +499,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 {/* Row 2: Play + Editable Timecode */}
                 <div role="toolbar" aria-label="Playback transport" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                     <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
-                        <button type="button" aria-keyshortcuts="Space" aria-label={isPlaying ? "Pause Video" : "Play Video"} onClick={() => { audioUnlockRef.current?.(); togglePlay(); }} className="tpe-asset-btn" style={{ width: '26px', height: '26px', borderRadius: '50%', background: isPlaying ? 'oklch(from var(--ui-accent) l c h / 0.15)' : 'var(--ui-accent)', color: isPlaying ? 'var(--ui-accent)' : '#000', border: '1px solid var(--ui-accent)', flexShrink: 0 }} title={isPlaying ? "Pause Video (Spacebar)" : "Play Video (Spacebar)"}>
+                        <button type="button" aria-keyshortcuts="Space" aria-label={isPlaying ? "Pause Video" : "Play Video"} onClick={handleTogglePlay} className="tpe-asset-btn" style={{ width: '26px', height: '26px', borderRadius: '50%', background: isPlaying ? 'oklch(from var(--ui-accent) l c h / 0.15)' : 'var(--ui-accent)', color: isPlaying ? 'var(--ui-accent)' : '#000', border: '1px solid var(--ui-accent)', flexShrink: 0 }} title={isPlaying ? "Pause Video (Spacebar)" : "Play Video (Spacebar)"}>
                             {isPlaying ? <PauseIcon width={11} height={11} fill="currentColor" /> : <PlayIcon width={11} height={11} fill="currentColor" />}
                         </button>
                         <div aria-live="off" translate="no" className="tpe-flex-row tpe-tabular-nums" style={{ alignItems: 'center', fontFamily: 'monospace', fontSize: '11px', fontWeight: 800, color: 'var(--ui-text)', gap: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)', borderRadius: '6px', padding: '2px 7px' }}>
@@ -527,7 +536,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
                 {/* Unified Camera, Keyframes & Framing Row */}
                 <StudioFramingControls
-                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} liveClock={liveClock} isCurrentlyMuted={isCurrentlyMuted} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
+                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !effectiveIsScrubbing} liveClock={liveClock} isCurrentlyMuted={isCurrentlyMuted} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
                     activeFraming={activeFraming} zoomMin={zoomMin} zoomMax={zoomMax}
                     existingKeyframeIndex={existingKeyframeIndex} activePreTime={activeKf?.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : undefined} activePostTime={activeKf?.time} activeKeyframeEasing={activeKf?.easing}
                     kfEditSide={effectiveEditSide} activeDisplayTime={activeDisplayTime} storyStart={timelineStruct.preStoryDur} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}

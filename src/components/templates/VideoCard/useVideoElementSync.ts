@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, type SyntheticEvent } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, type SyntheticEvent } from "react";
 import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, evaluateSceneTransition, getTimelineStructure, clamp, type PlaybackSyncProfile } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 import { clampMediaTarget, getNextCutMediaTarget, isStandbyReadyAt, preParkStandbyDeck } from "./dualDeckHelpers";
@@ -10,14 +10,10 @@ import {
     VIDEO_FOLLOW_SNAP_COOLDOWN_MS,
     computeVideoToAudioClockAdjustment,
     createInitialAvSyncDiag,
-    createPostSeekAudit,
-    evaluatePostSeekAvSkew,
     getCanPlayTimeoutMs,
     resolvePlaybackSyncAction,
     resolveScrubSeekTarget,
-    shouldUseFastSeekDuringScrub,
     type AvSyncDiagSnapshot,
-    type PostSeekAuditState,
 } from "./avSyncHelpers";
 
 interface UseVideoElementSyncOptions {
@@ -44,17 +40,12 @@ interface UseVideoElementSyncOptions {
 interface PendingSeekRequest {
     target: number;
     shouldPlay: boolean;
-    preferFastSeek?: boolean;
 }
 
-const publishAvDiag = (diag: AvSyncDiagSnapshot) => {
-    (globalThis as { __TPE_AV_DIAG__?: AvSyncDiagSnapshot }).__TPE_AV_DIAG__ = { ...diag };
-};
-
 /**
- * Synchronises dual-deck `<video>` playback (plus an `rVFC`-locked companion `<audio>` rail for high-risk
- * 4K AV1 / HEVC / long-GOP / mobile `blob:` clips) with studio timeline state, coalesced seeks,
- * real `stss` keyframe scrubbing, and post-seek A/V skew telemetry.
+ * Synchronises dual-deck `<video>` playback (plus an audio-master companion `<audio>` rail for high-risk
+ * 4K AV1 / HEVC / long-GOP / fragmented / mobile `blob:` clips) with studio timeline state, coalesced seeks,
+ * and real `stss` keyframe scrubbing.
  */
 export const useVideoElementSync = ({
     draft,
@@ -76,6 +67,9 @@ export const useVideoElementSync = ({
     onTimeUpdate,
     onAspectDetected,
 }: UseVideoElementSyncOptions) => {
+    const [failedVideoSrc, setFailedVideoSrc] = useState<string | null>(null);
+    const isCompanionFallback = failedVideoSrc === videoSrc;
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const standbyVideoRef = useRef<HTMLVideoElement>(null);
     const companionAudioRef = useRef<HTMLAudioElement>(null);
@@ -85,6 +79,7 @@ export const useVideoElementSync = ({
     const effectiveMutedRef = useRef(effectiveMuted);
     const companionAudioFailedRef = useRef(false);
     const companionAudioUnlockedRef = useRef(false);
+    const audioLaunchClaimedRef = useRef(false);
     const audioMasterStartedAtRef = useRef(0);
     const lastVideoRateAdjustAtRef = useRef(0);
     const lastVideoSnapAtRef = useRef(0);
@@ -94,14 +89,12 @@ export const useVideoElementSync = ({
     const seekCleanupRef = useRef<(() => void) | null>(null);
     const playGateCleanupRef = useRef<(() => void) | null>(null);
     const ambientRafRef = useRef<number | null>(null);
-    const seekMutedGuardRef = useRef(false);
     const seekStartedAtRef = useRef<number | null>(null);
-    const isRecoverySeekRef = useRef(false);
-    const postSeekAuditRef = useRef<PostSeekAuditState | null>(null);
     const avDiagRef = useRef<AvSyncDiagSnapshot>(createInitialAvSyncDiag());
     const lastMobileScrubSeekAtRef = useRef(0);
     const useStandbyDeckRef = useRef(useStandbyDeck);
     const playbackProfileRef = useRef<PlaybackSyncProfile>(playbackProfile);
+    const prevPlaybackProfileRef = useRef<PlaybackSyncProfile>(playbackProfile);
     const keyframeTimesRef = useRef<number[] | undefined>(keyframeTimes);
     const videoSrcRef = useRef(videoSrc);
     const preParkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,7 +139,26 @@ export const useVideoElementSync = ({
         []
     );
 
+    const pauseAllDecks = useCallback((video: HTMLVideoElement | null, standby: HTMLVideoElement | null) => {
+        if (video) {
+            video.playbackRate = 1;
+            if (!video.paused) video.pause();
+        }
+        if (standby && !standby.paused) standby.pause();
+        const audio = companionAudioRef.current;
+        if (audio && !audio.paused) audio.pause();
+        audioLaunchClaimedRef.current = false;
+        audioMasterStartedAtRef.current = 0;
+        consecutiveVideoSnapFramesRef.current = 0;
+    }, []);
+
+    // Expose live mutable diagnostics object once on mount (zero per-frame / per-render allocation)
     useEffect(() => {
+        (globalThis as { __TPE_AV_DIAG__?: AvSyncDiagSnapshot }).__TPE_AV_DIAG__ = avDiagRef.current;
+    }, []);
+
+    // Sync refs before paint so `useSmoothFramingLoop`'s `useLayoutEffect` reads fresh `audioOutputRef` on frame 0
+    useLayoutEffect(() => {
         isPlayingRef.current = isPlaying;
         isScrubbingRef.current = isScrubbing;
         isOutroRef.current = isOutro;
@@ -177,7 +189,6 @@ export const useVideoElementSync = ({
         audioOutputRef.current = decoupled ? companionAudioRef.current : (activeVideoRef.current ?? videoRef.current);
         avDiagRef.current.profile = playbackProfile;
         avDiagRef.current.companionAudioActive = decoupled;
-        publishAvDiag(avDiagRef.current);
     });
 
     const {
@@ -201,6 +212,7 @@ export const useVideoElementSync = ({
         isPlayingRef,
         isScrubbingRef,
         isCameraGlidingRef,
+        isHeavyVideo: playbackProfile !== 'standard',
         getActiveVideo,
     });
 
@@ -222,8 +234,10 @@ export const useVideoElementSync = ({
 
     const fallbackToNativeVideoAudio = useCallback(() => {
         companionAudioFailedRef.current = true;
+        audioLaunchClaimedRef.current = false;
         audioMasterStartedAtRef.current = 0;
         consecutiveVideoSnapFramesRef.current = 0;
+        setFailedVideoSrc(videoSrcRef.current);
         const audio = companionAudioRef.current;
         if (audio) {
             try {
@@ -239,14 +253,13 @@ export const useVideoElementSync = ({
         }
         avDiagRef.current.companionAudioActive = false;
         avDiagRef.current.companionAudioFallback = true;
-        publishAvDiag(avDiagRef.current);
     }, [getActiveVideo]);
 
     const handleCompanionAudioError = useCallback(() => {
         fallbackToNativeVideoAudio();
     }, [fallbackToNativeVideoAudio]);
 
-    /** Synchronously primes companion `<audio>` inside Play/Scrub pointer gestures so mobile browsers allow async playback. */
+    /** Synchronously primes companion `<audio>` inside Play/Scrub pointer/keyboard gestures so mobile browsers allow async playback. */
     const unlockCompanionAudio = useCallback(() => {
         if (!isDecoupledActive()) return;
         const audio = companionAudioRef.current;
@@ -254,7 +267,8 @@ export const useVideoElementSync = ({
         const prevMuted = audio.muted;
         audio.muted = true;
         audio.play().then(() => {
-            if (!isPlayingRef.current || isScrubbingRef.current) {
+            // Pause if `beginAudioMasterLaunch` has not officially claimed ownership yet (prevents leaking old audio mid-seek)
+            if (!audioLaunchClaimedRef.current || !isPlayingRef.current || isScrubbingRef.current) {
                 audio.pause();
             }
             audio.muted = effectiveMutedRef.current;
@@ -262,20 +276,6 @@ export const useVideoElementSync = ({
         }).catch(() => {
             audio.muted = prevMuted;
         });
-    }, [isDecoupledActive]);
-
-    const restoreMutedAfterSeek = useCallback((video: HTMLVideoElement | null) => {
-        if (isDecoupledActive()) {
-            seekMutedGuardRef.current = false;
-            if (video) video.muted = true;
-            if (companionAudioRef.current) companionAudioRef.current.muted = effectiveMutedRef.current;
-            return;
-        }
-        if (!seekMutedGuardRef.current) return;
-        seekMutedGuardRef.current = false;
-        if (video) {
-            video.muted = effectiveMutedRef.current;
-        }
     }, [isDecoupledActive]);
 
     const cancelPlayGate = useCallback(() => {
@@ -288,10 +288,7 @@ export const useVideoElementSync = ({
         seekCleanupRef.current = null;
         cancelPlayGate();
         cancelDeferredAmbientPaint();
-        postSeekAuditRef.current = null;
-        isRecoverySeekRef.current = false;
-        restoreMutedAfterSeek(getActiveVideo());
-    }, [cancelDeferredAmbientPaint, cancelPlayGate, getActiveVideo, restoreMutedAfterSeek]);
+    }, [cancelDeferredAmbientPaint, cancelPlayGate]);
 
     const cancelPreParkTimer = useCallback(() => {
         if (preParkTimerRef.current !== null) {
@@ -316,14 +313,14 @@ export const useVideoElementSync = ({
 
     useEffect(() => {
         seekStartedAtRef.current = null;
-        postSeekAuditRef.current = null;
-        isRecoverySeekRef.current = false;
         companionAudioFailedRef.current = false;
         companionAudioUnlockedRef.current = false;
+        audioLaunchClaimedRef.current = false;
         audioMasterStartedAtRef.current = 0;
         lastVideoRateAdjustAtRef.current = 0;
         lastVideoSnapAtRef.current = 0;
         consecutiveVideoSnapFramesRef.current = 0;
+        avDiagRef.current.companionAudioFallback = false;
         if (videoRef.current) {
             videoRef.current.style.opacity = activeDeckRef.current === 0 ? '1' : '0';
             videoRef.current.style.zIndex = activeDeckRef.current === 0 ? '2' : '1';
@@ -367,11 +364,7 @@ export const useVideoElementSync = ({
         const targetVol = clamp((draft.volume ?? 1) * audioGain, 0, 1);
 
         if (video) {
-            if (decoupled) {
-                video.muted = true;
-            } else if (!seekMutedGuardRef.current) {
-                video.muted = effectiveMuted;
-            }
+            video.muted = decoupled ? true : effectiveMuted;
             video.volume = targetVol;
         }
         if (audio) {
@@ -380,21 +373,14 @@ export const useVideoElementSync = ({
         }
         const standby = getStandbyVideo();
         if (standby) standby.muted = true;
-    }, [effectiveMuted, draft.volume, isPlaying, playbackProfile, getActiveVideo, getStandbyVideo, isDecoupledActive]);
-
-    const issueVideoSeek = useCallback((video: HTMLVideoElement, clampedTarget: number, preferFastSeek: boolean) => {
-        if (preferFastSeek && typeof video.fastSeek === 'function') {
-            video.fastSeek(clampedTarget);
-        } else {
-            video.currentTime = clampedTarget;
-        }
-    }, []);
+    }, [effectiveMuted, draft.volume, isPlaying, playbackProfile, isCompanionFallback, getActiveVideo, getStandbyVideo, isDecoupledActive]);
 
     const syncCompanionAudioToTime = useCallback((targetMediaTime: number, shouldPause: boolean) => {
         const audio = companionAudioRef.current;
         if (!audio || !isDecoupledActive()) return;
         if (shouldPause && !audio.paused) audio.pause();
         if (shouldPause) {
+            audioLaunchClaimedRef.current = false;
             audioMasterStartedAtRef.current = 0;
             consecutiveVideoSnapFramesRef.current = 0;
         }
@@ -414,10 +400,7 @@ export const useVideoElementSync = ({
             cancelPlayGate();
             const start = () => {
                 cancelPlayGate();
-                if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) {
-                    restoreMutedAfterSeek(video);
-                    return;
-                }
+                if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
                 if (video.seeking) {
                     const onSettled = () => {
                         playGateCleanupRef.current = null;
@@ -428,19 +411,11 @@ export const useVideoElementSync = ({
                     return;
                 }
 
-                restoreMutedAfterSeek(video);
                 const nowMs = performance.now();
                 if (seekStartedAtRef.current !== null) {
                     avDiagRef.current.lastSeekDurationMs = Math.round(nowMs - seekStartedAtRef.current);
                     avDiagRef.current.readyStateAtPlay = video.readyState;
                     seekStartedAtRef.current = null;
-                    if (!isDecoupledActive() && isMobileOrBlob && !isRecoverySeekRef.current) {
-                        postSeekAuditRef.current = createPostSeekAudit(nowMs);
-                    } else {
-                        postSeekAuditRef.current = null;
-                    }
-                    isRecoverySeekRef.current = false;
-                    publishAvDiag(avDiagRef.current);
                 }
 
                 scheduleDeferredAmbientPaint(video, false);
@@ -454,12 +429,6 @@ export const useVideoElementSync = ({
                     audio.playbackRate = 1;
                     audio.muted = effectiveMutedRef.current;
                     audio.volume = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
-                    if (audio.readyState >= 1) {
-                        const clampedAudio = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
-                        if (Math.abs(audio.currentTime - clampedAudio) > 0.05) {
-                            audio.currentTime = clampedAudio;
-                        }
-                    }
 
                     // Audio-Master Launch: start uninterrupted <audio> FIRST and launch <video> when `playing` opens
                     const beginAudioMasterLaunch = () => {
@@ -484,8 +453,10 @@ export const useVideoElementSync = ({
                             audio.removeEventListener('playing', onAudioPlaying);
                         };
                         audio.addEventListener('playing', onAudioPlaying, { once: true });
+                        audioLaunchClaimedRef.current = true;
                         audio.play().catch((err) => {
                             cancelPlayGate();
+                            audioLaunchClaimedRef.current = false;
                             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                                 fallbackToNativeVideoAudio();
                                 if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current) {
@@ -495,17 +466,43 @@ export const useVideoElementSync = ({
                         });
                     };
 
-                    if (audio.seeking) {
-                        const onAudioSeeked = () => {
-                            playGateCleanupRef.current = null;
+                    const prepareAndLaunchAudio = () => {
+                        cancelPlayGate();
+                        if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
+                        if (audio.readyState >= 1) {
+                            const clampedAudio = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
+                            if (Math.abs(audio.currentTime - clampedAudio) > 0.05) {
+                                audio.currentTime = clampedAudio;
+                            }
+                        }
+                        if (audio.seeking) {
+                            const onAudioSeeked = () => {
+                                playGateCleanupRef.current = null;
+                                beginAudioMasterLaunch();
+                            };
+                            playGateCleanupRef.current = () => audio.removeEventListener('seeked', onAudioSeeked);
+                            audio.addEventListener('seeked', onAudioSeeked, { once: true });
+                        } else {
                             beginAudioMasterLaunch();
+                        }
+                    };
+
+                    if (audio.readyState < 1) {
+                        // Cold start: wait for `<audio>` metadata so `currentTime` actually parks at the target offset
+                        const metaTimer = setTimeout(prepareAndLaunchAudio, 1500);
+                        const onAudioMeta = () => prepareAndLaunchAudio();
+                        playGateCleanupRef.current = () => {
+                            clearTimeout(metaTimer);
+                            audio.removeEventListener('loadedmetadata', onAudioMeta);
+                            audio.removeEventListener('canplay', onAudioMeta);
                         };
-                        playGateCleanupRef.current = () => audio.removeEventListener('seeked', onAudioSeeked);
-                        audio.addEventListener('seeked', onAudioSeeked, { once: true });
+                        audio.addEventListener('loadedmetadata', onAudioMeta, { once: true });
+                        audio.addEventListener('canplay', onAudioMeta, { once: true });
                     } else {
-                        beginAudioMasterLaunch();
+                        prepareAndLaunchAudio();
                     }
                 } else {
+                    video.muted = effectiveMutedRef.current;
                     video.playbackRate = 1;
                     video.play().catch(() => { });
                 }
@@ -527,7 +524,7 @@ export const useVideoElementSync = ({
         };
 
         armGate();
-    }, [cancelPlayGate, fallbackToNativeVideoAudio, isDecoupledActive, onTimeUpdate, restoreMutedAfterSeek, scheduleDeferredAmbientPaint]);
+    }, [cancelPlayGate, fallbackToNativeVideoAudio, isDecoupledActive, onTimeUpdate, scheduleDeferredAmbientPaint]);
 
     const refreshAmbientGlow = useCallback((e?: SyntheticEvent<HTMLVideoElement>) => {
         const video = getActiveVideo();
@@ -547,28 +544,27 @@ export const useVideoElementSync = ({
                 pendingSeekRef.current = null;
                 if (Math.abs(video.currentTime - pending.target) > 0.015) {
                     lastMobileScrubSeekAtRef.current = nowMs;
-                    issueVideoSeek(video, pending.target, shouldUseFastSeekDuringScrub(typeof video.fastSeek === 'function'));
+                    video.currentTime = pending.target;
                 }
             } else {
                 pendingSeekRef.current = null;
                 if (Math.abs(video.currentTime - pending.target) > 0.015) {
-                    issueVideoSeek(video, pending.target, Boolean(pending.preferFastSeek));
+                    video.currentTime = pending.target;
+                }
+                if (isDecoupledActive()) {
+                    syncCompanionAudioToTime(pending.target, true);
                 }
             }
         }
-    }, [getActiveVideo, issueVideoSeek, scheduleDeferredAmbientPaint]);
+    }, [getActiveVideo, isDecoupledActive, scheduleDeferredAmbientPaint, syncCompanionAudioToTime]);
 
     /** Seeks to `targetMediaTime` safely (strict pause-before-seek, coalesced behind `video.seeking`) and plays once `seeked` + `canplay` settle. */
-    const seekAndSync = useCallback((video: HTMLVideoElement, targetMediaTime: number, shouldPlay: boolean, preferFastSeek = false) => {
-        if (video.readyState < 1) {
-            if (shouldPlay && !isScrubbingRef.current) video.play().catch(() => { });
-            return;
-        }
+    const seekAndSync = useCallback((video: HTMLVideoElement, targetMediaTime: number, shouldPlay: boolean) => {
+        if (video.readyState < 1) return;
 
         const clampedTarget = clampMediaTarget(targetMediaTime, video.duration);
         const seekTol = shouldPlay ? 0.08 : 0.015;
         const needsSeek = Math.abs(video.currentTime - clampedTarget) > seekTol;
-        const isMobileOrBlob = !useStandbyDeckRef.current || videoSrcRef.current.startsWith('blob:');
         const decoupled = isDecoupledActive();
 
         cancelPendingSeekListener();
@@ -581,10 +577,10 @@ export const useVideoElementSync = ({
         if (!shouldPlay) {
             if (!video.paused) video.pause();
             if (video.seeking) {
-                pendingSeekRef.current = { target: clampedTarget, shouldPlay: false, preferFastSeek };
+                pendingSeekRef.current = { target: clampedTarget, shouldPlay: false };
             } else if (needsSeek) {
                 pendingSeekRef.current = null;
-                issueVideoSeek(video, clampedTarget, preferFastSeek);
+                video.currentTime = clampedTarget;
             } else {
                 pendingSeekRef.current = null;
             }
@@ -595,19 +591,14 @@ export const useVideoElementSync = ({
             if (!video.paused) video.pause();
             seekStartedAtRef.current = performance.now();
             avDiagRef.current.lastSeekTargetSec = clampedTarget;
-            if (decoupled) {
-                video.muted = true;
-            } else if (isMobileOrBlob) {
-                seekMutedGuardRef.current = true;
-                video.muted = true;
-            }
-            pendingSeekRef.current = video.seeking ? { target: clampedTarget, shouldPlay: true, preferFastSeek } : null;
+            if (decoupled) video.muted = true;
+            pendingSeekRef.current = video.seeking ? { target: clampedTarget, shouldPlay: true } : null;
             const onSeeked = () => {
                 const queued = pendingSeekRef.current;
                 if (queued) {
                     pendingSeekRef.current = null;
                     if (Math.abs(video.currentTime - queued.target) > 0.015) {
-                        issueVideoSeek(video, queued.target, Boolean(queued.preferFastSeek));
+                        video.currentTime = queued.target;
                         return;
                     }
                 }
@@ -615,20 +606,42 @@ export const useVideoElementSync = ({
                 seekCleanupRef.current = null;
                 if (isPlayingRef.current && !isScrubbingRef.current && !video.seeking) {
                     playWhenAudioPrimed(video);
-                } else {
-                    restoreMutedAfterSeek(video);
                 }
             };
             seekCleanupRef.current = () => video.removeEventListener('seeked', onSeeked);
             video.addEventListener('seeked', onSeeked);
             if (!video.seeking && needsSeek) {
-                issueVideoSeek(video, clampedTarget, preferFastSeek);
+                video.currentTime = clampedTarget;
             }
         } else {
             pendingSeekRef.current = null;
             playWhenAudioPrimed(video);
         }
-    }, [cancelPendingSeekListener, isDecoupledActive, issueVideoSeek, playWhenAudioPrimed, restoreMutedAfterSeek, syncCompanionAudioToTime]);
+    }, [cancelPendingSeekListener, isDecoupledActive, playWhenAudioPrimed, syncCompanionAudioToTime]);
+
+    // Seamlessly hand off audio when `playbackProfile` switches mid-playback (e.g. lazy IDB inspect or viewport resize)
+    useEffect(() => {
+        const prev = prevPlaybackProfileRef.current;
+        prevPlaybackProfileRef.current = playbackProfile;
+        if (prev === playbackProfile || overlayOnly) return;
+        const video = getActiveVideo();
+        if (!video) return;
+        if (playbackProfile === 'decoupled-audio-lock' && !companionAudioFailedRef.current) {
+            video.muted = true;
+            if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current && video.readyState >= 1) {
+                seekAndSync(video, video.currentTime, true);
+            }
+        } else if (prev === 'decoupled-audio-lock') {
+            const audio = companionAudioRef.current;
+            if (audio && !audio.paused) audio.pause();
+            audioLaunchClaimedRef.current = false;
+            audioMasterStartedAtRef.current = 0;
+            consecutiveVideoSnapFramesRef.current = 0;
+            video.playbackRate = 1;
+            video.muted = effectiveMutedRef.current;
+            audioOutputRef.current = video;
+        }
+    }, [playbackProfile, overlayOnly, getActiveVideo, seekAndSync]);
 
     /** Swaps instantaneously to the pre-parked standby deck (0ms seek latency) or falls back to seekAndSync. */
     const transitionToMediaTime = useCallback((outgoing: HTMLVideoElement, targetMediaTime: number, nextTimelineTime: number) => {
@@ -716,12 +729,7 @@ export const useVideoElementSync = ({
             cancelPendingSeekListener();
             cancelPreParkTimer();
             pendingSeekRef.current = null;
-            video.playbackRate = 1;
-            if (!video.paused) video.pause();
-            if (standby && !standby.paused) standby.pause();
-            if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            audioMasterStartedAtRef.current = 0;
-            consecutiveVideoSnapFramesRef.current = 0;
+            pauseAllDecks(video, standby);
             const hookOffset = draftRef.current.scenes?.[0]?.clipStartOffset ?? 0;
             if (video.readyState >= 1 && Math.abs(video.currentTime - hookOffset) > 0.08) {
                 video.currentTime = hookOffset;
@@ -738,12 +746,7 @@ export const useVideoElementSync = ({
         if (action === 'scrub') {
             cancelPendingSeekListener();
             cancelPreParkTimer();
-            video.playbackRate = 1;
-            if (!video.paused) video.pause();
-            if (standby && !standby.paused) standby.pause();
-            if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            audioMasterStartedAtRef.current = 0;
-            consecutiveVideoSnapFramesRef.current = 0;
+            pauseAllDecks(video, standby);
             if (video.readyState < 1) return;
             const vDur = video.duration || 10;
             const clampedTarget = clampMediaTarget(wrapMediaTime(draftRef.current, currentTime, vDur), vDur);
@@ -755,23 +758,18 @@ export const useVideoElementSync = ({
             const isMobileOrBlob = !useStandbyDeckRef.current || videoSrc.startsWith('blob:');
             const nowMs = performance.now();
             if (video.seeking || (isMobileOrBlob && nowMs - lastMobileScrubSeekAtRef.current < MOBILE_SCRUB_THROTTLE_MS)) {
-                pendingSeekRef.current = { target: scrubTarget, shouldPlay: false, preferFastSeek: true };
+                pendingSeekRef.current = { target: scrubTarget, shouldPlay: false };
             } else if (Math.abs(video.currentTime - scrubTarget) > 0.015) {
                 lastMobileScrubSeekAtRef.current = nowMs;
                 pendingSeekRef.current = null;
-                issueVideoSeek(video, scrubTarget, shouldUseFastSeekDuringScrub(typeof video.fastSeek === 'function'));
+                video.currentTime = scrubTarget;
             }
             return;
         }
 
         if (action === 'pause-seek') {
             cancelPreParkTimer();
-            video.playbackRate = 1;
-            if (!video.paused) video.pause();
-            if (standby && !standby.paused) standby.pause();
-            if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            audioMasterStartedAtRef.current = 0;
-            consecutiveVideoSnapFramesRef.current = 0;
+            pauseAllDecks(video, standby);
             if (wasScrubbing && pendingSeekRef.current && !pendingSeekRef.current.shouldPlay) {
                 pendingSeekRef.current = null;
             }
@@ -786,6 +784,9 @@ export const useVideoElementSync = ({
                 seekAndSync(video, targetMediaTime, false);
             } else {
                 cancelPendingSeekListener();
+                if (isDecoupledActive()) {
+                    syncCompanionAudioToTime(clampedTarget, true);
+                }
             }
             return;
         }
@@ -821,9 +822,11 @@ export const useVideoElementSync = ({
         draft.videoDuration,
         getActiveVideo,
         getStandbyVideo,
+        isDecoupledActive,
+        pauseAllDecks,
         cancelPendingSeekListener,
         cancelPreParkTimer,
-        issueVideoSeek,
+        syncCompanionAudioToTime,
         seekAndSync,
         transitionToMediaTime,
     ]);
@@ -876,24 +879,19 @@ export const useVideoElementSync = ({
 
             if (!isScrubbingRef.current && isPlayingRef.current && !cur.seeking) {
                 const audio = companionAudioRef.current;
+                const audioRolling = isDecoupledActive() && Boolean(audio) && audio!.readyState >= 1 && !audio!.paused && !audio!.seeking;
                 if (isDecoupledActive() && audio && cur.readyState >= 2) {
                     cur.muted = true;
                     const frameTime = clampMediaTarget(metadata.mediaTime, cur.duration || 10);
                     const nowMs = performance.now();
                     if (
+                        audioRolling &&
                         audioMasterStartedAtRef.current > 0 &&
-                        nowMs - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS &&
-                        audio.readyState >= 1 &&
-                        !audio.paused &&
-                        !audio.seeking
+                        nowMs - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS
                     ) {
                         // Video-Follower Lock: NEVER seek or rate-shift <audio>; gently adjust muted <video> only
                         const adj = computeVideoToAudioClockAdjustment(frameTime, audio.currentTime);
                         avDiagRef.current.lastAudioDriftMs = Math.round(adj.driftSec * 1000);
-                        if (Math.abs(adj.driftSec) > avDiagRef.current.maxPostSeekSkewSec) {
-                            avDiagRef.current.maxPostSeekSkewSec = Math.round(Math.abs(adj.driftSec) * 1000) / 1000;
-                        }
-                        publishAvDiag(avDiagRef.current);
 
                         if (adj.mode === 'snap-video') {
                             consecutiveVideoSnapFramesRef.current += 1;
@@ -918,36 +916,10 @@ export const useVideoElementSync = ({
                             }
                         }
                     }
-                } else {
-                    const audit = postSeekAuditRef.current;
-                    if (audit && cur.readyState >= 2) {
-                        const nowMs = performance.now();
-                        const res = evaluatePostSeekAvSkew(audit, nowMs, cur.currentTime, metadata.mediaTime);
-                        if (audit.maxObservedSkewSec > avDiagRef.current.maxPostSeekSkewSec) {
-                            avDiagRef.current.maxPostSeekSkewSec = Math.round(audit.maxObservedSkewSec * 1000) / 1000;
-                            publishAvDiag(avDiagRef.current);
-                        }
-                        if (!res.active) {
-                            postSeekAuditRef.current = null;
-                        }
-                        if (res.shouldRecover) {
-                            postSeekAuditRef.current = null;
-                            isRecoverySeekRef.current = true;
-                            avDiagRef.current.recoveryCount += 1;
-                            avDiagRef.current.lastRecoveryAtMs = Math.round(nowMs);
-                            publishAvDiag(avDiagRef.current);
-                            currentTimeRef.current = mediaTimeToTimelineTime(draftRef.current, metadata.mediaTime, currentTimeRef.current);
-                            const recoveryTarget = resolveScrubSeekTarget(metadata.mediaTime, keyframeTimesRef.current, true);
-                            seekAndSync(cur, recoveryTarget, true, true);
-                            const nextEl = getActiveVideo();
-                            if (nextEl && typeof nextEl.requestVideoFrameCallback === 'function' && isPlayingRef.current) {
-                                rVfcHandleRef.current = { el: nextEl, id: nextEl.requestVideoFrameCallback(onFrame) };
-                            }
-                            return;
-                        }
-                    }
                 }
-                syncTimelineTick(cur, metadata.mediaTime);
+                // Single Master Clock: evaluate scene/cut boundaries from `<audio>` whenever decoupled audio is rolling
+                const masterMediaTime = audioRolling && audio ? audio.currentTime : metadata.mediaTime;
+                syncTimelineTick(cur, masterMediaTime);
             }
             const nextEl = getActiveVideo();
             if (nextEl && typeof nextEl.requestVideoFrameCallback === 'function' && isPlayingRef.current) {
@@ -968,7 +940,7 @@ export const useVideoElementSync = ({
             }
             rVfcHandleRef.current = null;
         };
-    }, [isPlaying, isScrubbing, overlayOnly, getActiveVideo, isDecoupledActive, seekAndSync, syncTimelineTick]);
+    }, [isPlaying, isScrubbing, overlayOnly, getActiveVideo, isDecoupledActive, syncTimelineTick]);
 
     const handleLoadedMetadata = () => {
         const video = getActiveVideo();
@@ -989,6 +961,14 @@ export const useVideoElementSync = ({
         preParkStandbyDeck(getStandbyVideo(), getNextCutMediaTarget(draftRef.current, currentTimeRef.current, playbackModeRef.current === 'loop-angle'));
     };
 
+    const handleCompanionAudioLoadedMetadata = useCallback(() => {
+        const audio = companionAudioRef.current;
+        if (!audio || !isDecoupledActive()) return;
+        const vDur = getActiveVideo()?.duration || audio.duration || 10;
+        const targetMediaTime = wrapMediaTime(draftRef.current, currentTimeRef.current, vDur);
+        syncCompanionAudioToTime(targetMediaTime, !audioLaunchClaimedRef.current);
+    }, [getActiveVideo, isDecoupledActive, syncCompanionAudioToTime]);
+
     const handleStandbyLoadedMetadata = useCallback(() => {
         const standby = getStandbyVideo();
         if (standby) {
@@ -1001,7 +981,11 @@ export const useVideoElementSync = ({
     const handleTimeUpdate = (e?: SyntheticEvent<HTMLVideoElement>) => {
         const video = getActiveVideo();
         if (!video || (e && e.currentTarget !== video) || isScrubbing || !isPlaying || typeof video.requestVideoFrameCallback === 'function') return;
-        syncTimelineTick(video, video.currentTime);
+        const audio = companionAudioRef.current;
+        const masterTime = (isDecoupledActive() && audio && audio.readyState >= 1 && !audio.paused && !audio.seeking)
+            ? audio.currentTime
+            : video.currentTime;
+        syncTimelineTick(video, masterTime);
     };
 
     const handleEnded = useCallback(() => {
@@ -1013,5 +997,30 @@ export const useVideoElementSync = ({
         seekAndSync(video, target, isPlayingRef.current);
     }, [overlayOnly, getActiveVideo, seekAndSync]);
 
-    return { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, unlockCompanionAudio, handleCompanionAudioError, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded };
+    return {
+        videoRef,
+        standbyVideoRef,
+        companionAudioRef,
+        activeVideoRef,
+        audioOutputRef,
+        currentTimeRef,
+        ambientCropRef,
+        ambientVisibilityRef,
+        isCameraGlidingRef,
+        ambientCanvasRef,
+        midEdgeCanvasRef,
+        nearEdgeCanvasRef,
+        topAmbientCanvasRef,
+        topMidEdgeCanvasRef,
+        topNearEdgeCanvasRef,
+        isCompanionFallback,
+        unlockCompanionAudio,
+        handleCompanionAudioError,
+        handleCompanionAudioLoadedMetadata,
+        refreshAmbientGlow,
+        handleLoadedMetadata,
+        handleStandbyLoadedMetadata,
+        handleTimeUpdate,
+        handleEnded,
+    };
 };

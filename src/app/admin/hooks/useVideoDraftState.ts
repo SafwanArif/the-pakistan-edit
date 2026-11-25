@@ -8,6 +8,7 @@ import {
     calculatePsychologyPacedScenes,
     ensureUniqueSceneIds,
     getSceneBoundaries,
+    getTimelineStructure,
     getActiveSceneAtTime,
     findSubtitleAtMediaTime,
     wrapMediaTime,
@@ -19,7 +20,7 @@ import { del, get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
 import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
 import { createLivePlaybackClock } from '../utils/livePlaybackClock';
-import { inspectVideoBlob } from '../utils/clientMediaInspector';
+import { extractKeyframeTimesFromFrameIndex, inspectVideoBlob } from '../utils/clientMediaInspector';
 
 /** Clears clip-specific state (subtitles, keyframes, star cues, master clipStartOffsets, probe metadata) when loading a new video. */
 export const resetClipBoundFields = (draft: VideoDraft): VideoDraft => ({
@@ -423,7 +424,7 @@ export const useVideoDraftState = () => {
                 sourceFps: upload.fps || inspected?.mediaInfo.exactFps,
                 sourceFrameLogUrl: upload.frameIndexUrl,
                 sourceFrameIndex,
-                sourceKeyframeTimes: inspected?.keyframeTimes.length ? inspected.keyframeTimes : sourceFrameIndex?.keyframes,
+                sourceKeyframeTimes: inspected?.keyframeTimes.length ? inspected.keyframeTimes : extractKeyframeTimesFromFrameIndex(sourceFrameIndex),
                 sourceMediaInfo: mergedMediaInfo,
                 aspectRatio: nextRatio,
                 scenes: nextScenes,
@@ -623,7 +624,10 @@ export const useVideoDraftState = () => {
         if (playbackModeRef.current === 'loop-angle') {
             const prev = currentTimeRef.current;
             const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
-            if (active && mediaTime >= active.end - 0.04) {
+            const { hasReHook, preStoryDur, hookOffset, storyOffset } = getTimelineStructure(videoDraftRef.current.scenes || []);
+            // Hook/Re-Hook wraps with custom jumps are owned exclusively by `syncTimelineTick` (0.022s cut) to prevent double-seeks
+            const ownedByVideoSync = Boolean(active && active.start < preStoryDur && (hasReHook || hookOffset > 0 || storyOffset > 0));
+            if (active && !ownedByVideoSync && mediaTime >= active.end - 0.04) {
                 seekTo(active.start);
                 return;
             }

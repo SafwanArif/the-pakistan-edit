@@ -19,6 +19,8 @@ interface TimelineStoryboardProps {
     liveClock?: LivePlaybackClock;
     isPlaying?: boolean;
     seekTo: (time: number) => void;
+    onScrubStart?: () => void;
+    onScrubEnd?: (finalTime: number) => void;
     playbackMode?: 'play-all' | 'loop-angle';
     onTogglePlaybackMode?: () => void;
     isMobileDrawerOpen: boolean;
@@ -84,7 +86,7 @@ export function resolveSceneSubtitleSeekTime(
 
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
-    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
+    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, onScrubStart, onScrubEnd, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
 }) => {
     const isMobileViewport = useMediaQuery("(max-width: 900px)");
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
@@ -474,6 +476,8 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                 checklistRef={isChecklistOpen ? checklistRef : undefined}
                                 checklistDraft={isChecklistOpen ? draft : undefined}
                                 onSeekTo={seekTo}
+                                onScrubStart={onScrubStart}
+                                onScrubEnd={onScrubEnd}
                                 onUpdateScene={updateScene}
                                 onDeleteScene={handleDeleteScene}
                                 onSetOffset={setSceneOffset}
@@ -529,6 +533,8 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         && prev.liveClock === next.liveClock
         && prev.isPlaying === next.isPlaying
         && prev.seekTo === next.seekTo
+        && prev.onScrubStart === next.onScrubStart
+        && prev.onScrubEnd === next.onScrubEnd
         && prev.playbackMode === next.playbackMode
         && prev.onTogglePlaybackMode === next.onTogglePlaybackMode
         && prev.isMobileDrawerOpen === next.isMobileDrawerOpen

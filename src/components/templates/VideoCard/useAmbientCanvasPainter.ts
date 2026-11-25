@@ -38,6 +38,7 @@ interface UseAmbientCanvasPainterOptions {
     isPlayingRef: React.RefObject<boolean>;
     isScrubbingRef: React.RefObject<boolean>;
     isCameraGlidingRef: React.RefObject<boolean>;
+    isHeavyVideo?: boolean;
     getActiveVideo: () => HTMLVideoElement | null;
 }
 
@@ -56,6 +57,7 @@ export const useAmbientCanvasPainter = ({
     isPlayingRef,
     isScrubbingRef,
     isCameraGlidingRef,
+    isHeavyVideo = false,
     getActiveVideo,
 }: UseAmbientCanvasPainterOptions) => {
     const ambientCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,12 +71,14 @@ export const useAmbientCanvasPainter = ({
     const lastPaintedVideoTimeRef = useRef(-1);
     const prevBlurActiveRef = useRef(ambientBlurActive);
     const ambientBlurActiveRef = useRef(ambientBlurActive);
+    const isHeavyVideoRef = useRef(isHeavyVideo);
     const ambientCropRef = useRef<AmbientCropRect>(ambientCrop);
     const ambientVisibilityRef = useRef<AmbientVisibilityState>(ambientVisibility);
 
     useEffect(() => {
         ambientBlurActiveRef.current = ambientBlurActive;
-    }, [ambientBlurActive]);
+        isHeavyVideoRef.current = isHeavyVideo;
+    }, [ambientBlurActive, isHeavyVideo]);
 
     // Clear ambient reflection canvases immediately whenever the video source is cleared or replaced
     useEffect(() => {
@@ -96,7 +100,7 @@ export const useAmbientCanvasPainter = ({
         const doBot = botVisible;
         if (!force && Math.abs(video.currentTime - lastPaintedVideoTimeRef.current) < 0.001) return;
         const now = performance.now();
-        const minInterval = isCameraGlidingRef.current ? 80 : 48;
+        const minInterval = isHeavyVideoRef.current ? 120 : (isCameraGlidingRef.current ? 80 : 48);
         if (!force && now - lastAmbientPaintRef.current < minInterval) return;
         lastAmbientPaintRef.current = now;
         lastPaintedVideoTimeRef.current = video.currentTime;

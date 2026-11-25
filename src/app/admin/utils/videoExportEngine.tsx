@@ -106,8 +106,8 @@ export const runVideoMP4Export = async (
         const sceneBounds = getSceneBoundaries(scenes);
         const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
         const formData = new FormData();
-        // Omit large in-memory sourceFrameIndex PTS arrays from the multipart export payload
-        const exportDraft = { ...draft, sourceFrameIndex: undefined };
+        // Omit large in-memory PTS & keyframe timestamp arrays from the multipart export payload
+        const exportDraft = { ...draft, sourceFrameIndex: undefined, sourceKeyframeTimes: undefined };
         formData.append("draft", JSON.stringify(exportDraft));
 
         const session = await createDomCaptureSession({ fallbackToBody: true, transparent: true });

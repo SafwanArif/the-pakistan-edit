@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-    POST_SEEK_AUDIT_WINDOW_MS,
     computeVideoToAudioClockAdjustment,
-    createPostSeekAudit,
-    evaluatePostSeekAvSkew,
+    createInitialAvSyncDiag,
     getCanPlayTimeoutMs,
     resolvePlaybackSyncAction,
     resolveScrubSeekTarget,
-    shouldUseFastSeekDuringScrub,
 } from "../../components/templates/VideoCard/avSyncHelpers";
 
-describe("avSyncHelpers — single-coordinator playback sync & post-seek A/V guard", () => {
+describe("avSyncHelpers — single-coordinator playback sync & audio-master follower lock", () => {
     it("resolves scrub release + resume into a single 'start-play' action (no competing double-seek)", () => {
         const action = resolvePlaybackSyncAction({
             isOutro: false,
@@ -81,43 +78,6 @@ describe("avSyncHelpers — single-coordinator playback sync & post-seek A/V gua
         expect(getCanPlayTimeoutMs(false)).toBe(350);
     });
 
-    it("enables fastSeek during active scrub whenever supported by the browser", () => {
-        expect(shouldUseFastSeekDuringScrub(true)).toBe(true);
-        expect(shouldUseFastSeekDuringScrub(false)).toBe(false);
-    });
-
-    it("triggers at most one post-seek A/V recovery after 3 consecutive frames with >350ms skew", () => {
-        const audit = createPostSeekAudit(1000);
-
-        // Healthy frames do not trigger recovery
-        expect(evaluatePostSeekAvSkew(audit, 1040, 37.05, 37.0).shouldRecover).toBe(false);
-        expect(audit.consecutiveSkewFrames).toBe(0);
-
-        // Two skewed frames followed by a healthy frame resets streak
-        expect(evaluatePostSeekAvSkew(audit, 1080, 39.2, 37.0).shouldRecover).toBe(false);
-        expect(evaluatePostSeekAvSkew(audit, 1120, 39.2, 37.0).shouldRecover).toBe(false);
-        expect(evaluatePostSeekAvSkew(audit, 1160, 37.08, 37.0).shouldRecover).toBe(false);
-        expect(audit.consecutiveSkewFrames).toBe(0);
-
-        // Three consecutive skewed frames (>350ms) trigger exactly one recovery
-        expect(evaluatePostSeekAvSkew(audit, 1200, 39.5, 37.0).shouldRecover).toBe(false);
-        expect(evaluatePostSeekAvSkew(audit, 1240, 39.5, 37.0).shouldRecover).toBe(false);
-        const third = evaluatePostSeekAvSkew(audit, 1280, 39.5, 37.0);
-        expect(third.shouldRecover).toBe(true);
-        expect(third.active).toBe(false);
-        expect(audit.recovered).toBe(true);
-
-        // Subsequent calls never trigger a second recovery loop
-        expect(evaluatePostSeekAvSkew(audit, 1320, 40.5, 37.0).shouldRecover).toBe(false);
-    });
-
-    it("deactivates post-seek audit automatically after the 2200ms settle window", () => {
-        const audit = createPostSeekAudit(1000);
-        const res = evaluatePostSeekAvSkew(audit, 1000 + POST_SEEK_AUDIT_WINDOW_MS + 10, 40.0, 37.0);
-        expect(res.active).toBe(false);
-        expect(res.shouldRecover).toBe(false);
-    });
-
     it("computes video-follower clock adjustments without touching companion audio", () => {
         expect(computeVideoToAudioClockAdjustment(37.05, 37.0)).toMatchObject({ mode: "hold", videoPlaybackRate: 1 });
 
@@ -139,5 +99,17 @@ describe("avSyncHelpers — single-coordinator playback sync & post-seek A/V gua
         expect(resolveScrubSeekTarget(12.2, kfs, true)).toBe(10);
         expect(resolveScrubSeekTarget(13.1, kfs, true)).toBe(15);
         expect(resolveScrubSeekTarget(12.2, kfs, false)).toBe(12.2);
+    });
+
+    it("initializes lean live diagnostics snapshot without legacy single-channel recovery fields", () => {
+        expect(createInitialAvSyncDiag()).toEqual({
+            profile: "standard",
+            companionAudioActive: false,
+            companionAudioFallback: false,
+            lastAudioDriftMs: 0,
+            lastSeekTargetSec: 0,
+            lastSeekDurationMs: 0,
+            readyStateAtPlay: 0,
+        });
     });
 });

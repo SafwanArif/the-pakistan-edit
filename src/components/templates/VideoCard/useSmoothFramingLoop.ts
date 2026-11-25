@@ -72,7 +72,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
 
         let rafId = 0;
         let smoothedDt = 1 / 120;
-        let lastMediaTime = optsRef.current.videoRef.current?.currentTime ?? -1;
+        let lastMediaTime = optsRef.current.audioOutputRef?.current?.currentTime ?? optsRef.current.videoRef.current?.currentTime ?? -1;
         let lastSeenPropTime = optsRef.current.currentTime;
         let latestMappedTime = optsRef.current.liveTimelineTimeRef.current ?? optsRef.current.currentTime;
         let lastPerfNow = performance.now();
@@ -124,6 +124,16 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 lastSeenPropTime = o.currentTime;
             }
 
+            const audioOut = o.audioOutputRef?.current;
+            const useAudioMaster = Boolean(
+                audioOut &&
+                audioOut !== video &&
+                audioOut.readyState >= 1 &&
+                !audioOut.paused &&
+                !audioOut.seeking
+            );
+            const clockEl: HTMLMediaElement | null = useAudioMaster ? audioOut! : video;
+
             if (o.isOutro || o.isImage || !video) {
                 if (propChanged && Math.abs(o.currentTime - lastLiveT) > 0.08) {
                     latestMappedTime = o.currentTime;
@@ -131,13 +141,13 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 } else {
                     liveT = clamp(lastLiveT + dt, 0, totalDur);
                 }
-            } else if (video.seeking) {
+            } else if (video.seeking && !useAudioMaster) {
                 latestMappedTime = o.liveTimelineTimeRef.current;
                 liveT = latestMappedTime;
             } else {
                 if (video !== lastVideoEl) {
                     lastVideoEl = video;
-                    lastMediaTime = video.currentTime;
+                    lastMediaTime = clockEl?.currentTime ?? video.currentTime;
                     deckSwapPerfNow = now;
                     smoothedDrift = 0;
                     latestMappedTime = o.liveTimelineTimeRef.current;
@@ -147,8 +157,9 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                     awaitingFirstTickAfterSwap = true;
                     swapPhaseOffset = 0;
                 }
-                if (video.readyState >= 2) {
-                    const mt = video.currentTime;
+                const minReadyState = useAudioMaster ? 1 : 2;
+                if (clockEl && clockEl.readyState >= minReadyState) {
+                    const mt = clockEl.currentTime;
                     if (lastMediaTime < 0 || Math.abs(mt - lastMediaTime) > 0.0005) {
                         latestMappedTime = mediaTimeToTimelineTime(o.draft, mt, o.liveTimelineTimeRef.current);
                         lastMediaTime = mt;
@@ -160,7 +171,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                     }
                 }
                 const inSwapGrace = awaitingFirstTickAfterSwap && (now - deckSwapPerfNow < 240);
-                if ((video.paused && !inSwapGrace) || video.readyState < 2) {
+                if (!clockEl || (clockEl.paused && !inSwapGrace) || clockEl.readyState < minReadyState) {
                     liveT = lastLiveT;
                 } else if (inSwapGrace) {
                     // Glide at pure 1.0x VSync velocity until the standby deck emits its first audio-clock tick

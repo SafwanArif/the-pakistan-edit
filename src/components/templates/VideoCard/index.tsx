@@ -13,7 +13,7 @@ import { useVideoElementSync } from "./useVideoElementSync";
 import { useSmoothFramingLoop } from "./useSmoothFramingLoop";
 import { shouldUseStandbyDeck } from "./dualDeckHelpers";
 import { useMediaQuery } from "../../../app/admin/hooks/useMediaQuery";
-import { classifyPlaybackProfile } from "../../../app/admin/utils/clientMediaInspector";
+import { classifyPlaybackProfile, extractKeyframeTimesFromFrameIndex } from "../../../app/admin/utils/clientMediaInspector";
 import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
 
 const SCRIM_STYLES: Record<'top' | 'center' | 'bottom', React.CSSProperties> = {
@@ -167,15 +167,20 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const isImage = activeScene?.mediaType === 'image' || (
         Boolean(videoSrc) && (videoSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif|svg|avif)(\?.*)?$/i.test(videoSrc))
     );
+    const isMasterMedia = !activeScene?.mediaUrl || activeScene.mediaUrl === draft.videoUrl;
+    const activeMediaInfo = isMasterMedia ? draft.sourceMediaInfo : undefined;
     const playbackProfile = useMemo(
-        () => classifyPlaybackProfile(draft.sourceMediaInfo, isCompactOrTouch, videoSrc.startsWith('blob:')),
-        [draft.sourceMediaInfo, isCompactOrTouch, videoSrc]
+        () => classifyPlaybackProfile(activeMediaInfo, isCompactOrTouch, videoSrc.startsWith('blob:')),
+        [activeMediaInfo, isCompactOrTouch, videoSrc]
     );
     const useDecoupledAudioLock = !isImage && !overlayOnly && Boolean(videoSrc) && playbackProfile === 'decoupled-audio-lock';
-    const keyframeTimes = draft.sourceKeyframeTimes ?? draft.sourceFrameIndex?.keyframes;
+    const keyframeTimes = useMemo(
+        () => (isMasterMedia ? (draft.sourceKeyframeTimes ?? extractKeyframeTimesFromFrameIndex(draft.sourceFrameIndex)) : undefined),
+        [isMasterMedia, draft.sourceKeyframeTimes, draft.sourceFrameIndex]
+    );
     const useStandbyDeck = !isImage && !overlayOnly && shouldUseStandbyDeck(draft, isCompactOrTouch);
 
-    const { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, unlockCompanionAudio, handleCompanionAudioError, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
+    const { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, isCompanionFallback, unlockCompanionAudio, handleCompanionAudioError, handleCompanionAudioLoadedMetadata, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
         draft,
         videoSrc,
         isPlaying,
@@ -375,7 +380,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                         aria-label={draft.headline || "Video preview"}
                                         crossOrigin="anonymous"
                                         playsInline
-                                        muted={useDecoupledAudioLock ? true : effectiveMuted}
+                                        muted={useDecoupledAudioLock && !isCompanionFallback ? true : effectiveMuted}
                                         preload="auto"
                                         disablePictureInPicture
                                         disableRemotePlayback
@@ -395,6 +400,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                             preload="auto"
                                             crossOrigin="anonymous"
                                             muted={effectiveMuted}
+                                            onLoadedMetadata={handleCompanionAudioLoadedMetadata}
                                             onError={handleCompanionAudioError}
                                             style={{ display: 'none' }}
                                         />

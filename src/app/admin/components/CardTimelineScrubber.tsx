@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
+import { MOBILE_SCRUB_THROTTLE_MS } from "../../../components/templates/VideoCard/avSyncHelpers";
 
 const cardScrubberShellStyle: React.CSSProperties = {
     position: "relative",
@@ -38,6 +39,8 @@ interface CardTimelineScrubberProps {
     fadeInDur?: number;
     fadeOutDur?: number;
     onSeek: (time: number) => void;
+    onScrubStart?: () => void;
+    onScrubEnd?: (finalTime: number) => void;
 }
 
 /** Full-width NLE-style per-card timeline scrubber with vertical playhead, fade cues, and hover/active timecode. */
@@ -54,6 +57,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     fadeInDur = 0,
     fadeOutDur = 0,
     onSeek,
+    onScrubStart,
+    onScrubEnd,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
     const fillRef = useRef<HTMLDivElement>(null);
@@ -61,6 +66,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const timeLabelRef = useRef<HTMLSpanElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
     const lastSentSeekRef = useRef<number | null>(null);
+    const latestDragTimeRef = useRef<number | null>(null);
+    const lastMoveSeekAtRef = useRef(0);
     const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -98,16 +105,44 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const fadeInPct = duration > 0 && fadeInDur > 0 ? clamp((fadeInDur / duration) * 100, 3, 18) : 0;
     const fadeOutPct = duration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / duration) * 100, 3, 18) : 0;
 
-    const scrubAtClientX = (clientX: number) => {
+    const computeTimeAtClientX = (clientX: number): number | null => {
         const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
-        if (!rect || duration <= 0) return;
+        if (!rect || duration <= 0) return null;
         const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
         const maxT = Math.max(start, end - 0.05);
         const raw = start + ratio * duration;
-        const snapped = Math.round(clamp(raw, start, maxT) * 100) / 100;
+        return Math.round(clamp(raw, start, maxT) * 100) / 100;
+    };
+
+    const scrubAtClientX = (clientX: number, force = false) => {
+        const snapped = computeTimeAtClientX(clientX);
+        if (snapped === null) return;
+        latestDragTimeRef.current = snapped;
+        const loc = clamp(snapped - start, 0, duration);
+        const nextPct = duration > 0 ? clamp((loc / duration) * 100, 0, 100) : 0;
+        if (fillRef.current) fillRef.current.style.transform = `scaleX(${nextPct / 100})`;
+        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+        if (timeLabelRef.current) timeLabelRef.current.textContent = `${formatTimecode(loc)} / ${duration.toFixed(1)}s`;
+
+        const nowMs = performance.now();
+        if (!force && nowMs - lastMoveSeekAtRef.current < MOBILE_SCRUB_THROTTLE_MS) return;
         if (snapped !== lastSentSeekRef.current) {
+            lastMoveSeekAtRef.current = nowMs;
             lastSentSeekRef.current = snapped;
             onSeek(snapped);
+        }
+    };
+
+    const finishDrag = (finalTime: number) => {
+        setIsDragging(false);
+        dragRectRef.current = null;
+        const prevSent = lastSentSeekRef.current;
+        lastSentSeekRef.current = null;
+        latestDragTimeRef.current = null;
+        if (onScrubEnd) {
+            onScrubEnd(finalTime);
+        } else if (finalTime !== prevSent) {
+            onSeek(finalTime);
         }
     };
 
@@ -180,13 +215,15 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     e.currentTarget.setPointerCapture(e.pointerId);
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     lastSentSeekRef.current = null;
+                    latestDragTimeRef.current = null;
                     isDraggingRef.current = true;
                     setIsDragging(true);
-                    scrubAtClientX(e.clientX);
+                    onScrubStart?.();
+                    scrubAtClientX(e.clientX, true);
                 }}
                 onPointerMove={(e) => {
                     if (!isDraggingRef.current) return;
-                    scrubAtClientX(e.clientX);
+                    scrubAtClientX(e.clientX, false);
                 }}
                 onPointerUp={(e) => {
                     if (!isDraggingRef.current) return;
@@ -196,23 +233,18 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                             e.currentTarget.releasePointerCapture(e.pointerId);
                         }
                     } catch {}
-                    setIsDragging(false);
-                    dragRectRef.current = null;
-                    lastSentSeekRef.current = null;
+                    const finalTime = computeTimeAtClientX(e.clientX) ?? latestDragTimeRef.current ?? currentTime;
+                    finishDrag(finalTime);
                 }}
                 onPointerCancel={() => {
                     if (!isDraggingRef.current) return;
                     isDraggingRef.current = false;
-                    setIsDragging(false);
-                    dragRectRef.current = null;
-                    lastSentSeekRef.current = null;
+                    finishDrag(latestDragTimeRef.current ?? currentTime);
                 }}
                 onLostPointerCapture={() => {
                     if (!isDraggingRef.current) return;
                     isDraggingRef.current = false;
-                    setIsDragging(false);
-                    dragRectRef.current = null;
-                    lastSentSeekRef.current = null;
+                    finishDrag(latestDragTimeRef.current ?? currentTime);
                 }}
                 title={`Scrub inside ${sceneLabel} (${formatTimecode(start)} – ${formatTimecode(end)})`}
                 style={{

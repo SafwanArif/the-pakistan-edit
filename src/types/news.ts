@@ -94,6 +94,7 @@ export interface SourceMediaInfo {
     keyframeCount?: number;
     hasBFrames?: boolean;
     isVfr?: boolean;
+    isFragmented?: boolean;
     moovBeforeMdat?: boolean;
     container?: 'mp4' | 'mov' | 'webm' | 'unknown';
     fileSize?: number;

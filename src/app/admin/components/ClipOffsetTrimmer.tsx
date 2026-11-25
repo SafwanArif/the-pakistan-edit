@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { formatTimecode, parseTimeInput } from "../../../types/news";
 
 const HOOK_NUDGES = [
@@ -15,7 +16,7 @@ const trimmerHeaderLabelStyle: React.CSSProperties = { fontSize: '9px', fontWeig
 const trimmerResetBtnStyle: React.CSSProperties = { width: '18px', height: '18px', fontSize: '11px', padding: 0, lineHeight: 1 };
 const trimmerControlsRowStyle: React.CSSProperties = { alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' };
 
-/** Shared Hook / Re-Hook emoji glyph so mirroring and gold styling stay unified across cards and timelines. */
+/** Shared Hook / Re-Hook glyph using the exact desktop Segoe UI Emoji PNG so desktop & mobile match down to the sub-pixel. */
 export const HookGlyph: React.FC<{ role: 'hook' | 'rehook'; style?: React.CSSProperties }> = ({ role, style }) => (
     <span
         style={{
@@ -26,7 +27,23 @@ export const HookGlyph: React.FC<{ role: 'hook' | 'rehook'; style?: React.CSSPro
             ...style,
         }}
     >
-        🪝
+        <Image
+            src="/assets/icons/hook-emoji.png"
+            alt=""
+            aria-hidden="true"
+            width={16}
+            height={16}
+            unoptimized
+            draggable={false}
+            style={{
+                display: 'inline-block',
+                width: '1.333em',
+                height: '1.333em',
+                verticalAlign: '-0.22em',
+                objectFit: 'contain',
+                pointerEvents: 'none',
+            }}
+        />
     </span>
 );
 

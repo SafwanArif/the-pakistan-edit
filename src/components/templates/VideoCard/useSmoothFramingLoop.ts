@@ -41,6 +41,7 @@ interface SmoothFramingLoopOptions {
     ambientVisibilityRef: React.MutableRefObject<AmbientVisibilityState>;
     isCameraGlidingRef?: React.MutableRefObject<boolean>;
     videoRef: React.RefObject<HTMLVideoElement | null>;
+    audioOutputRef?: React.RefObject<HTMLMediaElement | null>;
     imageRef: React.RefObject<HTMLImageElement | null>;
     bgBlurImgRef: React.RefObject<HTMLImageElement | null>;
     clipWrapperRef: React.RefObject<HTMLDivElement | null>;
@@ -212,10 +213,11 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 fadeEl.style.opacity = String(fade);
                 fadeEl.style.visibility = fade > 0.0005 ? 'visible' : 'hidden';
             }
-            if (video && !o.isImage && !video.muted) {
+            const audioEl = o.audioOutputRef?.current ?? video;
+            if (audioEl && !o.isImage && !audioEl.muted) {
                 const nextVol = clamp((o.draft.volume ?? 1) * audioGain, 0, 1);
-                if (Math.abs(video.volume - nextVol) > 0.002) {
-                    video.volume = nextVol;
+                if (Math.abs(audioEl.volume - nextVol) > 0.002) {
+                    audioEl.volume = nextVol;
                 }
             }
 

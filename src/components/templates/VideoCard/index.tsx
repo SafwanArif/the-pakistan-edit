@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming, has45LetterboxFraming } from "../../../types/news";
 import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
@@ -13,6 +13,7 @@ import { useVideoElementSync } from "./useVideoElementSync";
 import { useSmoothFramingLoop } from "./useSmoothFramingLoop";
 import { shouldUseStandbyDeck } from "./dualDeckHelpers";
 import { useMediaQuery } from "../../../app/admin/hooks/useMediaQuery";
+import { classifyPlaybackProfile } from "../../../app/admin/utils/clientMediaInspector";
 import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
 
 const SCRIM_STYLES: Record<'top' | 'center' | 'bottom', React.CSSProperties> = {
@@ -54,6 +55,7 @@ interface VideoCardProps {
     ingestStatus?: string | null;
     onTimeUpdate?: (current: number, duration: number) => void;
     onTogglePlay?: () => void;
+    onRegisterAudioUnlock?: (unlock: (() => void) | null) => void;
     overlayOnly?: boolean;
     pausedFramingOverride?: { zoom: number; posX: number; posY: number };
     starPreviewNonce?: number;
@@ -73,6 +75,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     ingestStatus = null,
     onTimeUpdate,
     onTogglePlay,
+    onRegisterAudioUnlock,
     overlayOnly = false,
     pausedFramingOverride,
     starPreviewNonce = 0,
@@ -164,15 +167,23 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const isImage = activeScene?.mediaType === 'image' || (
         Boolean(videoSrc) && (videoSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif|svg|avif)(\?.*)?$/i.test(videoSrc))
     );
+    const playbackProfile = useMemo(
+        () => classifyPlaybackProfile(draft.sourceMediaInfo, isCompactOrTouch, videoSrc.startsWith('blob:')),
+        [draft.sourceMediaInfo, isCompactOrTouch, videoSrc]
+    );
+    const useDecoupledAudioLock = !isImage && !overlayOnly && Boolean(videoSrc) && playbackProfile === 'decoupled-audio-lock';
+    const keyframeTimes = draft.sourceKeyframeTimes ?? draft.sourceFrameIndex?.keyframes;
     const useStandbyDeck = !isImage && !overlayOnly && shouldUseStandbyDeck(draft, isCompactOrTouch);
 
-    const { videoRef, standbyVideoRef, activeVideoRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
+    const { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, unlockCompanionAudio, handleCompanionAudioError, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
         draft,
         videoSrc,
         isPlaying,
         isScrubbing,
         isOutro,
         playbackMode,
+        playbackProfile,
+        keyframeTimes,
         currentTime,
         seekNonce,
         useStandbyDeck,
@@ -184,6 +195,13 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         onTimeUpdate,
         onAspectDetected: setMediaNaturalAspect
     });
+
+    useEffect(() => {
+        if (!onRegisterAudioUnlock) return;
+        onRegisterAudioUnlock(unlockCompanionAudio);
+        return () => onRegisterAudioUnlock(null);
+    }, [onRegisterAudioUnlock, unlockCompanionAudio]);
+
     const zoomScale = Math.max(1.0, (cardFraming.zoom ?? 100) / 100);
     const posX = cardFraming.posX ?? 50;
     const rSafe = mediaNaturalAspect > 0 ? mediaNaturalAspect : 16 / 9;
@@ -193,7 +211,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     useSmoothFramingLoop({
         draft, is45, isImage, isPlaying, isScrubbing, isOutro, overlayOnly, currentTime, sceneStart, sceneDuration,
         mediaNaturalAspect, dimensions, liveTimelineTimeRef: currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef,
-        videoRef: activeVideoRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef, liveClock,
+        videoRef: activeVideoRef, audioOutputRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef, liveClock,
     });
     const sceneElapsed = Math.max(0, currentTime - sceneStart);
     const kenBurnsScale = isImage
@@ -280,7 +298,10 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                 cursor: overlayOnly ? 'default' : 'pointer',
                 backgroundColor: (overlayOnly && !isOutro) ? 'transparent' : undefined,
             } as React.CSSProperties}
-            onClick={overlayOnly ? undefined : onTogglePlay}
+            onClick={overlayOnly ? undefined : () => {
+                unlockCompanionAudio();
+                onTogglePlay?.();
+            }}
         >
             {/* Ratio-Aware Progress Line */}
             {!overlayOnly && (
@@ -354,7 +375,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                         aria-label={draft.headline || "Video preview"}
                                         crossOrigin="anonymous"
                                         playsInline
-                                        muted={effectiveMuted}
+                                        muted={useDecoupledAudioLock ? true : effectiveMuted}
                                         preload="auto"
                                         disablePictureInPicture
                                         disableRemotePlayback
@@ -367,6 +388,17 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                             ? { ...topBoxMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${panXShift}px, ${mediaOffsetY45}px, 0) scale(${effectiveScale}) translateZ(0)` }), willChange: 'transform' }
                                             : { ...fullBleedMediaStyle, ...(isLiveMediaLoop ? {} : { transform: `translate3d(${fullBleedPanX}px, 0, 0) scale(${zoomScale}) translateZ(0)` }), willChange: 'transform' }}
                                     />
+                                    {useDecoupledAudioLock && (
+                                        <audio
+                                            ref={companionAudioRef}
+                                            src={videoSrc}
+                                            preload="auto"
+                                            crossOrigin="anonymous"
+                                            muted={effectiveMuted}
+                                            onError={handleCompanionAudioError}
+                                            style={{ display: 'none' }}
+                                        />
+                                    )}
                                     {useStandbyDeck && (
                                         <video
                                             ref={standbyVideoRef}

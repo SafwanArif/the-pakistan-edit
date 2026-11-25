@@ -44,8 +44,13 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const [kfEditSide, setKfEditSide] = useState<'post' | 'pre'>('pre');
     const [starPreviewNonce, setStarPreviewNonce] = useState(0);
     const wasPlayingBeforeScrubRef = useRef(false);
+    const audioUnlockRef = useRef<(() => void) | null>(null);
     const timeInputRef = useRef<HTMLInputElement>(null);
     const telemetryBtnRef = useRef<HTMLButtonElement>(null);
+
+    const handleRegisterAudioUnlock = useCallback((unlock: (() => void) | null) => {
+        audioUnlockRef.current = unlock;
+    }, []);
 
     const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
     const { containerRef, scale } = useFitScale(dimensions.width, dimensions.height);
@@ -307,6 +312,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     };
 
     const handleScrubberPointerDown = useCallback(() => {
+        audioUnlockRef.current?.();
         setIsScrubbing(true);
         const { isPlaying: playing, togglePlay: toggle } = monitorRef.current;
         wasPlayingBeforeScrubRef.current = playing;
@@ -390,7 +396,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                     <div
                         className="tpe-monitor-status-pill"
                         title={draft.sourceMediaInfo
-                            ? `Source: ${draft.sourceMediaInfo.width}×${draft.sourceMediaInfo.height} @ ${draft.sourceMediaInfo.exactFps}fps${draft.sourceMediaInfo.videoCodec ? ` · ${draft.sourceMediaInfo.videoCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.videoBitrate ? ` · ${(draft.sourceMediaInfo.videoBitrate / 1_000_000).toFixed(1)} Mbps` : ''}${draft.sourceMediaInfo.isHdr ? ' · HDR→BT.709' : ''}`
+                            ? `Source: ${draft.sourceMediaInfo.width}×${draft.sourceMediaInfo.height} @ ${draft.sourceMediaInfo.exactFps}fps${draft.sourceMediaInfo.videoCodec ? ` · ${draft.sourceMediaInfo.videoCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.audioCodec ? `+${draft.sourceMediaInfo.audioCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.maxGopSec ? ` · ${draft.sourceMediaInfo.maxGopSec}s GOP` : ''}${draft.sourceMediaInfo.videoBitrate ? ` · ${(draft.sourceMediaInfo.videoBitrate / 1_000_000).toFixed(1)} Mbps` : ''}${draft.sourceMediaInfo.isHdr ? ' · HDR→BT.709' : ''}`
                             : `Export canvas: ${dimensions.width}×${dimensions.height}`}
                         style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}
                     >
@@ -438,7 +444,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 )}
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onTimeUpdate={onTimeUpdate} />
+                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !isScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={isScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={togglePlay} onRegisterAudioUnlock={handleRegisterAudioUnlock} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
                 
@@ -484,7 +490,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 {/* Row 2: Play + Editable Timecode */}
                 <div role="toolbar" aria-label="Playback transport" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                     <div className="tpe-flex-row" style={{ gap: '8px', alignItems: 'center' }}>
-                        <button type="button" aria-keyshortcuts="Space" aria-label={isPlaying ? "Pause Video" : "Play Video"} onClick={togglePlay} className="tpe-asset-btn" style={{ width: '26px', height: '26px', borderRadius: '50%', background: isPlaying ? 'oklch(from var(--ui-accent) l c h / 0.15)' : 'var(--ui-accent)', color: isPlaying ? 'var(--ui-accent)' : '#000', border: '1px solid var(--ui-accent)', flexShrink: 0 }} title={isPlaying ? "Pause Video (Spacebar)" : "Play Video (Spacebar)"}>
+                        <button type="button" aria-keyshortcuts="Space" aria-label={isPlaying ? "Pause Video" : "Play Video"} onClick={() => { audioUnlockRef.current?.(); togglePlay(); }} className="tpe-asset-btn" style={{ width: '26px', height: '26px', borderRadius: '50%', background: isPlaying ? 'oklch(from var(--ui-accent) l c h / 0.15)' : 'var(--ui-accent)', color: isPlaying ? 'var(--ui-accent)' : '#000', border: '1px solid var(--ui-accent)', flexShrink: 0 }} title={isPlaying ? "Pause Video (Spacebar)" : "Play Video (Spacebar)"}>
                             {isPlaying ? <PauseIcon width={11} height={11} fill="currentColor" /> : <PlayIcon width={11} height={11} fill="currentColor" />}
                         </button>
                         <div aria-live="off" translate="no" className="tpe-flex-row tpe-tabular-nums" style={{ alignItems: 'center', fontFamily: 'monospace', fontSize: '11px', fontWeight: 800, color: 'var(--ui-text)', gap: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)', borderRadius: '6px', padding: '2px 7px' }}>

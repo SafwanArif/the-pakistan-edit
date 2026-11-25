@@ -19,6 +19,7 @@ import { del, get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
 import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
 import { createLivePlaybackClock } from '../utils/livePlaybackClock';
+import { inspectVideoBlob } from '../utils/clientMediaInspector';
 
 /** Clears clip-specific state (subtitles, keyframes, star cues, master clipStartOffsets, probe metadata) when loading a new video. */
 export const resetClipBoundFields = (draft: VideoDraft): VideoDraft => ({
@@ -29,6 +30,7 @@ export const resetClipBoundFields = (draft: VideoDraft): VideoDraft => ({
     sourceFps: undefined,
     sourceFrameLogUrl: undefined,
     sourceFrameIndex: undefined,
+    sourceKeyframeTimes: undefined,
     sourceMediaInfo: undefined,
     scenes: (draft.scenes || []).map((s) => {
         if (s.mediaUrl || s.clipStartOffset === undefined) return s;
@@ -60,11 +62,12 @@ const normalizeFrameLogUrl = (raw?: string): string | undefined => {
     }
 };
 
-/** Strips bulky in-memory PTS arrays before writing drafts to IndexedDB. */
+/** Strips bulky in-memory PTS & keyframe timestamp arrays before writing drafts to IndexedDB. */
 const toPersistableDraft = (draft: VideoDraft): VideoDraft => {
-    if (!draft.sourceFrameIndex) return draft;
-    const { sourceFrameIndex: _omit, ...rest } = draft;
-    void _omit;
+    if (!draft.sourceFrameIndex && !draft.sourceKeyframeTimes) return draft;
+    const { sourceFrameIndex: _omitFrame, sourceKeyframeTimes: _omitKf, ...rest } = draft;
+    void _omitFrame;
+    void _omitKf;
     return rest;
 };
 
@@ -321,14 +324,18 @@ export const useVideoDraftState = () => {
             if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl);
             else deleteServerCachedVideo(previousUrl);
             const fallbackUrl = URL.createObjectURL(blob);
-            setIngestStatus("PROBING ASPECT RATIO & DURATION...");
-            const meta = await probeVideoMetadata(fallbackUrl);
+            setIngestStatus("INSPECTING CODECS & DURATION...");
+            const [meta, inspected] = await Promise.all([
+                probeVideoMetadata(fallbackUrl),
+                inspectVideoBlob(blob).catch(() => null),
+            ]);
             if (controller.signal.aborted) {
                 URL.revokeObjectURL(fallbackUrl);
                 return;
             }
             const base = resetClipBoundFields(videoDraftRef.current);
-            const clipDuration = meta?.duration ?? base.videoDuration ?? 60;
+            const clipDuration = meta?.duration ?? inspected?.durationSec ?? base.videoDuration ?? 60;
+            const ratio = meta?.aspectRatio ?? inferAspectRatioFromDimensions(inspected?.mediaInfo.width, inspected?.mediaInfo.height) ?? base.aspectRatio;
             try {
                 await set('tpe_video_blob', blob);
             } catch (quotaErr) {
@@ -339,7 +346,10 @@ export const useVideoDraftState = () => {
                 videoUrl: fallbackUrl,
                 videoName: displayName,
                 videoDuration: clipDuration,
-                aspectRatio: meta?.aspectRatio ?? base.aspectRatio,
+                sourceFps: inspected?.mediaInfo.exactFps,
+                sourceKeyframeTimes: inspected?.keyframeTimes.length ? inspected.keyframeTimes : undefined,
+                sourceMediaInfo: inspected?.mediaInfo,
+                aspectRatio: ratio,
                 scenes: calculatePsychologyPacedScenes(clipDuration, base.scenes),
             });
         };
@@ -362,11 +372,18 @@ export const useVideoDraftState = () => {
             setIngestStatus("PREPARING UPLOAD STREAM...");
             const formData = new FormData();
             formData.append('file', blob, displayName);
+            const inspectionPromise = inspectVideoBlob(blob).catch(() => null);
 
-            const upload = await uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal);
+            const [upload, inspected] = await Promise.all([
+                uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal),
+                inspectionPromise,
+            ]);
             const url = upload.url;
-            const serverRatio = inferAspectRatioFromDimensions(upload.mediaInfo?.width, upload.mediaInfo?.height);
-            const serverDuration = upload.duration && upload.duration > 0 ? upload.duration : null;
+            const mergedMediaInfo: SourceMediaInfo | undefined = upload.mediaInfo
+                ? { ...inspected?.mediaInfo, ...upload.mediaInfo }
+                : inspected?.mediaInfo;
+            const serverRatio = inferAspectRatioFromDimensions(mergedMediaInfo?.width, mergedMediaInfo?.height);
+            const serverDuration = upload.duration && upload.duration > 0 ? upload.duration : inspected?.durationSec ?? null;
             let meta: { aspectRatio: VideoAspectRatio; duration: number } | null = serverRatio && serverDuration
                 ? { aspectRatio: serverRatio, duration: serverDuration }
                 : null;
@@ -403,10 +420,11 @@ export const useVideoDraftState = () => {
                 videoUrl: url,
                 videoName: displayName,
                 videoDuration: clipDuration,
-                sourceFps: upload.fps,
+                sourceFps: upload.fps || inspected?.mediaInfo.exactFps,
                 sourceFrameLogUrl: upload.frameIndexUrl,
                 sourceFrameIndex,
-                sourceMediaInfo: upload.mediaInfo,
+                sourceKeyframeTimes: inspected?.keyframeTimes.length ? inspected.keyframeTimes : sourceFrameIndex?.keyframes,
+                sourceMediaInfo: mergedMediaInfo,
                 aspectRatio: nextRatio,
                 scenes: nextScenes,
             };
@@ -452,8 +470,29 @@ export const useVideoDraftState = () => {
             if (pendingMigrationBlob && (!draft.videoUrl || draft.videoUrl.startsWith('blob:'))) {
                 draft.videoUrl = URL.createObjectURL(pendingMigrationBlob);
             }
+            const hydratedUrl = draft.videoUrl;
             setVideoDraft(draft);
             setIsMounted(true);
+
+            // Rehydrate transient in-memory keyframe & codec inspection from IndexedDB blob on page reload
+            if (savedBlob && (!draft.sourceKeyframeTimes?.length || !draft.sourceMediaInfo)) {
+                void inspectVideoBlob(savedBlob).then((inspected) => {
+                    if (cancelled || !inspected) return;
+                    setVideoDraft((curr) => {
+                        if (curr.videoUrl !== hydratedUrl) return curr;
+                        return {
+                            ...curr,
+                            sourceFps: curr.sourceFps ?? inspected.mediaInfo.exactFps,
+                            sourceKeyframeTimes: curr.sourceKeyframeTimes?.length
+                                ? curr.sourceKeyframeTimes
+                                : (inspected.keyframeTimes.length ? inspected.keyframeTimes : undefined),
+                            sourceMediaInfo: curr.sourceMediaInfo
+                                ? { ...inspected.mediaInfo, ...curr.sourceMediaInfo }
+                                : inspected.mediaInfo,
+                        };
+                    });
+                }).catch(() => {});
+            }
 
             // Lazily rehydrate sourceFrameIndex in memory without bloating IndexedDB
             if (draft.sourceFrameLogUrl && !draft.sourceFrameIndex) {

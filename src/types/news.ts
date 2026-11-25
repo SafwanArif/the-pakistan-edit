@@ -70,6 +70,8 @@ export interface SourceFrameIndex {
     pts: number[];
 }
 
+export type PlaybackSyncProfile = 'standard' | 'keyframe-scrub' | 'decoupled-audio-lock';
+
 export interface SourceMediaInfo {
     width: number;
     height: number;
@@ -77,6 +79,7 @@ export interface SourceMediaInfo {
     nominalFps: number;
     videoCodec?: string;
     audioCodec?: string;
+    hasAudio?: boolean;
     videoBitrate?: number;
     audioBitrate?: number;
     pixFmt?: string;
@@ -84,6 +87,15 @@ export interface SourceMediaInfo {
     isHdr: boolean;
     audioSampleRate?: number;
     audioChannels?: number;
+    audioDelaySec?: number;
+    avDurationDeltaSec?: number;
+    maxGopSec?: number;
+    avgGopSec?: number;
+    keyframeCount?: number;
+    hasBFrames?: boolean;
+    isVfr?: boolean;
+    moovBeforeMdat?: boolean;
+    container?: 'mp4' | 'mov' | 'webm' | 'unknown';
     fileSize?: number;
 }
 export type SubtitleFontId = 'plus-jakarta' | 'onest' | 'dm-sans' | 'geist';
@@ -166,6 +178,7 @@ export interface VideoDraft {
     sourceFps?: number; // Detected source/export frame rate for exact frame nudging
     sourceFrameLogUrl?: string;
     sourceFrameIndex?: SourceFrameIndex;
+    sourceKeyframeTimes?: number[]; // In-memory IDR keyframe timestamps (seconds), stripped before IndexedDB save
     sourceMediaInfo?: SourceMediaInfo;
     category: string;
     headline: string;

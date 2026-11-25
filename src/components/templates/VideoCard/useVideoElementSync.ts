@@ -4,8 +4,11 @@ import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFraming
 import { clampMediaTarget, getNextCutMediaTarget, isStandbyReadyAt, preParkStandbyDeck } from "./dualDeckHelpers";
 import { useAmbientCanvasPainter } from "./useAmbientCanvasPainter";
 import {
+    AUDIO_MASTER_GRACE_MS,
     MOBILE_SCRUB_THROTTLE_MS,
-    computeCompanionAudioAdjustment,
+    VIDEO_FOLLOW_RATE_INTERVAL_MS,
+    VIDEO_FOLLOW_SNAP_COOLDOWN_MS,
+    computeVideoToAudioClockAdjustment,
     createInitialAvSyncDiag,
     createPostSeekAudit,
     evaluatePostSeekAvSkew,
@@ -82,7 +85,10 @@ export const useVideoElementSync = ({
     const effectiveMutedRef = useRef(effectiveMuted);
     const companionAudioFailedRef = useRef(false);
     const companionAudioUnlockedRef = useRef(false);
-    const companionAudioStartedRef = useRef(false);
+    const audioMasterStartedAtRef = useRef(0);
+    const lastVideoRateAdjustAtRef = useRef(0);
+    const lastVideoSnapAtRef = useRef(0);
+    const consecutiveVideoSnapFramesRef = useRef(0);
     const rVfcHandleRef = useRef<{ el: HTMLVideoElement; id: number } | null>(null);
     const rVfcCallbackRef = useRef<VideoFrameRequestCallback | null>(null);
     const seekCleanupRef = useRef<(() => void) | null>(null);
@@ -216,13 +222,18 @@ export const useVideoElementSync = ({
 
     const fallbackToNativeVideoAudio = useCallback(() => {
         companionAudioFailedRef.current = true;
-        companionAudioStartedRef.current = false;
+        audioMasterStartedAtRef.current = 0;
+        consecutiveVideoSnapFramesRef.current = 0;
         const audio = companionAudioRef.current;
         if (audio) {
-            try { audio.pause(); } catch {}
+            try {
+                audio.pause();
+                audio.playbackRate = 1;
+            } catch {}
         }
         const video = getActiveVideo();
         if (video) {
+            video.playbackRate = 1;
             video.muted = effectiveMutedRef.current;
             audioOutputRef.current = video;
         }
@@ -235,7 +246,7 @@ export const useVideoElementSync = ({
         fallbackToNativeVideoAudio();
     }, [fallbackToNativeVideoAudio]);
 
-    /** Synchronously primes companion `<audio>` inside Play/Scrub pointer gestures so mobile browsers allow async rVFC `.play()`. */
+    /** Synchronously primes companion `<audio>` inside Play/Scrub pointer gestures so mobile browsers allow async playback. */
     const unlockCompanionAudio = useCallback(() => {
         if (!isDecoupledActive()) return;
         const audio = companionAudioRef.current;
@@ -243,7 +254,7 @@ export const useVideoElementSync = ({
         const prevMuted = audio.muted;
         audio.muted = true;
         audio.play().then(() => {
-            if (!isPlayingRef.current || isScrubbingRef.current || !companionAudioStartedRef.current) {
+            if (!isPlayingRef.current || isScrubbingRef.current) {
                 audio.pause();
             }
             audio.muted = effectiveMutedRef.current;
@@ -309,7 +320,10 @@ export const useVideoElementSync = ({
         isRecoverySeekRef.current = false;
         companionAudioFailedRef.current = false;
         companionAudioUnlockedRef.current = false;
-        companionAudioStartedRef.current = false;
+        audioMasterStartedAtRef.current = 0;
+        lastVideoRateAdjustAtRef.current = 0;
+        lastVideoSnapAtRef.current = 0;
+        consecutiveVideoSnapFramesRef.current = 0;
         if (videoRef.current) {
             videoRef.current.style.opacity = activeDeckRef.current === 0 ? '1' : '0';
             videoRef.current.style.zIndex = activeDeckRef.current === 0 ? '2' : '1';
@@ -380,7 +394,11 @@ export const useVideoElementSync = ({
         const audio = companionAudioRef.current;
         if (!audio || !isDecoupledActive()) return;
         if (shouldPause && !audio.paused) audio.pause();
-        if (shouldPause) companionAudioStartedRef.current = false;
+        if (shouldPause) {
+            audioMasterStartedAtRef.current = 0;
+            consecutiveVideoSnapFramesRef.current = 0;
+        }
+        audio.playbackRate = 1;
         if (audio.readyState >= 1) {
             const clamped = clampMediaTarget(targetMediaTime, audio.duration || getActiveVideo()?.duration || 10);
             if (Math.abs(audio.currentTime - clamped) > 0.04) {
@@ -429,22 +447,66 @@ export const useVideoElementSync = ({
                 onTimeUpdate?.(currentTimeRef.current, video.duration || 0);
 
                 if (isDecoupledActive() && companionAudioRef.current) {
-                    video.muted = true;
                     const audio = companionAudioRef.current;
-                    companionAudioStartedRef.current = false;
-                    syncCompanionAudioToTime(video.currentTime, true);
-                    video.play().catch(() => { });
-                    // Fallback when rVFC is unavailable: start companion audio directly
-                    if (typeof video.requestVideoFrameCallback !== 'function') {
-                        companionAudioStartedRef.current = true;
-                        audio.playbackRate = 1;
+                    const { audioGain } = evaluateSceneTransition(draftRef.current, currentTimeRef.current);
+                    video.muted = true;
+                    video.playbackRate = 1;
+                    audio.playbackRate = 1;
+                    audio.muted = effectiveMutedRef.current;
+                    audio.volume = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
+                    if (audio.readyState >= 1) {
+                        const clampedAudio = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
+                        if (Math.abs(audio.currentTime - clampedAudio) > 0.05) {
+                            audio.currentTime = clampedAudio;
+                        }
+                    }
+
+                    // Audio-Master Launch: start uninterrupted <audio> FIRST and launch <video> when `playing` opens
+                    const beginAudioMasterLaunch = () => {
+                        cancelPlayGate();
+                        if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
+                        let videoLaunched = false;
+                        const launchVideoLocked = () => {
+                            if (videoLaunched) return;
+                            videoLaunched = true;
+                            cancelPlayGate();
+                            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
+                            audioMasterStartedAtRef.current = performance.now();
+                            lastVideoRateAdjustAtRef.current = 0;
+                            consecutiveVideoSnapFramesRef.current = 0;
+                            video.playbackRate = 1;
+                            video.play().catch(() => { });
+                        };
+                        const launchTimer = setTimeout(launchVideoLocked, 450);
+                        const onAudioPlaying = () => launchVideoLocked();
+                        playGateCleanupRef.current = () => {
+                            clearTimeout(launchTimer);
+                            audio.removeEventListener('playing', onAudioPlaying);
+                        };
+                        audio.addEventListener('playing', onAudioPlaying, { once: true });
                         audio.play().catch((err) => {
+                            cancelPlayGate();
                             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                                 fallbackToNativeVideoAudio();
+                                if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current) {
+                                    video.play().catch(() => { });
+                                }
                             }
                         });
+                    };
+
+                    if (audio.seeking) {
+                        const onAudioSeeked = () => {
+                            playGateCleanupRef.current = null;
+                            beginAudioMasterLaunch();
+                        };
+                        playGateCleanupRef.current = () => audio.removeEventListener('seeked', onAudioSeeked);
+                        audio.addEventListener('seeked', onAudioSeeked, { once: true });
+                    } else {
+                        beginAudioMasterLaunch();
                     }
                 } else {
+                    video.playbackRate = 1;
                     video.play().catch(() => { });
                 }
             };
@@ -465,7 +527,7 @@ export const useVideoElementSync = ({
         };
 
         armGate();
-    }, [cancelPlayGate, fallbackToNativeVideoAudio, isDecoupledActive, onTimeUpdate, restoreMutedAfterSeek, scheduleDeferredAmbientPaint, syncCompanionAudioToTime]);
+    }, [cancelPlayGate, fallbackToNativeVideoAudio, isDecoupledActive, onTimeUpdate, restoreMutedAfterSeek, scheduleDeferredAmbientPaint]);
 
     const refreshAmbientGlow = useCallback((e?: SyntheticEvent<HTMLVideoElement>) => {
         const video = getActiveVideo();
@@ -510,6 +572,7 @@ export const useVideoElementSync = ({
         const decoupled = isDecoupledActive();
 
         cancelPendingSeekListener();
+        video.playbackRate = 1;
         if (decoupled) {
             video.muted = true;
             syncCompanionAudioToTime(clampedTarget, true);
@@ -586,18 +649,16 @@ export const useVideoElementSync = ({
 
             const decoupled = isDecoupledActive() && Boolean(companionAudioRef.current);
             standby.muted = decoupled ? true : effectiveMutedRef.current;
+            standby.playbackRate = 1;
             const { audioGain } = evaluateSceneTransition(draftRef.current, nextTimelineTime);
-            const targetVol = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
-            standby.volume = targetVol;
+            standby.volume = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
             audioOutputRef.current = decoupled ? companionAudioRef.current : standby;
-
-            if (decoupled && companionAudioRef.current) {
-                companionAudioRef.current.volume = targetVol;
-                companionAudioStartedRef.current = false;
-                syncCompanionAudioToTime(targetMediaTime, true);
-            }
             if (isPlayingRef.current && !isScrubbingRef.current) {
-                standby.play().catch(() => { });
+                if (decoupled) {
+                    seekAndSync(standby, targetMediaTime, true);
+                } else {
+                    standby.play().catch(() => { });
+                }
             }
 
             // Re-bind rVFC to the newly active deck immediately
@@ -627,7 +688,7 @@ export const useVideoElementSync = ({
         }
         seekAndSync(outgoing, targetMediaTime, isPlayingRef.current);
         return false;
-    }, [cancelPendingSeekListener, cancelPreParkTimer, getStandbyVideo, isDecoupledActive, onTimeUpdate, scheduleDeferredAmbientPaint, seekAndSync, syncCompanionAudioToTime]);
+    }, [cancelPendingSeekListener, cancelPreParkTimer, getStandbyVideo, isDecoupledActive, onTimeUpdate, scheduleDeferredAmbientPaint, seekAndSync]);
 
     // Single unified playback & seek coordinator
     useEffect(() => {
@@ -655,10 +716,12 @@ export const useVideoElementSync = ({
             cancelPendingSeekListener();
             cancelPreParkTimer();
             pendingSeekRef.current = null;
+            video.playbackRate = 1;
             if (!video.paused) video.pause();
             if (standby && !standby.paused) standby.pause();
             if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            companionAudioStartedRef.current = false;
+            audioMasterStartedAtRef.current = 0;
+            consecutiveVideoSnapFramesRef.current = 0;
             const hookOffset = draftRef.current.scenes?.[0]?.clipStartOffset ?? 0;
             if (video.readyState >= 1 && Math.abs(video.currentTime - hookOffset) > 0.08) {
                 video.currentTime = hookOffset;
@@ -675,10 +738,12 @@ export const useVideoElementSync = ({
         if (action === 'scrub') {
             cancelPendingSeekListener();
             cancelPreParkTimer();
+            video.playbackRate = 1;
             if (!video.paused) video.pause();
             if (standby && !standby.paused) standby.pause();
             if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            companionAudioStartedRef.current = false;
+            audioMasterStartedAtRef.current = 0;
+            consecutiveVideoSnapFramesRef.current = 0;
             if (video.readyState < 1) return;
             const vDur = video.duration || 10;
             const clampedTarget = clampMediaTarget(wrapMediaTime(draftRef.current, currentTime, vDur), vDur);
@@ -701,10 +766,12 @@ export const useVideoElementSync = ({
 
         if (action === 'pause-seek') {
             cancelPreParkTimer();
+            video.playbackRate = 1;
             if (!video.paused) video.pause();
             if (standby && !standby.paused) standby.pause();
             if (companionAudioRef.current && !companionAudioRef.current.paused) companionAudioRef.current.pause();
-            companionAudioStartedRef.current = false;
+            audioMasterStartedAtRef.current = 0;
+            consecutiveVideoSnapFramesRef.current = 0;
             if (wasScrubbing && pendingSeekRef.current && !pendingSeekRef.current.shouldPlay) {
                 pendingSeekRef.current = null;
             }
@@ -812,40 +879,43 @@ export const useVideoElementSync = ({
                 if (isDecoupledActive() && audio && cur.readyState >= 2) {
                     cur.muted = true;
                     const frameTime = clampMediaTarget(metadata.mediaTime, cur.duration || 10);
-                    if (!companionAudioStartedRef.current) {
-                        const { audioGain } = evaluateSceneTransition(draftRef.current, currentTimeRef.current);
-                        audio.muted = effectiveMutedRef.current;
-                        audio.volume = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
-                        audio.playbackRate = 1;
-                        if (audio.readyState >= 1) {
-                            audio.currentTime = clampMediaTarget(frameTime, audio.duration || cur.duration || 10);
-                        }
-                        companionAudioStartedRef.current = true;
-                        audio.play().catch((err) => {
-                            if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                                fallbackToNativeVideoAudio();
-                            }
-                        });
-                    } else if (audio.readyState >= 1) {
-                        const adj = computeCompanionAudioAdjustment(audio.currentTime, frameTime);
+                    const nowMs = performance.now();
+                    if (
+                        audioMasterStartedAtRef.current > 0 &&
+                        nowMs - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS &&
+                        audio.readyState >= 1 &&
+                        !audio.paused &&
+                        !audio.seeking
+                    ) {
+                        // Video-Follower Lock: NEVER seek or rate-shift <audio>; gently adjust muted <video> only
+                        const adj = computeVideoToAudioClockAdjustment(frameTime, audio.currentTime);
                         avDiagRef.current.lastAudioDriftMs = Math.round(adj.driftSec * 1000);
                         if (Math.abs(adj.driftSec) > avDiagRef.current.maxPostSeekSkewSec) {
                             avDiagRef.current.maxPostSeekSkewSec = Math.round(Math.abs(adj.driftSec) * 1000) / 1000;
                         }
                         publishAvDiag(avDiagRef.current);
 
-                        if (adj.mode === 'snap' && !audio.seeking && adj.targetTime !== undefined) {
-                            audio.playbackRate = 1;
-                            audio.currentTime = clampMediaTarget(adj.targetTime, audio.duration || cur.duration || 10);
-                        } else if (Math.abs(audio.playbackRate - adj.playbackRate) > 0.002) {
-                            audio.playbackRate = adj.playbackRate;
-                        }
-                        if (audio.paused && !audio.seeking) {
-                            audio.play().catch((err) => {
-                                if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                                    fallbackToNativeVideoAudio();
-                                }
-                            });
+                        if (adj.mode === 'snap-video') {
+                            consecutiveVideoSnapFramesRef.current += 1;
+                            if (
+                                consecutiveVideoSnapFramesRef.current >= 4 &&
+                                nowMs - lastVideoSnapAtRef.current >= VIDEO_FOLLOW_SNAP_COOLDOWN_MS &&
+                                adj.targetVideoTime !== undefined
+                            ) {
+                                consecutiveVideoSnapFramesRef.current = 0;
+                                lastVideoSnapAtRef.current = nowMs;
+                                cur.playbackRate = 1;
+                                cur.currentTime = clampMediaTarget(adj.targetVideoTime, cur.duration || 10);
+                            }
+                        } else {
+                            consecutiveVideoSnapFramesRef.current = 0;
+                            if (
+                                nowMs - lastVideoRateAdjustAtRef.current >= VIDEO_FOLLOW_RATE_INTERVAL_MS &&
+                                Math.abs(cur.playbackRate - adj.videoPlaybackRate) > 0.004
+                            ) {
+                                lastVideoRateAdjustAtRef.current = nowMs;
+                                cur.playbackRate = adj.videoPlaybackRate;
+                            }
                         }
                     }
                 } else {
@@ -898,7 +968,7 @@ export const useVideoElementSync = ({
             }
             rVfcHandleRef.current = null;
         };
-    }, [isPlaying, isScrubbing, overlayOnly, fallbackToNativeVideoAudio, getActiveVideo, isDecoupledActive, seekAndSync, syncTimelineTick]);
+    }, [isPlaying, isScrubbing, overlayOnly, getActiveVideo, isDecoupledActive, seekAndSync, syncTimelineTick]);
 
     const handleLoadedMetadata = () => {
         const video = getActiveVideo();

@@ -74,43 +74,46 @@ export const resolveScrubSeekTarget = (
     return findNearestKeyframe(keyframeTimes, safe) ?? safe;
 };
 
-export const COMPANION_AUDIO_DEADBAND_SEC = 0.08;
-export const COMPANION_AUDIO_HARD_SNAP_SEC = 0.30;
+export const VIDEO_FOLLOW_DEADBAND_SEC = 0.12;
+export const VIDEO_FOLLOW_HARD_SNAP_SEC = 0.75;
+export const AUDIO_MASTER_GRACE_MS = 600;
+export const VIDEO_FOLLOW_RATE_INTERVAL_MS = 250;
+export const VIDEO_FOLLOW_SNAP_COOLDOWN_MS = 3000;
 
-export interface CompanionAudioAdjustment {
-    mode: 'hold' | 'pull' | 'snap';
-    playbackRate: number;
-    targetTime?: number;
+export interface VideoFollowAdjustment {
+    mode: 'hold' | 'pull' | 'snap-video';
+    videoPlaybackRate: number;
+    targetVideoTime?: number;
     driftSec: number;
 }
 
 /**
- * Computes how the decoupled companion `<audio>` element tracks the actual rendered video frame PTS (`metadata.mediaTime`):
- * - `<= 80ms` drift: hold pure `1.0x` pitch-clean playback.
- * - `80ms–300ms` drift: gentle `0.96x–1.04x` rate pull (imperceptible pitch shift).
- * - `> 300ms` drift: instantaneous hard-snap of `<audio>` (`< 5ms` AAC seek) to the painted video frame.
+ * Computes how the muted `<video>` element gently tracks the uninterrupted companion `<audio>` master clock:
+ * - `<= 120ms` drift: hold pure `1.0x` video rate.
+ * - `120ms–750ms` drift: adjust ONLY `video.playbackRate` (`0.92x–1.08x`) — audio is never slowed, pitched, or cut.
+ * - `> 750ms` drift: snap ONLY `video.currentTime` cleanly to `audioMasterTimeSec` (audio plays continuously).
  */
-export const computeCompanionAudioAdjustment = (
-    audioTimeSec: number,
-    videoFrameTimeSec: number
-): CompanionAudioAdjustment => {
-    const driftSec = audioTimeSec - videoFrameTimeSec;
-    const absDrift = Math.abs(driftSec);
-    if (absDrift <= COMPANION_AUDIO_DEADBAND_SEC) {
-        return { mode: 'hold', playbackRate: 1, driftSec };
+export const computeVideoToAudioClockAdjustment = (
+    videoFrameTimeSec: number,
+    audioMasterTimeSec: number
+): VideoFollowAdjustment => {
+    const videoDriftSec = videoFrameTimeSec - audioMasterTimeSec;
+    const absDrift = Math.abs(videoDriftSec);
+    if (absDrift <= VIDEO_FOLLOW_DEADBAND_SEC) {
+        return { mode: 'hold', videoPlaybackRate: 1, driftSec: videoDriftSec };
     }
-    if (absDrift <= COMPANION_AUDIO_HARD_SNAP_SEC) {
+    if (absDrift <= VIDEO_FOLLOW_HARD_SNAP_SEC) {
         return {
             mode: 'pull',
-            playbackRate: Math.round(clamp(1 - driftSec * 0.3, 0.96, 1.04) * 1000) / 1000,
-            driftSec,
+            videoPlaybackRate: Math.round(clamp(1 - videoDriftSec * 0.35, 0.92, 1.08) * 1000) / 1000,
+            driftSec: videoDriftSec,
         };
     }
     return {
-        mode: 'snap',
-        playbackRate: 1,
-        targetTime: Math.max(0, videoFrameTimeSec),
-        driftSec,
+        mode: 'snap-video',
+        videoPlaybackRate: 1,
+        targetVideoTime: Math.max(0, audioMasterTimeSec),
+        driftSec: videoDriftSec,
     };
 };
 

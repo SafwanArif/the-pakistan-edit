@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     POST_SEEK_AUDIT_WINDOW_MS,
-    computeCompanionAudioAdjustment,
+    computeVideoToAudioClockAdjustment,
     createPostSeekAudit,
     evaluatePostSeekAvSkew,
     getCanPlayTimeoutMs,
@@ -118,20 +118,20 @@ describe("avSyncHelpers — single-coordinator playback sync & post-seek A/V gua
         expect(res.shouldRecover).toBe(false);
     });
 
-    it("computes companion <audio> phase-lock modes (hold <=80ms, rate pull 80-300ms, hard snap >300ms)", () => {
-        expect(computeCompanionAudioAdjustment(37.04, 37.0)).toMatchObject({ mode: "hold", playbackRate: 1 });
+    it("computes video-follower clock adjustments without touching companion audio", () => {
+        expect(computeVideoToAudioClockAdjustment(37.05, 37.0)).toMatchObject({ mode: "hold", videoPlaybackRate: 1 });
 
-        const behind = computeCompanionAudioAdjustment(36.8, 37.0);
-        expect(behind.mode).toBe("pull");
-        expect(behind.playbackRate).toBeGreaterThan(1);
+        const videoBehind = computeVideoToAudioClockAdjustment(36.7, 37.0);
+        expect(videoBehind.mode).toBe("pull");
+        expect(videoBehind.videoPlaybackRate).toBeGreaterThan(1);
 
-        const ahead = computeCompanionAudioAdjustment(37.2, 37.0);
-        expect(ahead.mode).toBe("pull");
-        expect(ahead.playbackRate).toBeLessThan(1);
+        const videoAhead = computeVideoToAudioClockAdjustment(37.3, 37.0);
+        expect(videoAhead.mode).toBe("pull");
+        expect(videoAhead.videoPlaybackRate).toBeLessThan(1);
 
-        const hard = computeCompanionAudioAdjustment(35.0, 37.0);
-        expect(hard.mode).toBe("snap");
-        expect(hard.targetTime).toBe(37.0);
+        const severe = computeVideoToAudioClockAdjustment(35.0, 37.0);
+        expect(severe.mode).toBe("snap-video");
+        expect(severe.targetVideoTime).toBe(37.0);
     });
 
     it("snaps active scrub targets onto real parsed keyframes when keyframe-snap mode is active", () => {

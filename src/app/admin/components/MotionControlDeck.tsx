@@ -89,7 +89,8 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
             const label = `+ ★ AT ${formatTimecode(t)}`;
             if (label !== lastStr) {
                 lastStr = label;
-                btn.textContent = label;
+                if (btn.firstChild) btn.firstChild.nodeValue = label;
+                else btn.textContent = label;
             }
         };
         sync(liveClock.getTime());
@@ -269,7 +270,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                                         <button type="button" aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`} onClick={() => removeCue(parkedCue.id)} style={{ background: 'transparent', border: 'none', padding: '0 2px', color: 'var(--ui-danger)', fontWeight: 900, cursor: 'pointer', lineHeight: 1 }} title="Remove star spin cue at playhead">✕</button>
                                     </div>
                                 ) : (
-                                    <button ref={addCueBtnRef} type="button" onClick={() => addCueAtTime(isPlaying && liveClock ? liveClock.getTime() : activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">+ ★ AT {formatTimecode(activeDisplayTime)}</button>
+                                    <button ref={addCueBtnRef} type="button" onClick={() => addCueAtTime(isPlaying && liveClock ? liveClock.getTime() : activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">{`+ ★ AT ${formatTimecode(activeDisplayTime)}`}</button>
                                 )}
                                 {!hasHookCue && <button type="button" onClick={() => addCueAtTime(0)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px' }} title="Add star spin cue at 01. Hook start (00:00.0)">+ 0s</button>}
                                 {storyStart > 0.2 && !hasStoryCue && <button type="button" onClick={() => addCueAtTime(storyStart)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 6px', fontSize: '8px' }} title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}>+ STORY</button>}

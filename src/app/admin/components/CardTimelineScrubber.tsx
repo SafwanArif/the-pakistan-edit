@@ -83,7 +83,11 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
             const nextLabel = `${formatTimecode(loc)} / ${durLabel}s`;
             if (nextLabel !== lastLabel) {
                 lastLabel = nextLabel;
-                if (timeLabelRef.current) timeLabelRef.current.textContent = nextLabel;
+                const el = timeLabelRef.current;
+                if (el) {
+                    if (el.firstChild) el.firstChild.nodeValue = nextLabel;
+                    else el.textContent = nextLabel;
+                }
             }
         };
         applyTime(liveClock.getTime());
@@ -137,7 +141,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                         whiteSpace: "nowrap",
                     }}
                 >
-                    {formatTimecode(localTime)} / {duration.toFixed(1)}s
+                    {`${formatTimecode(localTime)} / ${duration.toFixed(1)}s`}
                 </span>
             </div>
 

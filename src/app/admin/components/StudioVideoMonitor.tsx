@@ -213,7 +213,8 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 const nextText = `Z ${Math.round(zoom)}% · X ${Math.round(posX)}%${letterbox ? ` · Y ${Math.round(posY ?? 100)}%` : ''}`;
                 if (nextText !== lastTelemetryStr) {
                     lastTelemetryStr = nextText;
-                    btn.textContent = nextText;
+                    if (btn.firstChild) btn.firstChild.nodeValue = nextText;
+                    else btn.textContent = nextText;
                 }
             }
         };
@@ -512,7 +513,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                             </span>
                             <span aria-hidden="true" style={{ width: '1px', height: '12px', background: 'var(--ui-border)', marginInline: '2px' }} />
                             <button ref={telemetryBtnRef} type="button" data-keep-tool-tab="true" onClick={handleKeyframesToggle} title="Live camera framing (click to open Keyframes)" style={{ fontFamily: 'monospace', fontSize: '9px', fontWeight: 800, letterSpacing: '0.04em', color: telemetryTint.color, background: 'transparent', border: 'none', padding: '0 2px', cursor: 'pointer', whiteSpace: 'nowrap', transition: isPlaying ? 'none' : 'color 0.15s ease' }}>
-                                Z {Math.round(activeFraming.zoom)}% · X {Math.round(activeFraming.posX)}%{isLetterboxActive ? ` · Y ${Math.round(activeFraming.posY ?? 100)}%` : ''}
+                                {`Z ${Math.round(activeFraming.zoom)}% · X ${Math.round(activeFraming.posX)}%${isLetterboxActive ? ` · Y ${Math.round(activeFraming.posY ?? 100)}%` : ''}`}
                             </button>
                         </div>
                     </div>

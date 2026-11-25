@@ -450,15 +450,15 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     {/* Hook / Re-Hook Source Clip Span Highlights (GPU translate3d + scaleX) */}
                     {showHookHandles && clipDuration > 0 && (
                         <>
-                            <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${hookLeftPct}%, 0, 0) scaleX(${hookWidthPct / 100})`, transformOrigin: "left center", willChange: "transform", background: "var(--ui-accent)", opacity: 0.75, pointerEvents: "none" }} />
+                            <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${hookLeftPct}%, 0, 0) scaleX(${hookWidthPct / 100})`, transformOrigin: "left center", willChange: dragTarget === "hook" ? "transform" : undefined, background: "var(--ui-accent)", opacity: 0.75, pointerEvents: "none" }} />
                             {rehookDuration > 0 && (
-                                <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${rehookLeftPct}%, 0, 0) scaleX(${rehookWidthPct / 100})`, transformOrigin: "left center", willChange: "transform", background: "var(--ui-indicator)", opacity: 0.75, pointerEvents: "none" }} />
+                                <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${rehookLeftPct}%, 0, 0) scaleX(${rehookWidthPct / 100})`, transformOrigin: "left center", willChange: dragTarget === "rehook" ? "transform" : undefined, background: "var(--ui-indicator)", opacity: 0.75, pointerEvents: "none" }} />
                             )}
                         </>
                     )}
 
                     {/* Played Progress Sweep (GPU scaleX) */}
-                    <div ref={sweepRef} style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: "transform", background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
+                    <div ref={sweepRef} style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: isPlaying || isDragging ? "transform" : undefined, background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
                 </div>
 
                 <TimelinePlayheadNeedle railRef={needleRailRef} pct={pct} active={isPlaying || isDragging} height={showKeyframesLane ? 42 : 26} width={2.5} zIndex={6} />
@@ -467,7 +467,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail (GPU translate3d) */}
             {showHookHandles && clipDuration > 0 && (
                 <>
-                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
+                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: dragTarget === "hook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
                         <button
                             type="button"
                             onPointerDown={(e) => startHandleDrag(e, "hook")}
@@ -478,7 +478,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                         </button>
                     </div>
                     {rehookDuration > 0 && (
-                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: "transform", pointerEvents: "none", zIndex: 6 }}>
+                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: dragTarget === "rehook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
                             <button
                                 type="button"
                                 onPointerDown={(e) => startHandleDrag(e, "rehook")}

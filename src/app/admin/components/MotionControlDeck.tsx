@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     VideoDraft,
     StarSpinCue,
@@ -10,6 +10,7 @@ import {
     DEFAULT_STAR_CUES,
     formatTimecode,
 } from "../../../types/news";
+import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { SnapCap } from "./FramingToolbarPrimitives";
@@ -17,6 +18,8 @@ import { SnapCap } from "./FramingToolbarPrimitives";
 interface MotionControlDeckProps {
     draft: VideoDraft;
     activeDisplayTime: number;
+    isPlaying?: boolean;
+    liveClock?: LivePlaybackClock;
     storyStart: number;
     onUpdateDraft: (draft: VideoDraft) => void;
     onSeekTo: (time: number) => void;
@@ -51,6 +54,8 @@ const HOLD_FEEL_SNAP_OPTIONS = HOLD_FEEL_MODES.map(({ label, val, title }) => ({
 export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     draft,
     activeDisplayTime,
+    isPlaying = false,
+    liveClock,
     storyStart,
     onUpdateDraft,
     onSeekTo,
@@ -60,6 +65,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     const wordmarkOn = draft.motionWordmark !== false;
     const textOn = draft.motionText !== false;
     const [activeAsset, setActiveAsset] = useState<'logo' | 'wordmark' | 'text' | null>(null);
+    const addCueBtnRef = useRef<HTMLButtonElement>(null);
     const logoOn = draft.enableLogo !== false;
 
     const rawCues = draft.starCues ?? DEFAULT_STAR_CUES;
@@ -70,9 +76,25 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     );
 
     const parkedCue = useMemo(
-        () => (isLogoOpen ? sortedCues.find((c) => Math.abs(c.time - activeDisplayTime) <= 0.08) : undefined),
-        [isLogoOpen, sortedCues, activeDisplayTime]
+        () => (isLogoOpen && !isPlaying ? sortedCues.find((c) => Math.abs(c.time - activeDisplayTime) <= 0.08) : undefined),
+        [isLogoOpen, isPlaying, sortedCues, activeDisplayTime]
     );
+
+    useEffect(() => {
+        if (!isPlaying || !isLogoOpen || !logoOn || !liveClock) return;
+        let lastStr = "";
+        const sync = (t: number) => {
+            const btn = addCueBtnRef.current;
+            if (!btn) return;
+            const label = `+ ★ AT ${formatTimecode(t)}`;
+            if (label !== lastStr) {
+                lastStr = label;
+                btn.textContent = label;
+            }
+        };
+        sync(liveClock.getTime());
+        return liveClock.subscribe((frame) => sync(frame.time));
+    }, [isPlaying, isLogoOpen, logoOn, liveClock]);
 
     const hasHookCue = useMemo(
         () => (isLogoOpen ? sortedCues.some((c) => c.time <= 0.15) : false),
@@ -101,7 +123,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
             return;
         }
         const nextCue: StarSpinCue = {
-            id: `star-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            id: `star-${crypto.randomUUID().slice(0, 8)}`,
             time: rounded,
         };
         const nextCues = [...rawCues, nextCue].sort((a, b) => a.time - b.time);
@@ -247,7 +269,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                                         <button type="button" aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`} onClick={() => removeCue(parkedCue.id)} style={{ background: 'transparent', border: 'none', padding: '0 2px', color: 'var(--ui-danger)', fontWeight: 900, cursor: 'pointer', lineHeight: 1 }} title="Remove star spin cue at playhead">✕</button>
                                     </div>
                                 ) : (
-                                    <button type="button" onClick={() => addCueAtTime(activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">+ ★ AT {formatTimecode(activeDisplayTime)}</button>
+                                    <button ref={addCueBtnRef} type="button" onClick={() => addCueAtTime(isPlaying && liveClock ? liveClock.getTime() : activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">+ ★ AT {formatTimecode(activeDisplayTime)}</button>
                                 )}
                                 {!hasHookCue && <button type="button" onClick={() => addCueAtTime(0)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px' }} title="Add star spin cue at 01. Hook start (00:00.0)">+ 0s</button>}
                                 {storyStart > 0.2 && !hasStoryCue && <button type="button" onClick={() => addCueAtTime(storyStart)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 6px', fontSize: '8px' }} title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}>+ STORY</button>}

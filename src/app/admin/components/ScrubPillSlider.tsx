@@ -179,7 +179,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                     inset: 0,
                     transform: `scaleX(${pct / 100})`,
                     transformOrigin: "left center",
-                    willChange: "transform",
+                    willChange: isDragging ? "transform" : undefined,
                     background: `color-mix(in oklch, ${accentColor} 24%, transparent)`,
                     pointerEvents: "none",
                 }}
@@ -190,7 +190,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                         position: "absolute",
                         inset: 0,
                         transform: `translate3d(${pct}%, 0, 0)`,
-                        willChange: "transform",
+                        willChange: isDragging ? "transform" : undefined,
                         pointerEvents: "none",
                     }}
                 >

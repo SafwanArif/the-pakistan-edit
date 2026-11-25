@@ -59,13 +59,13 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
 
         return (
             <div style={containerStyle}>
-                {/* Layer 1: Ambient Blurred Backdrop (only mounted when foreground leaves empty margins) */}
+                {/* Layer 1: Ambient Blurred Backdrop (fixed center origin prevents 3x 80px blur re-raster on PAN drags) */}
                 {!coversCanvas && (
                     <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
-                        objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
+                        objectFit: 'cover', objectPosition: 'center',
                         filter: 'blur(80px) brightness(0.7)',
-                        transform: `scale(1.2)`,
-                        transformOrigin: 'var(--pos-x) var(--pos-y)',
+                        transform: 'scale(1.2) translateZ(0)',
+                        transformOrigin: 'center',
                         zIndex: 1, pointerEvents: 'none'
                     }} />
                 )}
@@ -92,9 +92,9 @@ export const AssetLayer = React.memo<AssetLayerProps>(({
         <div style={fallbackStyle}>
             {!fallbackCovers && (
                 <Image src={bgImage} alt="" aria-hidden="true" fill unoptimized loading="eager" decoding="sync" referrerPolicy="no-referrer" sizes="100vw" style={{
-                    objectFit: 'cover', objectPosition: 'var(--pos-x) var(--pos-y)',
+                    objectFit: 'cover', objectPosition: 'center',
                     filter: 'blur(80px) brightness(0.6)',
-                    transform: 'scale(1.2)', transformOrigin: 'var(--pos-x) var(--pos-y)',
+                    transform: 'scale(1.2) translateZ(0)', transformOrigin: 'center',
                     zIndex: 1, pointerEvents: 'none'
                 }} />
             )}

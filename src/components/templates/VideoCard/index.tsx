@@ -103,8 +103,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
 
     const defaultFraming = useMemo(
         () => getDefaultVideoFraming(draft, draft.aspectRatio),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft.aspectRatio, draft.defaultFramingByRatio, draft.zoom, draft.posX, draft.posY]
+        [draft]
     );
     const cardFraming = useMemo(
         () => pausedFramingOverride ?? (draft.keyframes?.length
@@ -135,6 +134,11 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const mediaOffsetY45 = is45 ? topOffsetY - Math.max(0, H_contain * effectiveScale - containerHeightPx) / 2 : 0;
     const has45Letterbox = useMemo(() => (is45 ? has45LetterboxFraming(draft) : false), [is45, draft]);
     const ambientBlurActive = is45 && !overlayOnly && draft.enableAmbientBlur !== false && has45Letterbox;
+    const needsTopAmbient = useMemo(() => {
+        if (!ambientBlurActive) return false;
+        if ((defaultFraming.posY ?? 100) < 99.5) return true;
+        return Boolean(draft.keyframes?.some((kf) => (kf.posY ?? 100) < 99.5 || (kf.pre?.posY ?? 100) < 99.5));
+    }, [ambientBlurActive, defaultFraming.posY, draft.keyframes]);
     const ambientVisibility = useMemo(() => ({
         topVisible: ambientBlurActive && topOffsetY > 2,
         botVisible: ambientBlurActive && topOffsetY + containerHeightPx < dimensions.height - 2,
@@ -223,8 +227,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     const sourceText = activeScene?.sourceName || draft.sourceName;
     const totalDuration = useMemo(
         () => getTotalVideoDuration(draft),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft.scenes, draft.enableOutro, draft.outroDuration]
+        [draft]
     );
     const progressPercent = Math.min(100, Math.max(0, (currentTime / (totalDuration || 1)) * 100));
     const hookFade = isLiveMediaLoop || overlayOnly ? 0 : getHookTransitionFade(draft, currentTime);
@@ -309,7 +312,9 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                     />
                                 ) : (
                                     <>
-                                        <AmbientBlurStack direction="top" translateY={topOffsetY + 4 - dimensions.height} visible={topOffsetY > 2} liveMode={isLiveMediaLoop} wrapperRef={topAmbientWrapRef} farRef={topAmbientCanvasRef} midRef={topMidEdgeCanvasRef} nearRef={topNearEdgeCanvasRef} />
+                                        {needsTopAmbient && (
+                                            <AmbientBlurStack direction="top" translateY={topOffsetY + 4 - dimensions.height} visible={topOffsetY > 2} liveMode={isLiveMediaLoop} wrapperRef={topAmbientWrapRef} farRef={topAmbientCanvasRef} midRef={topMidEdgeCanvasRef} nearRef={topNearEdgeCanvasRef} />
+                                        )}
                                         <AmbientBlurStack direction="bottom" translateY={Math.max(0, topOffsetY + containerHeightPx - 4)} visible={topOffsetY + containerHeightPx < dimensions.height - 2} liveMode={isLiveMediaLoop} wrapperRef={botAmbientWrapRef} farRef={ambientCanvasRef} midRef={midEdgeCanvasRef} nearRef={nearEdgeCanvasRef} />
                                     </>
                                 )}
@@ -402,7 +407,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                             )}
                         </div>
                         {!overlayOnly && (
-                            <div ref={fadeOverlayRef} style={{ position: 'absolute', inset: 0, backgroundColor: is45 ? '#080808' : '#050505', ...(isLiveMediaLoop ? {} : { opacity: hookFade, visibility: hookFade > 0.0005 ? 'visible' : 'hidden' }), pointerEvents: 'none', willChange: 'opacity', zIndex: 5 }} />
+                            <div ref={fadeOverlayRef} style={{ position: 'absolute', inset: 0, backgroundColor: is45 ? '#080808' : '#050505', ...(isLiveMediaLoop ? {} : { opacity: hookFade, visibility: hookFade > 0.0005 ? 'visible' : 'hidden' }), pointerEvents: 'none', zIndex: 5 }} />
                         )}
                     </>
                 )}

@@ -24,6 +24,10 @@ interface SceneFilterContext {
     aLoopTrim: string;
 }
 
+/** Returns true only when scene `i` needs a multi-frame PNG fade-in animation (`fade=t=in:st=0:d=0.22:alpha=1`). */
+export const isAnimatedSceneOverlay = (draft: VideoDraft, scenes: TimelineScene[], index: number): boolean =>
+    draft.enableMotion !== false && index === 0 && !isSharedReHookScene(scenes, index);
+
 /** Builds the FFmpeg filtergraph stages for a single scene (4:5 ambient spill or 9:16/16:9 full bleed, fade, overlay, audio). */
 export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: string[]; vMap: string; aMap: string } {
     const {
@@ -165,14 +169,14 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
     const vFaded = fadeParts.length ? `v_fad_${i}` : vLabel;
     if (fadeParts.length) filters.push(`[${vLabel}]${fadeParts.join(",")}[${vFaded}]`);
 
-    const isSharedReHook = isSharedReHookScene(scenes, i);
     const ovScaleFlags = "lanczos+accurate_rnd+full_chroma_int";
-    if (draft.enableMotion !== false && i === 0 && !isSharedReHook) {
+    if (isAnimatedSceneOverlay(draft, scenes, i)) {
         filters.push(`[${ovIdx}:v]scale=${W}:${H}:flags=${ovScaleFlags},format=rgba,fade=t=in:st=0:d=0.22:alpha=1[ov_anim_${i}]`);
         filters.push(`[${vFaded}][ov_anim_${i}]overlay=0:0:format=auto:alpha=straight,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,settb=1/90000[v_sc_${i}]`);
     } else {
+        // Static 1-frame PNG overlay decoded & Lanczos-scaled once, repeated across every video frame via eof_action=repeat
         filters.push(`[${ovIdx}:v]scale=${W}:${H}:flags=${ovScaleFlags},format=rgba[ov_sc_${i}]`);
-        filters.push(`[${vFaded}][ov_sc_${i}]overlay=0:0:format=auto:alpha=straight,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,settb=1/90000[v_sc_${i}]`);
+        filters.push(`[${vFaded}][ov_sc_${i}]overlay=0:0:format=auto:alpha=straight:eof_action=repeat:repeatlast=1,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,settb=1/90000[v_sc_${i}]`);
     }
 
     const aLabel = `a_sc_${i}`;

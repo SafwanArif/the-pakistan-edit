@@ -8,7 +8,7 @@ import { set } from 'idb-keyval';
 export const useDebouncedIdbSave = <T,>(
     key: string,
     transform?: (value: T) => T,
-    delayMs = 150
+    delayMs = 400
 ) => {
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingRef = useRef<T | null>(null);

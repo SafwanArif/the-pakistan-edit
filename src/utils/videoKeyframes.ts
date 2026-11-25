@@ -60,10 +60,11 @@ export const upsertKeyframe = (
     }
 
     const base = { zoom: opts.activeFraming.zoom, posX: opts.activeFraming.posX, posY: nextPosY };
+    const id = `kf-${crypto.randomUUID().slice(0, 8)}`;
     keyframes.push(
         kind === "snap"
-            ? { id: `kf-${Date.now()}`, time: roundedTime, ...base, easing: "snap", pre: { ...base } }
-            : { id: `kf-${Date.now()}`, time: roundedTime, ...base, easing: "smooth" }
+            ? { id, time: roundedTime, ...base, easing: "snap", pre: { ...base } }
+            : { id, time: roundedTime, ...base, easing: "smooth" }
     );
     keyframes.sort((a, b) => a.time - b.time);
     return { keyframes, nextEditSide: kind === "snap" ? "pre" : undefined };

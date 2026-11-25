@@ -20,18 +20,21 @@ const SOCIAL_LOGOS: Record<string, string> = {
 type TokenType = 'text' | 'bold' | 'italic' | 'gold' | 'green' | 'highlight' | 'whiteHighlight' | 'flag' | 'social';
 interface Token { type: TokenType; value: string; }
 
+const TOKEN_RE = /(\*\*[\s\S]*?\*\*|==[\s\S]*?==|<gold>[\s\S]*?<\/gold>|~~[\s\S]*?~~|\^\^[\s\S]*?\^\^|&&[\s\S]*?&&|\*[\s\S]*?\*|\[tt\]|\[yt\]|\[ig\]|\[x\]|\[fb\]|🇵🇰|🇵🇸|🇬🇧|🇺🇸|🇮🇳|🇮🇶|🇬🇷|🇺🇳)/g;
+const HAS_SYNTAX_RE = /\*\*|==|<gold>|~~|\^\^|&&|\*|\[(?:tt|yt|ig|x|fb)\]|🇵🇰|🇵🇸|🇬🇧|🇺🇸|🇮🇳|🇮🇶|🇬🇷|🇺🇳/;
+
 /**
  * Tokenises editorial inline formatting (**bold**, *italic*, ==gold==, ~~green~~,
  * ^^black^^, &&white&&, legacy <gold>...</gold>, flag emojis, and [tt]/[yt]/[ig]/[x]/[fb] social badges).
  */
 const tokenize = (text: string): Token[] => {
     const tokens: Token[] = [];
-    const regex = /(\*\*[\s\S]*?\*\*|==[\s\S]*?==|<gold>[\s\S]*?<\/gold>|~~[\s\S]*?~~|\^\^[\s\S]*?\^\^|&&[\s\S]*?&&|\*[\s\S]*?\*|\[tt\]|\[yt\]|\[ig\]|\[x\]|\[fb\]|🇵🇰|🇵🇸|🇬🇧|🇺🇸|🇮🇳|🇮🇶|🇬🇷|🇺🇳)/g;
+    TOKEN_RE.lastIndex = 0;
 
     let lastIndex = 0;
     let match;
 
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = TOKEN_RE.exec(text)) !== null) {
         if (match.index > lastIndex) {
             tokens.push({ type: 'text', value: text.substring(lastIndex, match.index) });
         }
@@ -49,7 +52,7 @@ const tokenize = (text: string): Token[] => {
         else if (SOCIAL_LOGOS[m]) tokens.push({ type: 'social', value: m });
         else tokens.push({ type: 'text', value: m });
 
-        lastIndex = regex.lastIndex;
+        lastIndex = TOKEN_RE.lastIndex;
     }
 
     if (lastIndex < text.length) {
@@ -101,6 +104,9 @@ const SOCIAL_IMG_STYLE: React.CSSProperties = {
 };
 const TEXT_SPAN_STYLE: React.CSSProperties = { position: 'relative', zIndex: 2 };
 
+const renderNested = (val: string) =>
+    HAS_SYNTAX_RE.test(val) ? <HighlightedText text={val} /> : <span style={TEXT_SPAN_STYLE}>{val}</span>;
+
 /** Renders inline-formatted editorial text and flag icons. */
 export const HighlightedText = React.memo<{ text?: string }>(({ text }) => {
     const parsedNodes = useMemo(() => {
@@ -111,23 +117,23 @@ export const HighlightedText = React.memo<{ text?: string }>(({ text }) => {
 
             switch (token.type) {
                 case 'bold':
-                    return <span key={key} style={BOLD_STYLE}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={BOLD_STYLE}>{renderNested(token.value)}</span>;
                 case 'italic':
-                    return <span key={key} style={ITALIC_STYLE}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={ITALIC_STYLE}>{renderNested(token.value)}</span>;
                 case 'gold':
-                    return <span key={key} style={GOLD_STYLE}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={GOLD_STYLE}>{renderNested(token.value)}</span>;
                 case 'green':
-                    return <span key={key} style={GREEN_STYLE}><HighlightedText text={token.value} /></span>;
+                    return <span key={key} style={GREEN_STYLE}>{renderNested(token.value)}</span>;
                 case 'highlight':
                     return (
                         <span key={key} style={BLACK_BOX_STYLE}>
-                            <HighlightedText text={token.value} />
+                            {renderNested(token.value)}
                         </span>
                     );
                 case 'whiteHighlight':
                     return (
                         <span key={key} style={WHITE_BOX_STYLE}>
-                            <HighlightedText text={token.value} />
+                            {renderNested(token.value)}
                         </span>
                     );
                 case 'flag': {

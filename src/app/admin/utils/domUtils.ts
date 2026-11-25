@@ -11,9 +11,10 @@ const restoreInputSelection = (el: HTMLInputElement | HTMLTextAreaElement, start
 export const insertTextAtCursor = (fieldId: string, value: string, textToInsert: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
     if (el && typeof el.selectionStart === 'number') {
+        const liveVal = el.value;
         const start = el.selectionStart;
         const end = el.selectionEnd ?? start;
-        onUpdate(value.substring(0, start) + textToInsert + value.substring(end));
+        onUpdate(liveVal.substring(0, start) + textToInsert + liveVal.substring(end));
         const newPos = start + textToInsert.length;
         restoreInputSelection(el, newPos, newPos);
     } else {
@@ -23,15 +24,16 @@ export const insertTextAtCursor = (fieldId: string, value: string, textToInsert:
 
 /**
  * Toggles inline formatting markers (e.g. ==...==, **...**) around the active text selection
- * to avoid duplicate nested markers.
+ * to avoid duplicate nested markers. Slices live `el.value` so Android IME composition indices never drift.
  */
-export const wrapSelectionWithSyntax = (fieldId: string, value: string, syntaxOpen: string, syntaxClose: string, onUpdate: (newVal: string) => void) => {
+export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxOpen: string, syntaxClose: string, onUpdate: (newVal: string) => void) => {
     const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
     if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') return;
 
+    const liveVal = el.value;
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    const selection = value.substring(start, end);
+    const selection = liveVal.substring(start, end);
     const lowerSelection = selection.toLowerCase();
     const lowerOpen = syntaxOpen.toLowerCase();
     const lowerClose = syntaxClose.toLowerCase();
@@ -39,14 +41,14 @@ export const wrapSelectionWithSyntax = (fieldId: string, value: string, syntaxOp
     // 1. If selection ITSELF is wrapped in the markers, toggle them OFF
     if (selection.length >= syntaxOpen.length + syntaxClose.length && lowerSelection.startsWith(lowerOpen) && lowerSelection.endsWith(lowerClose)) {
         const innerText = selection.substring(syntaxOpen.length, selection.length - syntaxClose.length);
-        onUpdate(value.substring(0, start) + innerText + value.substring(end));
+        onUpdate(liveVal.substring(0, start) + innerText + liveVal.substring(end));
         restoreInputSelection(el, start, start + innerText.length);
         return;
     }
 
     // 2. If the SURROUNDING text is the markers, toggle them OFF
-    const prefix = value.substring(0, start);
-    const suffix = value.substring(end);
+    const prefix = liveVal.substring(0, start);
+    const suffix = liveVal.substring(end);
     if (prefix.toLowerCase().endsWith(lowerOpen) && suffix.toLowerCase().startsWith(lowerClose)) {
         onUpdate(prefix.substring(0, prefix.length - syntaxOpen.length) + selection + suffix.substring(syntaxClose.length));
         restoreInputSelection(el, start - syntaxOpen.length, end - syntaxOpen.length);

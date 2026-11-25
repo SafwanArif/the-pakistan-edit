@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import type { SubtitleSegment } from "../../../../types/news";
-import { CACHE_DIR, fileExists, parseWhisperProgressLine, probeMediaFile, resolveCachedVideoPath, spawnExec } from "../../../../lib/server/videoMedia";
+import { CACHE_DIR, fileExists, parseWhisperProgressLine, probeMediaFile, resolveCachedVideoPath, spawnExec, withExportSlot } from "../../../../lib/server/videoMedia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,9 +91,11 @@ const runTranscriptionPipeline = async (
             }
         };
 
-        await spawnExec(whisper.bin, [
+        const whisperThreads = String(Math.max(2, os.cpus().length - 2));
+        await withExportSlot(() => spawnExec(whisper.bin, [
             "-m", whisper.model,
             "-f", wavPath,
+            "-t", whisperThreads,
             "-l", "auto",
             "-pp",
             "-oj",
@@ -102,7 +105,7 @@ const runTranscriptionPipeline = async (
             timeoutMs: 300_000,
             onStdoutLine: handleWhisperLine,
             onStderrLine: handleWhisperLine,
-        });
+        }), signal);
 
         onProgress?.("BUILDING SUBTITLE TIMELINE...", 98);
         const jsonRaw = await fs.promises.readFile(`${jsonPrefix}.json`, "utf8");
@@ -122,6 +125,13 @@ const runTranscriptionPipeline = async (
 };
 
 export async function POST(request: Request) {
+    if (process.env.VERCEL === "1") {
+        return NextResponse.json(
+            { error: "Local Whisper transcription is unavailable on serverless deployments. Run the studio locally to auto-generate subtitles." },
+            { status: 501 }
+        );
+    }
+
     try {
         const body = await request.json() as { videoUrl?: string };
         const videoPath = await resolveCachedVideoPath(body.videoUrl);

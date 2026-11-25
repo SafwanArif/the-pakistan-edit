@@ -4,6 +4,7 @@ import React, { useCallback } from "react";
 import { DEFAULT_STAR_CUES, getVideoHeadingPreset, has45LetterboxFraming, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
 import { ChevronLeftIcon, ChevronRightIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
+import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { SnapCap } from "./FramingToolbarPrimitives";
 import { SubtitleEditorTray } from "./SubtitleEditorTray";
@@ -52,6 +53,7 @@ interface StudioFramingControlsProps {
     sourceFps: number;
     sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
     isPlaying?: boolean;
+    liveClock?: LivePlaybackClock;
     isCurrentlyMuted: boolean;
     aspectRatio: VideoAspectRatio;
     defaultFraming: VideoFraming;
@@ -89,7 +91,7 @@ interface StudioFramingControlsProps {
 
 /** Video editing toolbar for layout, captions, motion, audio, and keyframe framing. */
 export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React.memo(({
-    draft, sourceFps, sourceFrameIndex, aspectRatio, defaultFraming, isTopBox45, isLetterboxActive, isCurrentlyMuted, activeFraming, zoomMin, zoomMax,
+    draft, sourceFps, sourceFrameIndex, isPlaying, liveClock, aspectRatio, defaultFraming, isTopBox45, isLetterboxActive, isCurrentlyMuted, activeFraming, zoomMin, zoomMax,
     existingKeyframeIndex, activePreTime, activePostTime, activeKeyframeEasing, kfEditSide,
     activeDisplayTime, storyStart, activeToolTab, onToggleToolTab, onCloseToolTab, seekTo,
     onUpdateDraft, onJumpKeyframe, onJumpSubtitle, onJumpStarCue, onPreviewStar, activeSubtitleCount, onAddOrUpdateKeyframe, onRemoveKeyframe, onUpdateKeyframeTime,
@@ -398,6 +400,8 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
                 <MotionControlDeck
                     draft={draft}
                     activeDisplayTime={activeDisplayTime}
+                    isPlaying={Boolean(isPlaying)}
+                    liveClock={liveClock}
                     storyStart={storyStart}
                     onUpdateDraft={onUpdateDraft}
                     onSeekTo={seekTo}
@@ -455,6 +459,8 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     if (next.activeToolTab === 'motion') {
         return prev.draft === next.draft
             && prev.storyStart === next.storyStart
+            && prev.isPlaying === next.isPlaying
+            && prev.liveClock === next.liveClock
             && Math.round(prev.activeDisplayTime * 10) === Math.round(next.activeDisplayTime * 10);
     }
     if (next.activeToolTab === 'volume') {

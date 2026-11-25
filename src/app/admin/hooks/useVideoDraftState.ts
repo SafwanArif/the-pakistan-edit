@@ -72,7 +72,7 @@ const uploadWithTelemetry = (
     formData: FormData,
     onStatus: (msg: string) => void,
     signal?: AbortSignal
-): Promise<{ url: string; fps: number; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo }> =>
+): Promise<{ url: string; fps: number; duration?: number; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo }> =>
     new Promise((resolve, reject) => {
         if (signal?.aborted) {
             reject(new Error("Upload aborted"));
@@ -82,6 +82,7 @@ const uploadWithTelemetry = (
         let parsedOffset = 0;
         let finalUrl = "";
         let finalFps = 30;
+        let finalDuration: number | undefined;
         let finalFrameIndexUrl: string | undefined;
         let finalMediaInfo: SourceMediaInfo | undefined;
         let settled = false;
@@ -105,7 +106,7 @@ const uploadWithTelemetry = (
                 for (const line of lines.slice(0, -1)) {
                     if (!line.trim()) continue;
                     try {
-                        const evt = JSON.parse(line) as { stage?: string; url?: string; fps?: number | string; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo; error?: string };
+                        const evt = JSON.parse(line) as { stage?: string; url?: string; fps?: number | string; duration?: number | string; frameIndexUrl?: string; mediaInfo?: SourceMediaInfo; error?: string };
                         if (evt.error) {
                             finishReject(new Error(evt.error));
                             return;
@@ -114,6 +115,10 @@ const uploadWithTelemetry = (
                         if (evt.url) finalUrl = evt.url;
                         if (evt.frameIndexUrl) finalFrameIndexUrl = evt.frameIndexUrl;
                         if (evt.mediaInfo) finalMediaInfo = evt.mediaInfo;
+                        if (evt.duration !== undefined) {
+                            const parsedDur = Number(evt.duration);
+                            if (Number.isFinite(parsedDur) && parsedDur > 0) finalDuration = parsedDur;
+                        }
                         if (evt.fps !== undefined) {
                             const parsedFps = Number(evt.fps);
                             if (Number.isFinite(parsedFps) && parsedFps > 0) finalFps = parsedFps;
@@ -138,7 +143,7 @@ const uploadWithTelemetry = (
             signal?.removeEventListener("abort", onAbort);
             if (xhr.status >= 200 && xhr.status < 300 && finalUrl) {
                 settled = true;
-                resolve({ url: finalUrl, fps: finalFps, frameIndexUrl: finalFrameIndexUrl, mediaInfo: finalMediaInfo });
+                resolve({ url: finalUrl, fps: finalFps, duration: finalDuration, frameIndexUrl: finalFrameIndexUrl, mediaInfo: finalMediaInfo });
             } else {
                 settled = true;
                 reject(new Error(`Ingest failed (${xhr.status})`));
@@ -147,6 +152,13 @@ const uploadWithTelemetry = (
         xhr.onerror = () => finishReject(new Error("Network error during video ingest"));
         xhr.send(formData);
     });
+
+const inferAspectRatioFromDimensions = (width?: number, height?: number): VideoAspectRatio | null => {
+    if (!width || !height || width <= 0 || height <= 0) return null;
+    if (height / width >= 1.5) return '9:16';
+    if (width / height >= 1.5) return '16:9';
+    return '4:5';
+};
 
 export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: VideoAspectRatio; duration: number } | null> =>
     new Promise((resolve) => {
@@ -262,14 +274,16 @@ export const useVideoDraftState = () => {
     }, []);
     const videoDraftRef = useRef<VideoDraft>(videoDraft);
     const currentTimeRef = useRef(currentTime);
+    const isPlayingRef = useRef(isPlaying);
     const playbackModeRef = useRef(playbackMode);
     const migrationStartedRef = useRef(false);
 
     useEffect(() => {
         videoDraftRef.current = videoDraft;
         currentTimeRef.current = currentTime;
+        isPlayingRef.current = isPlaying;
         playbackModeRef.current = playbackMode;
-    }, [videoDraft, currentTime, playbackMode]);
+    }, [videoDraft, currentTime, isPlaying, playbackMode]);
 
     const totalDuration = getTotalVideoDuration(videoDraft);
     const scenesDuration = (videoDraft.scenes || []).reduce((acc, s) => acc + (s.duration || 0), 0);
@@ -351,8 +365,15 @@ export const useVideoDraftState = () => {
 
             const upload = await uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal);
             const url = upload.url;
-            setIngestStatus("PROBING ASPECT RATIO & DURATION...");
-            const meta = await probeVideoMetadata(url);
+            const serverRatio = inferAspectRatioFromDimensions(upload.mediaInfo?.width, upload.mediaInfo?.height);
+            const serverDuration = upload.duration && upload.duration > 0 ? upload.duration : null;
+            let meta: { aspectRatio: VideoAspectRatio; duration: number } | null = serverRatio && serverDuration
+                ? { aspectRatio: serverRatio, duration: serverDuration }
+                : null;
+            if (!meta) {
+                setIngestStatus("PROBING ASPECT RATIO & DURATION...");
+                meta = await probeVideoMetadata(url);
+            }
             if (controller.signal.aborted) return;
             const current = options?.preserveScenes ? videoDraftRef.current : resetClipBoundFields(videoDraftRef.current);
 
@@ -533,14 +554,14 @@ export const useVideoDraftState = () => {
     }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage, liveClock]);
 
     const togglePlay = useCallback(() => {
-        setIsPlaying((prev: boolean) => {
-            if (prev) {
-                const exactPausedTime = liveClock.getTime();
-                currentTimeRef.current = exactPausedTime;
-                setCurrentTime(exactPausedTime);
-            }
-            return !prev;
-        });
+        const wasPlaying = isPlayingRef.current;
+        if (wasPlaying) {
+            const exactPausedTime = liveClock.getTime();
+            currentTimeRef.current = exactPausedTime;
+            setCurrentTime(exactPausedTime);
+        }
+        isPlayingRef.current = !wasPlaying;
+        setIsPlaying(!wasPlaying);
     }, [liveClock]);
 
     const seekTo = useCallback((time: number) => {

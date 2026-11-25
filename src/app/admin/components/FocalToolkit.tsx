@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Draft, clamp } from "../../../types/news";
 import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
@@ -29,10 +29,16 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
     const hudRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded);
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
 
+    const stateRef = useRef({ activeDraft, currentStep, updateDraft });
+    useEffect(() => {
+        stateRef.current = { activeDraft, currentStep, updateDraft };
+    });
+
     const handleSliderChange = useCallback((field: string, value: number, min: number, max: number) => {
+        const s = stateRef.current;
         const val = clamp(value, min, max);
-        updateDraft(DraftResolver.set(`slide-${currentStep}-${field}`, val, activeDraft));
-    }, [activeDraft, currentStep, updateDraft]);
+        s.updateDraft(DraftResolver.set(`slide-${s.currentStep}-${field}`, val, s.activeDraft));
+    }, []);
 
     const handleAddAngle = (e: React.MouseEvent) => {
         e.preventDefault();

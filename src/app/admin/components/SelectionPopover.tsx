@@ -12,10 +12,10 @@ const WHITE_BOX_EFFECT_STYLE: React.CSSProperties = { background: '#fff', paddin
 
 interface SelectionPopoverProps {
     postMode: PostMode;
-    carouselDraft: Draft;
-    onCarouselChange: (d: Draft) => void;
-    videoDraft: VideoDraft;
-    onVideoChange: (d: VideoDraft) => void;
+    carouselDraft?: Draft;
+    onCarouselChange?: (d: Draft) => void;
+    videoDraft?: VideoDraft;
+    onVideoChange?: (d: VideoDraft) => void;
     activeSceneTime?: number;
 }
 
@@ -59,8 +59,10 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
         if (!s.fieldId) return;
         const videoMode = s.postMode === 'video' || s.fieldId.startsWith('video-');
         if (videoMode) {
-            s.onVideoChange(VideoDraftResolver.set(s.fieldId, newVal, s.videoDraft, s.activeSceneTime));
-        } else {
+            if (s.videoDraft && s.onVideoChange) {
+                s.onVideoChange(VideoDraftResolver.set(s.fieldId, newVal, s.videoDraft, s.activeSceneTime));
+            }
+        } else if (s.carouselDraft && s.onCarouselChange) {
             s.onCarouselChange(DraftResolver.set(s.fieldId, newVal, s.carouselDraft));
         }
     }, []);
@@ -70,8 +72,8 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     const isVideo = postMode === 'video' || selection.fieldId.startsWith('video-');
 
     const val = isVideo
-        ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime)
-        : (DraftResolver.get(selection.fieldId, carouselDraft) as string);
+        ? (videoDraft ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime) : "")
+        : (carouselDraft ? (DraftResolver.get(selection.fieldId, carouselDraft) as string) : "");
     
     const inCommandRibbon = selection.ribbonBottom !== null;
     const flipBelow = inCommandRibbon || selection.y < 64;

@@ -89,7 +89,7 @@ const runLosslessVideoIngest = async (
     stripEditList: boolean,
     onStage?: (stage: string) => void,
     signal?: AbortSignal
-): Promise<{ fps: number; frameIndex: SourceFrameIndex | null; mediaInfo: SourceMediaInfo }> => {
+): Promise<{ fps: number; duration: number; frameIndex: SourceFrameIndex | null; mediaInfo: SourceMediaInfo }> => {
     onStage?.("PROBING STREAMS & CODECS (FFPROBE)...");
     const { copyAudio, durationSec, mediaInfo } = await probeMediaFile(inputPath, { fileSize, signal });
     const fps = mediaInfo.nominalFps;
@@ -137,7 +137,7 @@ const runLosslessVideoIngest = async (
     });
     onStage?.("INDEXING SOURCE FRAMES...");
     const frameIndex = await probeSourceFrameIndex(outputPath, "", fps, mediaInfo.exactFps, signal);
-    return { fps, frameIndex, mediaInfo };
+    return { fps, duration: durationSec, frameIndex, mediaInfo };
 };
 
 /** Keeps `.next/cache/tpe-videos` bounded to the newest clips and removes legacy/temp files. */
@@ -282,6 +282,7 @@ export async function POST(request: Request) {
                             stage: "SYNCING MONITOR METADATA...",
                             url: mediaUrl,
                             fps: metadata.fps,
+                            duration: metadata.duration,
                             frameIndexUrl: frameIndexUrl || "",
                             mediaInfo: metadata.mediaInfo,
                         });
@@ -303,7 +304,7 @@ export async function POST(request: Request) {
         void pruneCacheDir(mediaName);
         const mediaUrl = `/api/video/ingest?id=${encodeURIComponent(mediaName)}`;
         const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
-        return NextResponse.json({ url: mediaUrl, fps: metadata.fps, frameIndexUrl, mediaInfo: metadata.mediaInfo });
+        return NextResponse.json({ url: mediaUrl, fps: metadata.fps, duration: metadata.duration, frameIndexUrl, mediaInfo: metadata.mediaInfo });
     } catch (error) {
         if (outPath) await fs.promises.unlink(outPath).catch(() => {});
         const message = error instanceof Error ? error.message : "Video ingest failed";

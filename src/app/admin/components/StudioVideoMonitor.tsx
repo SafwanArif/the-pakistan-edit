@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getActiveSceneAtTime, findSubtitleAtMediaTime, wrapMediaTime, getDefaultVideoFraming } from "../../../types/news";
+import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getDefaultVideoFraming } from "../../../types/news";
 import { findParkedKeyframe, toggleKeyframeEasing, updateKeyframeFraming, updateKeyframeTime, upsertKeyframe } from "../../../utils/videoKeyframes";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { VideoCard } from "../../../components/templates/VideoCard/index";
@@ -53,8 +53,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const activeDisplayTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
     const defaultFraming = useMemo(
         () => getDefaultVideoFraming(draft, draft.aspectRatio),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft.aspectRatio, draft.defaultFramingByRatio, draft.zoom, draft.posX, draft.posY]
+        [draft]
     );
     const parkedKf = useMemo(
         () => (!isPlaying || isScrubbing ? findParkedKeyframe(draft.keyframes, activeDisplayTime) : { index: -1, inferredSide: null }),
@@ -81,16 +80,81 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const zoomMin = isTopBox45 ? 0 : 100;
     const zoomMax = 200;
 
+    const isCurrentlyMuted = draft.isMuted ?? isMuted;
+    const timelineStruct = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
+    const sceneBounds = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
+    const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
+    const activeSubtitleTimes = useMemo(() => getActiveSubtitleTimelineTimes(draft), [draft]);
+    const sortedKeyframes = useMemo(
+        () => (draft.keyframes?.length ? [...draft.keyframes].sort((a, b) => a.time - b.time) : undefined),
+        [draft.keyframes]
+    );
+    const sceneStarts = useMemo(() => sceneBounds.map(b => b.start), [sceneBounds]);
+    const updateSceneOffset = (i: number, nextOffset: number) => {
+        updateDraft(setSceneClipStartOffset(draft, i, nextOffset));
+    };
+
+    const monitorRef = useRef({
+        draft,
+        updateDraft,
+        duration,
+        defaultFraming,
+        activeFraming,
+        isTopBox45,
+        isLetterboxActive,
+        existingKeyframeIndex,
+        activeKf,
+        effectiveEditSide,
+        activeSubtitleTimes,
+        sortedKeyframes,
+        activeDisplayTime,
+        liveClock,
+        isPlaying,
+        togglePlay,
+        seekTo,
+        updateSceneOffset,
+        hookDur: timelineStruct.hookDur,
+    });
+    useLayoutEffect(() => {
+        monitorRef.current = {
+            draft,
+            updateDraft,
+            duration,
+            defaultFraming,
+            activeFraming,
+            isTopBox45,
+            isLetterboxActive,
+            existingKeyframeIndex,
+            activeKf,
+            effectiveEditSide,
+            activeSubtitleTimes,
+            sortedKeyframes,
+            activeDisplayTime,
+            liveClock,
+            isPlaying,
+            togglePlay,
+            seekTo,
+            updateSceneOffset,
+            hookDur: timelineStruct.hookDur,
+        };
+    });
+
     const handleKeyframesToggle = useCallback(() => setActiveToolTab(p => (p === 'keyframes' ? null : 'keyframes')), []);
 
     const handleAddOrUpdateKeyframe = useCallback((kind: 'smooth' | 'snap' = 'snap') => {
         const s = monitorRef.current;
+        const useLiveClock = s.isPlaying && Boolean(s.liveClock);
+        const liveTime = useLiveClock ? s.liveClock!.getTime() : s.activeDisplayTime;
+        const liveFraming = useLiveClock
+            ? interpolateKeyframe(s.draft.keyframes, liveTime, s.defaultFraming)
+            : s.activeFraming;
+        const liveParked = useLiveClock ? findParkedKeyframe(s.draft.keyframes, liveTime) : null;
         const { keyframes, nextEditSide } = upsertKeyframe(s.draft, {
-            activeDisplayTime: s.activeDisplayTime,
-            existingIndex: s.existingKeyframeIndex,
-            effectiveEditSide: s.effectiveEditSide,
-            activeFraming: s.activeFraming,
-            isLetterboxActive: s.isLetterboxActive,
+            activeDisplayTime: liveTime,
+            existingIndex: liveParked ? liveParked.index : s.existingKeyframeIndex,
+            effectiveEditSide: liveParked ? (liveParked.inferredSide ?? 'post') : s.effectiveEditSide,
+            activeFraming: liveFraming,
+            isLetterboxActive: s.isTopBox45 && Math.round(liveFraming.zoom) < 100,
             kind,
         });
         if (nextEditSide) setKfEditSide(nextEditSide);
@@ -168,38 +232,14 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     }, []);
 
     const handleCloseToolTab = React.useCallback(() => setActiveToolTab(null), []);
-    const activeSubtitleTimes = useMemo(
-        () => getActiveSubtitleTimelineTimes(draft),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft.subtitles, draft.scenes, draft.showSubtitles]
-    );
 
     const handleJumpToTime = useCallback((t: number, side?: 'pre' | 'post') => {
         if (side) setKfEditSide(side);
         seekTo(t);
     }, [seekTo]);
 
-    // Gate VideoCard's currentTime during live playback to discrete events (~0.5 renders/sec instead of 120/sec)
-    const activeSceneState = useMemo(() => getActiveSceneAtTime(draft, activeDisplayTime), [draft, activeDisplayTime]);
-    const activeSubId = useMemo(() => {
-        const captionsOn = activeSceneState.scene?.showSubtitles ?? (draft.showSubtitles !== false);
-        if (!captionsOn || !draft.subtitles?.length) return "";
-        return findSubtitleAtMediaTime(draft.subtitles, wrapMediaTime(draft, activeDisplayTime, draft.videoDuration || 0))?.id ?? "";
-    }, [draft, activeSceneState.scene?.showSubtitles, activeDisplayTime]);
-    const wordmarkPhase = activeDisplayTime < 1.8 ? 1 : 0;
-    const discreteKey = `${isPlaying && !isScrubbing ? 1 : 0}:${activeSceneState.sceneIndex}:${activeSceneState.isOutro ? 1 : 0}:${activeSubId}:${wordmarkPhase}:${seekNonce}`;
-    const [gatedCardTime, setGatedCardTime] = useState({ key: discreteKey, time: activeDisplayTime });
-    const prevDisplayTimeRef = useRef(activeDisplayTime);
-
-    useLayoutEffect(() => {
-        const wrappedBack = activeDisplayTime < prevDisplayTimeRef.current - 0.05;
-        prevDisplayTimeRef.current = activeDisplayTime;
-        if (!isPlaying || isScrubbing) return;
-        if (gatedCardTime.key !== discreteKey || wrappedBack) {
-            setGatedCardTime({ key: discreteKey, time: activeDisplayTime });
-        }
-    }, [activeDisplayTime, discreteKey, gatedCardTime.key, isPlaying, isScrubbing]);
-    const videoCardTime = isPlaying && !isScrubbing && gatedCardTime.key === discreteKey ? gatedCardTime.time : activeDisplayTime;
+    // `currentTime` is already discrete-gated in `useVideoDraftState` during live playback
+    const videoCardTime = activeDisplayTime;
 
     const handleJumpSubtitle = useCallback((direction: 'prev' | 'next') => {
         const { activeSubtitleTimes: times, activeDisplayTime: t, isPlaying: playing, seekTo: seek, liveClock: clock } = monitorRef.current;
@@ -278,11 +318,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         seek(finalTime);
         if (wasPlayingBeforeScrubRef.current) { wasPlayingBeforeScrubRef.current = false; toggle(); }
     }, []);
-    const isCurrentlyMuted = draft.isMuted ?? isMuted;
-    const timelineStruct = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
-    const sceneBounds = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
-    const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
-
     const sceneMarkers = useMemo(
         () => sceneBounds.map((b, idx) => {
             const isReHook = timelineStruct.hasReHook && idx === 1;
@@ -302,67 +337,12 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         setActiveToolTab(p => (p === tab ? null : tab));
     }, []);
 
-    const sortedKeyframes = useMemo(
-        () => (draft.keyframes?.length ? [...draft.keyframes].sort((a, b) => a.time - b.time) : undefined),
-        [draft.keyframes]
-    );
-    const sceneStarts = useMemo(() => sceneBounds.map(b => b.start), [sceneBounds]);
-
     const getLiveShortcutTime = useCallback(
         () => (monitorRef.current.isPlaying && monitorRef.current.liveClock ? monitorRef.current.liveClock.getTime() : monitorRef.current.activeDisplayTime),
         []
     );
 
     useStudioShortcuts({ togglePlay, seekTo, onToggleToolTab: handleToggleToolTab, sceneStarts, outroStart, enableOutro: Boolean(draft.enableOutro), activeDisplayTime, getLiveTime: getLiveShortcutTime, duration });
-
-    const updateSceneOffset = (i: number, nextOffset: number) => {
-        updateDraft(setSceneClipStartOffset(draft, i, nextOffset));
-    };
-
-    const monitorRef = useRef({
-        draft,
-        updateDraft,
-        duration,
-        defaultFraming,
-        activeFraming,
-        isTopBox45,
-        isLetterboxActive,
-        existingKeyframeIndex,
-        activeKf,
-        effectiveEditSide,
-        activeSubtitleTimes,
-        sortedKeyframes,
-        activeDisplayTime,
-        liveClock,
-        isPlaying,
-        togglePlay,
-        seekTo,
-        updateSceneOffset,
-        hookDur: timelineStruct.hookDur,
-    });
-    useLayoutEffect(() => {
-        monitorRef.current = {
-            draft,
-            updateDraft,
-            duration,
-            defaultFraming,
-            activeFraming,
-            isTopBox45,
-            isLetterboxActive,
-            existingKeyframeIndex,
-            activeKf,
-            effectiveEditSide,
-            activeSubtitleTimes,
-            sortedKeyframes,
-            activeDisplayTime,
-            liveClock,
-            isPlaying,
-            togglePlay,
-            seekTo,
-            updateSceneOffset,
-            hookDur: timelineStruct.hookDur,
-        };
-    });
 
     const handleChangeHookOffset = useCallback((v: number) => monitorRef.current.updateSceneOffset(0, v), []);
     const handlePreviewHook = useCallback(() => monitorRef.current.seekTo(0), []);
@@ -540,7 +520,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
 
                 {/* Unified Camera, Keyframes & Framing Row */}
                 <StudioFramingControls
-                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} isCurrentlyMuted={isCurrentlyMuted} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
+                    draft={draft} sourceFps={draft.sourceFps ?? 30} sourceFrameIndex={draft.sourceFrameIndex} aspectRatio={draft.aspectRatio} defaultFraming={defaultFraming} isPlaying={isPlaying && !isScrubbing} liveClock={liveClock} isCurrentlyMuted={isCurrentlyMuted} isTopBox45={isTopBox45} isLetterboxActive={isLetterboxActive}
                     activeFraming={activeFraming} zoomMin={zoomMin} zoomMax={zoomMax}
                     existingKeyframeIndex={existingKeyframeIndex} activePreTime={activeKf?.easing === 'snap' ? (activeKf.pre?.time ?? activeKf.time) : undefined} activePostTime={activeKf?.time} activeKeyframeEasing={activeKf?.easing}
                     kfEditSide={effectiveEditSide} activeDisplayTime={activeDisplayTime} storyStart={timelineStruct.preStoryDur} activeToolTab={activeToolTab} onToggleToolTab={handleToggleToolTab} onCloseToolTab={handleCloseToolTab} seekTo={seekTo} onUpdateDraft={updateDraft}

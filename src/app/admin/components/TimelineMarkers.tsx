@@ -16,7 +16,6 @@ const pairConnectorBaseStyle: React.CSSProperties = {
 const playheadRailBaseStyle: React.CSSProperties = {
     position: "absolute",
     inset: 0,
-    willChange: "transform",
     pointerEvents: "none",
 };
 
@@ -267,6 +266,7 @@ export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = Rea
         style={{
             ...playheadRailBaseStyle,
             transform: `translate3d(${pct}%, 0, 0)`,
+            willChange: active ? "transform" : undefined,
             zIndex,
         }}
     >

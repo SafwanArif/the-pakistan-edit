@@ -96,13 +96,13 @@ export const useAmbientCanvasPainter = ({
         const doBot = botVisible;
         if (!force && Math.abs(video.currentTime - lastPaintedVideoTimeRef.current) < 0.001) return;
         const now = performance.now();
-        const minInterval = isCameraGlidingRef.current ? 64 : 48;
+        const minInterval = isCameraGlidingRef.current ? 80 : 48;
         if (!force && now - lastAmbientPaintRef.current < minInterval) return;
         lastAmbientPaintRef.current = now;
         lastPaintedVideoTimeRef.current = video.currentTime;
         const tick = ++ambientTickCountRef.current;
         const paintMid = force || (tick % 2 === 0);
-        const paintFar = force || (tick % 3 === 0);
+        const paintFar = force || (tick % 4 === 0);
 
         try {
             const vw = video.videoWidth;

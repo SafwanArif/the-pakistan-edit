@@ -29,8 +29,12 @@ const FX_GLOSSARY_ITEMS: { token: string; label: string; style: React.CSSPropert
 
 export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({ mode, onModeChange, onReset }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [confirmReset, setConfirmReset] = useState(false);
     const [animationNonce, setAnimationNonce] = useState(0);
-    const menuRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
+    const menuRef = useClickOutside(() => {
+        setIsOpen(false);
+        setConfirmReset(false);
+    }, undefined, isOpen);
 
     const logoMotionConfig = useMemo<LogoMotionConfig>(() => ({
         previewNonce: animationNonce,
@@ -43,20 +47,25 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
     }), [animationNonce]);
 
     const handleReset = () => {
-        const draftName = mode === "carousel" ? "carousel" : "video";
-        if (onReset && window.confirm(`Reset ${draftName} draft?`)) {
-            setIsOpen(false);
-            void onReset();
+        if (!onReset) return;
+        if (!confirmReset) {
+            setConfirmReset(true);
+            return;
         }
+        setConfirmReset(false);
+        setIsOpen(false);
+        void onReset();
     };
 
     const selectMode = (nextMode: PostMode) => {
+        setConfirmReset(false);
         onModeChange(nextMode);
         setIsOpen(false);
     };
     
     const handleLogoClick = () => {
         setAnimationNonce(prev => prev + 1);
+        setConfirmReset(false);
         setIsOpen(open => !open);
     };
 
@@ -133,10 +142,16 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                                 role="menuitem"
                                 className="tpe-mode-btn"
                                 onClick={handleReset}
-                                style={{ ...menuOptionStyle, color: "var(--ui-text-dim)" }}
-                                title={`Reset ${mode} draft`}
+                                style={{
+                                    ...menuOptionStyle,
+                                    color: confirmReset ? "var(--ui-danger)" : "var(--ui-text-dim)",
+                                    borderColor: confirmReset ? "var(--ui-danger)" : undefined,
+                                }}
+                                title={confirmReset ? `Click again to confirm resetting ${mode} draft` : `Reset ${mode} draft`}
                             >
-                                RESET {mode === "carousel" ? "CAROUSEL" : "VIDEO"} DRAFT
+                                {confirmReset
+                                    ? `CONFIRM RESET ${mode === "carousel" ? "CAROUSEL" : "VIDEO"}?`
+                                    : `RESET ${mode === "carousel" ? "CAROUSEL" : "VIDEO"} DRAFT`}
                             </button>
                         </>
                     )}

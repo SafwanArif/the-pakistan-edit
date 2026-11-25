@@ -6,6 +6,22 @@ import React from "react";
 import { NewsCard } from "../../../components/templates/NewsCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
 
+let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+const setCarouselExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
+    if (statusClearTimer !== null) {
+        clearTimeout(statusClearTimer);
+        statusClearTimer = null;
+    }
+    onStatus(msg);
+    if (autoClearMs && msg !== null) {
+        statusClearTimer = setTimeout(() => {
+            statusClearTimer = null;
+            onStatus(null);
+        }, autoClearMs);
+    }
+};
+
 /** Renders a DOM node to a PNG Blob with an explicit timeout guard. */
 export const renderNodeToBlobWithTimeout = (
     node: HTMLElement,
@@ -23,7 +39,6 @@ export const renderNodeToBlobWithTimeout = (
 
 /** Waits deterministically for all `<img>` nodes inside `node` to settle and flushes two paint frames. */
 const waitForCaptureReady = async (node: HTMLElement): Promise<void> => {
-    await document.fonts.ready;
     await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
             const images = Array.from(node.querySelectorAll("img"));
@@ -53,7 +68,6 @@ const waitForCaptureReady = async (node: HTMLElement): Promise<void> => {
             });
         });
     });
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(r));
 };
 
@@ -85,6 +99,7 @@ export const createDomCaptureSession = async (
         ?? (options.fallbackToBody ? document.body : null);
     if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
 
+    await document.fonts.ready;
     const { createRoot } = await import("react-dom/client");
     const temp = document.createElement("div");
     temp.style.cssText = `position:fixed;top:0;left:0;z-index:-9999;pointer-events:none;${options.transparent ? "background:transparent;" : ""}`;
@@ -135,7 +150,7 @@ export const createDomCaptureSession = async (
  * v2027.Simplified: Streamlined root management and centralized naming.
  */
 export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void) => {
-    onStatus("Initializing Institutional Pipeline...");
+    setCarouselExportStatus(onStatus, "Initializing Institutional Pipeline...");
     
     const totalSlides = getSlideCount(draft);
     const platforms: Platform[] = ["tiktok", "instagram", "square"];
@@ -188,11 +203,10 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         const content = await zip.generateAsync({ type: "blob" });
         downloadBlob(content, `TPE-${sanitize(draft.headline.split(' ').slice(0, 5).join('-'))}.zip`);
         
-        onStatus("Complete! 🎉");
-        setTimeout(() => onStatus(null), 3000);
+        setCarouselExportStatus(onStatus, "Complete! 🎉", 3000);
     } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Export Failed";
-        onStatus(`ERROR: ${msg}`);
+        setCarouselExportStatus(onStatus, `ERROR: ${msg}`);
         throw e;
     }
 };

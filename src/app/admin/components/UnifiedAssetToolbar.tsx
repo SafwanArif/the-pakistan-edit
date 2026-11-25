@@ -79,13 +79,23 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                     <div className="tpe-asset-input-wrapper">
                         <input 
                             type="url"
+                            inputMode="url"
+                            enterKeyHint="done"
+                            spellCheck={false}
+                            autoCorrect="off"
+                            autoCapitalize="off"
                             aria-label="Paste image URL"
                             autoComplete="off"
                             className="tpe-popover-input" 
                             placeholder="PASTE URL..." 
                             value={urlInput} 
                             onChange={(e) => setUrlInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleLinkSubmit()}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleLinkSubmit();
+                                    e.currentTarget.blur();
+                                }
+                            }}
                         />
                     </div>
                 )}
@@ -103,10 +113,14 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                                 />
                                 <input 
                                     aria-label="Image credit"
+                                    dir="auto"
+                                    enterKeyHint="done"
+                                    autoCapitalize="words"
                                     className="tpe-input-field tpe-uppercase" 
                                     placeholder="CREDIT" 
                                     value={imageCredit}
                                     onChange={(e) => onChange(DraftResolver.set(creditFieldId, e.target.value, draft))}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                 />
                             </div>
                         )}
@@ -123,10 +137,14 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                                 <input 
                                     id={`input-${sourceFieldId}`}
                                     aria-label="Source name"
+                                    dir="auto"
+                                    enterKeyHint="done"
+                                    autoCapitalize="words"
                                     className="tpe-input-field tpe-uppercase" 
                                     placeholder="SOURCE" 
                                     value={sourceName}
                                     onChange={(e) => onChange(DraftResolver.set(sourceFieldId, e.target.value, draft))}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                 />
                             </div>
                         )}

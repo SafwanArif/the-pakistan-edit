@@ -1,18 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, formatTimecode, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "../../../types/news";
+import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "../../../types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { canUseServerIngest } from "../utils/serverCapabilities";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
-import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
-import { SceneChecklistPopover, FadePresetControl } from "./SceneChecklistPopover";
-import { SubtitleRowList, getSceneSubtitles } from "./SubtitleEditorTray";
+import { getSceneSubtitles } from "./SubtitleEditorTray";
 import { MasterChecklistControl } from "./MasterChecklistPopover";
-import { CardTimelineScrubber } from "./CardTimelineScrubber";
 import { TimelineFooterCards, TimelineOutroCard } from "./TimelineFooterCards";
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "../../../components/icons/TPEIcons";
+import { SceneStoryboardCard } from "./SceneStoryboardCard";
+import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
 
 interface TimelineStoryboardProps {
     draft: VideoDraft;
@@ -26,10 +24,6 @@ interface TimelineStoryboardProps {
     isMobileDrawerOpen: boolean;
     onCloseMobileDrawer: () => void;
 }
-
-const playingPillStyle: React.CSSProperties = {
-    fontSize: '8px', padding: '1px 5px', borderRadius: '3px', background: 'var(--ui-accent)', color: '#000', fontWeight: 900
-};
 
 interface PlaybackModeControlProps {
     playbackMode: 'play-all' | 'loop-angle';
@@ -88,38 +82,6 @@ export function resolveSceneSubtitleSeekTime(
     return clamp(rawTarget, bounds.start, maxTarget);
 }
 
-const SceneDurationInput: React.FC<{ value: number; onCommit: (next: number) => void }> = React.memo(({ value, onCommit }) => {
-    const [draftText, setDraftText] = useState<string | null>(null);
-    const commit = (raw: string) => {
-        const parsed = parseFloat(raw.trim());
-        setDraftText(null);
-        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-            onCommit(clamp(Math.round(parsed * 10) / 10, 2, 180));
-        }
-    };
-    return (
-        <input
-            type="text"
-            inputMode="decimal"
-            enterKeyHint="done"
-            spellCheck={false}
-            value={draftText ?? String(value)}
-            aria-label="Scene duration in seconds"
-            className="tpe-tabular-nums"
-            onFocus={(e) => { setDraftText(String(value)); e.currentTarget.select(); }}
-            onChange={(e) => setDraftText(e.target.value)}
-            onBlur={(e) => commit(e.currentTarget.value)}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-                if (e.key === 'Escape') { setDraftText(null); e.currentTarget.blur(); }
-            }}
-            style={{ width: '36px', fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--ui-text)', background: 'transparent', border: 'none', textAlign: 'center', padding: 0 }}
-            title="Directly enter seconds for this angle (2–180s)"
-        />
-    );
-});
-SceneDurationInput.displayName = "SceneDurationInput";
-
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
     draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
@@ -127,56 +89,55 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     const isMobileViewport = useMediaQuery("(max-width: 900px)");
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
     const [openSubSceneIdx, setOpenSubSceneIdx] = useState<number | null>(null);
-    const [mobileSceneIndex, setMobileSceneIndex] = useState(0);
+    const [drawerSceneIndex, setDrawerSceneIndex] = useState<number | null>(null);
     const [sceneUploadWarning, setSceneUploadWarning] = useState<string | null>(null);
     const checklistRef = useClickOutside(() => setOpenChecklistIdx(null), undefined, openChecklistIdx !== null);
-    const mobileDrawerRef = useClickOutside(onCloseMobileDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
+    const handleCloseDrawer = useCallback(() => {
+        setDrawerSceneIndex(null);
+        onCloseMobileDrawer();
+    }, [onCloseMobileDrawer]);
+    const mobileDrawerRef = useClickOutside(handleCloseDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
     const mobileSceneRackRef = useRef<HTMLDivElement>(null);
     const carouselSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const offsetSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const mobileSceneIndexRef = useRef(mobileSceneIndex);
-    const scenes = draft.scenes || [];
+    const scenes = useMemo(() => draft.scenes || [], [draft.scenes]);
     const carouselItemCount = scenes.length + (draft.enableOutro ? 1 : 0);
 
-    const sceneBoundaries = useMemo(() => getSceneBoundaries(draft.scenes), [draft.scenes]);
-    const { hasReHook, storyIdx: setupIdx, preStoryDur, storyOffset } = useMemo(() => getTimelineStructure(draft.scenes), [draft.scenes]);
+    const sceneBoundaries = useMemo(() => getSceneBoundaries(scenes), [scenes]);
+    const { hasReHook, storyIdx: setupIdx, preStoryDur, storyOffset } = useMemo(() => getTimelineStructure(scenes), [scenes]);
     const sceneSubtitlesList = useMemo(
-        () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles({ ...draft, scenes: draft.scenes, subtitles: draft.subtitles, videoDuration: draft.videoDuration }, b.start, b.end) : [])),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft.subtitles, draft.scenes, draft.videoDuration, sceneBoundaries]
+        () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles(draft, b.start, b.end) : [])),
+        [draft, sceneBoundaries]
     );
     const sceneFadesList = useMemo(
-        () => (draft.scenes || []).map((_, idx) => resolveSceneFade(draft.scenes || [], idx)),
-        [draft.scenes]
+        () => scenes.map((_, idx) => resolveSceneFade(scenes, idx)),
+        [scenes]
     );
     const outroStart = sceneBoundaries.length > 0 ? sceneBoundaries[sceneBoundaries.length - 1]!.end : 0;
-    const isOutroActive = draft.enableOutro && currentTime >= outroStart;
+    const isOutroActive = Boolean(draft.enableOutro && currentTime >= outroStart);
     const currentMediaTime = useMemo(() => Math.round(timelineTimeToMediaTime(draft, currentTime) * 10) / 10, [draft, currentTime]);
 
-    useEffect(() => {
-        if (isMobileDrawerOpen) return;
-        if (draft.enableOutro && currentTime >= outroStart) {
-            mobileSceneIndexRef.current = scenes.length;
-            setMobileSceneIndex(scenes.length);
-            return;
-        }
+    const derivedSceneIndex = useMemo(() => {
+        if (draft.enableOutro && currentTime >= outroStart) return scenes.length;
         const activeIndex = sceneBoundaries.findIndex((bounds) => currentTime >= bounds.start && currentTime < bounds.end);
-        if (activeIndex >= 0) {
-            mobileSceneIndexRef.current = activeIndex;
-            setMobileSceneIndex(activeIndex);
-        }
-    }, [currentTime, draft.enableOutro, isMobileDrawerOpen, outroStart, sceneBoundaries, scenes.length]);
+        return activeIndex >= 0 ? activeIndex : 0;
+    }, [currentTime, draft.enableOutro, outroStart, sceneBoundaries, scenes.length]);
+
+    const maxCarouselIndex = Math.max(0, carouselItemCount - 1);
+    const mobileSceneIndex = clamp(
+        isMobileDrawerOpen && drawerSceneIndex !== null ? drawerSceneIndex : derivedSceneIndex,
+        0,
+        maxCarouselIndex
+    );
+    const mobileSceneIndexRef = useRef(mobileSceneIndex);
+    useEffect(() => {
+        mobileSceneIndexRef.current = mobileSceneIndex;
+    }, [mobileSceneIndex]);
 
     useEffect(() => {
-        const maxIndex = Math.max(0, carouselItemCount - 1);
-        const nextIndex = clamp(mobileSceneIndexRef.current, 0, maxIndex);
-        if (nextIndex !== mobileSceneIndexRef.current) {
-            mobileSceneIndexRef.current = nextIndex;
-            setMobileSceneIndex(nextIndex);
-        }
         const rack = mobileSceneRackRef.current;
         if (isMobileDrawerOpen && rack?.clientWidth) {
-            rack.scrollTo({ left: nextIndex * rack.clientWidth, behavior: 'auto' });
+            rack.scrollTo({ left: mobileSceneIndexRef.current * rack.clientWidth, behavior: 'auto' });
         }
     }, [carouselItemCount, isMobileDrawerOpen]);
 
@@ -216,7 +177,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         if (!rack.clientWidth || carouselItemCount === 0) return;
         const nextIndex = clamp(Math.round(rack.scrollLeft / rack.clientWidth), 0, carouselItemCount - 1);
         mobileSceneIndexRef.current = nextIndex;
-        setMobileSceneIndex((current) => current === nextIndex ? current : nextIndex);
+        setDrawerSceneIndex((current) => current === nextIndex ? current : nextIndex);
         if (carouselSeekTimeoutRef.current !== null) clearTimeout(carouselSeekTimeoutRef.current);
         carouselSeekTimeoutRef.current = setTimeout(() => {
             if (nextIndex < scenes.length) {
@@ -230,7 +191,12 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
 
     const draftRef = useRef(draft);
     const sceneBoundariesRef = useRef(sceneBoundaries);
-    useEffect(() => { draftRef.current = draft; sceneBoundariesRef.current = sceneBoundaries; });
+    const structRef = useRef({ preStoryDur, storyOffset });
+    useEffect(() => {
+        draftRef.current = draft;
+        sceneBoundariesRef.current = sceneBoundaries;
+        structRef.current = { preStoryDur, storyOffset };
+    });
 
     const updateScene = useCallback((index: number, patch: Partial<TimelineScene>) => {
         const curDraft = draftRef.current;
@@ -240,6 +206,14 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         if ('mediaUrl' in patch && prev.mediaUrl?.startsWith('blob:') && patch.mediaUrl !== prev.mediaUrl) URL.revokeObjectURL(prev.mediaUrl);
         updated[index] = { ...prev, ...patch };
         onChange({ ...curDraft, scenes: updated });
+    }, [onChange]);
+
+    const handleDeleteScene = useCallback((index: number) => {
+        const curDraft = draftRef.current;
+        const curScenes = curDraft.scenes || [];
+        const removed = curScenes[index];
+        if (removed?.mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(removed.mediaUrl);
+        onChange({ ...curDraft, scenes: curScenes.filter((_, i) => i !== index) });
     }, [onChange]);
 
     const setSceneOffset = useCallback((sceneIdx: number, nextOffset?: number, snapToStart = false) => {
@@ -268,7 +242,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const outroIndex = curDraft.scenes?.length ?? 0;
         if (!curDraft.enableOutro) onChange({ ...curDraft, enableOutro: true });
         mobileSceneIndexRef.current = outroIndex;
-        setMobileSceneIndex(outroIndex);
+        setDrawerSceneIndex(outroIndex);
         if (isMobileDrawerOpen) {
             const rack = mobileSceneRackRef.current;
             if (rack?.clientWidth) rack.scrollTo({ left: outroIndex * rack.clientWidth, behavior: 'smooth' });
@@ -280,11 +254,25 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         onChange({ ...draftRef.current, enableOutro: false });
     }, [onChange]);
 
-    const handleAddReHook = () => {
-        const updated = [...scenes];
+    const handleAddReHook = useCallback(() => {
+        const curDraft = draftRef.current;
+        const updated = [...(curDraft.scenes || [])];
         updated.splice(1, 0, { id: `rehook-${crypto.randomUUID().slice(0, 8)}`, title: "WAIT — HERE IS ==THE REAL SHIFT==", subtitle: "The overlooked turning point right before the full picture emerged.", duration: 4, mediaType: 'video', shareHookText: true });
-        onChange({ ...draft, scenes: updated });
-    };
+        onChange({ ...curDraft, scenes: updated });
+    }, [onChange]);
+
+    const handleJumpToReHook = useCallback(() => {
+        const b1 = sceneBoundariesRef.current[1];
+        if (b1) seekTo(b1.start);
+    }, [seekTo]);
+
+    const handleToggleChecklist = useCallback((idx: number) => {
+        setOpenChecklistIdx((prev) => (prev === idx ? null : idx));
+    }, []);
+
+    const handleToggleSubs = useCallback((idx: number) => {
+        setOpenSubSceneIdx((prev) => (prev === idx ? null : idx));
+    }, []);
 
     const ingestAbortRef = React.useRef<AbortController | null>(null);
 
@@ -304,8 +292,19 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         onChange({ ...curDraft, subtitles: allSubs.filter((s) => s.id !== id) });
     }, [onChange]);
 
-    const handleSceneMediaUpload = async (idx: number, file: File) => {
-        const prevUrl = scenes[idx]?.mediaUrl;
+    const handleSeekSceneSubtitle = useCallback((idx: number, mediaStart: number) => {
+        const curDraft = draftRef.current;
+        const scene = curDraft.scenes?.[idx];
+        const bounds = sceneBoundariesRef.current[idx];
+        if (!scene) return;
+        const { preStoryDur: preDur, storyOffset: sOff } = structRef.current;
+        seekTo(bounds
+            ? resolveSceneSubtitleSeekTime(curDraft, bounds, scene.duration, mediaStart, preDur, sOff)
+            : Math.max(0, mediaStart - (scene.clipStartOffset ?? 0)));
+    }, [seekTo]);
+
+    const handleSceneMediaUpload = useCallback(async (idx: number, file: File) => {
+        const prevUrl = draftRef.current.scenes?.[idx]?.mediaUrl;
         if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
         if (file.type.startsWith('image/')) {
             updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'image', mediaName: file.name });
@@ -335,7 +334,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
             setSceneUploadWarning(`Server ingest unavailable for ${file.name} — previewing local copy.`);
         }
         updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'video', mediaName: file.name });
-    };
+    }, [updateScene]);
 
     const handleMobileSceneNavigate = useCallback((direction: -1 | 1) => {
         const rack = mobileSceneRackRef.current;
@@ -343,6 +342,11 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const nextIndex = clamp(mobileSceneIndex + direction, 0, carouselItemCount - 1);
         rack.scrollTo({ left: nextIndex * rack.clientWidth, behavior: 'smooth' });
     }, [carouselItemCount, mobileSceneIndex]);
+
+    const hasVideo = Boolean(draft.videoUrl);
+    const hasSubtitles = Boolean(draft.subtitles?.length);
+    const globalShowSubtitles = draft.showSubtitles !== false;
+    const reHookAnchored = scenes[1]?.shareHookText !== false;
 
     return (
         <>
@@ -352,7 +356,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                     className="tpe-mobile-scenes-backdrop"
                     aria-hidden="true"
                     tabIndex={-1}
-                    onClick={onCloseMobileDrawer}
+                    onClick={handleCloseDrawer}
                 />
             )}
             <aside
@@ -364,7 +368,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                 className="tpe-flex-col tpe-storyboard-pane"
                 style={{
                     gap: '12px',
-                    flexShrink: 0
+                    flexShrink: 0,
                 }}
             >
                 <div className="tpe-mobile-scenes-header">
@@ -391,291 +395,131 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                         <button type="button" aria-label="Next card" disabled={mobileSceneIndex >= carouselItemCount - 1} onClick={() => handleMobileSceneNavigate(1)} className="tpe-cycle-arrow" title="Next card">
                             <ChevronRightIcon />
                         </button>
-                        <button type="button" aria-label="Close Scenes drawer" onClick={onCloseMobileDrawer} className="tpe-asset-btn" style={{ width: '26px', height: '26px', fontSize: '16px' }} title="Close Scenes drawer">×</button>
+                        <button type="button" aria-label="Close Scenes drawer" onClick={handleCloseDrawer} className="tpe-asset-btn" style={{ width: '26px', height: '26px', fontSize: '16px' }} title="Close Scenes drawer">×</button>
                     </div>
                 </div>
 
-            {/* Timeline Control HUD */}
+                {/* Timeline Control HUD */}
                 <div className="tpe-flex-col tpe-storyboard-timeline-hud" style={{ gap: '8px', borderBlockEnd: '1px solid var(--ui-border)', paddingBlockEnd: '12px' }}>
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    {onTogglePlaybackMode && (
+                    <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {onTogglePlaybackMode && (
                             <PlaybackModeControl
                                 playbackMode={playbackMode}
                                 onTogglePlaybackMode={onTogglePlaybackMode}
                                 variant="desktop"
                             />
-                    )}
-                    {!isMobileViewport && <MasterChecklistControl variant="desktop" draft={draft} onChange={onChange} />}
+                        )}
+                        {!isMobileViewport && <MasterChecklistControl variant="desktop" draft={draft} onChange={onChange} />}
+                    </div>
                 </div>
-            </div>
 
-            {/* Scene Storyboard Rack */}
-            {sceneUploadWarning && (
-                <div role="status" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '5px 8px', borderRadius: '6px', background: 'rgba(250, 204, 21, 0.1)', border: '1px solid rgba(250, 204, 21, 0.35)', color: '#facc15', fontSize: '9px' }}>
-                    <span>{sceneUploadWarning}</span>
-                    <button type="button" aria-label="Dismiss warning" onClick={() => setSceneUploadWarning(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', padding: '0 2px' }}>×</button>
-                </div>
-            )}
-            <div
-                ref={mobileSceneRackRef}
-                onScroll={handleMobileSceneScroll}
-                role="region"
-                aria-label="Swipeable scene cards"
-                aria-roledescription="carousel"
-                className="tpe-storyboard-rack"
-            >
-                {scenes.map((scene, idx) => {
-                    const bounds = sceneBoundaries[idx];
-                    const isSceneActive = Boolean(bounds && currentTime >= bounds.start && currentTime < bounds.end);
-                    const isReHook = idx === 1 && hasReHook;
-                    const isSetup = idx === setupIdx;
-                    const sceneLabel = idx === 0
-                        ? "01. THE HOOK"
-                        : (isReHook ? "02. RE-HOOK" : (isSetup ? `${String(idx + 1).padStart(2, '0')}. THE STORY` : `${String(idx + 1).padStart(2, '0')}. ANGLE`));
-
-                    const roleColor = getSceneRoleColor(idx, isReHook, isSetup);
-                    const rf = sceneFadesList[idx] ?? resolveSceneFade(scenes, idx);
-                    const cardSubs = sceneSubtitlesList[idx] ?? [];
-                    return (
-                        <div
-                            key={`${scene.id}-${idx}`}
-                            role="group"
-                            aria-roledescription="slide"
-                            aria-label={`${sceneLabel}, scene ${idx + 1} of ${carouselItemCount}`}
-                            aria-current={isSceneActive ? "step" : undefined}
-                            className={openChecklistIdx === idx ? "tpe-storyboard-slide" : "tpe-storyboard-card tpe-storyboard-slide"}
-                            onClick={() => { if (bounds && !isSceneActive) seekTo(bounds.start); }}
-                            style={{ width: '100%', cursor: isSceneActive ? 'default' : 'pointer', background: isSceneActive ? `color-mix(in oklch, ${roleColor} 9%, transparent)` : 'oklch(from var(--ui-text) l c h / 0.02)', borderStyle: 'solid', borderWidth: '1px 1px 1px 3px', borderColor: isSceneActive ? roleColor : `var(--ui-border) var(--ui-border) var(--ui-border) ${roleColor}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: isSceneActive ? `0 0 16px color-mix(in oklch, ${roleColor} 18%, transparent)` : 'none', transition: 'background-color 0.2s ease, border-color 0.2s ease', position: 'relative' }}
-                        >
-                            <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '10px', fontWeight: 900, color: roleColor, letterSpacing: '0.06em' }}>{sceneLabel}</span>
-                                    {isSceneActive && <span style={playingPillStyle}>PLAYING</span>}
-                                </div>
-
-                                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '4px', position: 'relative' }} ref={openChecklistIdx === idx ? checklistRef : undefined}>
-                                    {(idx === 0 || isReHook || isSetup) && (
-                                        <>
-                                            <button
-                                                type="button"
-                                                className="tpe-asset-btn"
-                                                data-active={openChecklistIdx === idx}
-                                                onClick={(e) => { e.stopPropagation(); setOpenChecklistIdx((prev) => (prev === idx ? null : idx)); }}
-                                                title={idx === 0 ? "01. The Hook Retention Checklist" : (isReHook ? "02. Re-Hook Retention Checklist" : "03. The Story Retention Checklist")}
-                                                style={{ width: '20px', height: '20px', padding: 0 }}
-                                            >
-                                                <svg width="11" height="11" viewBox="0 0 24 24" style={{ width: '11px', height: '11px', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
-                                                    <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />
-                                                </svg>
-                                            </button>
-                                            {openChecklistIdx === idx && (
-                                                <SceneChecklistPopover
-                                                    sceneMode={idx === 0 ? 'hook' : (isReHook ? 'rehook' : 'setup')}
-                                                    scene={scene}
-                                                    draft={draft}
-                                                    sceneBounds={bounds ? { start: bounds.start, end: bounds.end } : undefined}
-                                                    onUpdateScene={(patch) => updateScene(idx, patch)}
-                                                />
-                                            )}
-                                        </>
-                                    )}
-                                    <div className="tpe-mode-cluster" style={{ padding: '2px', gap: '2px' }}>
-                                        <button type="button" className="tpe-mode-btn" data-active={(scene.mediaType || 'video') === 'video'} onClick={() => updateScene(idx, { mediaType: 'video' })} title="Loop native video footage" style={{ padding: '3px 6px', fontSize: '8.5px' }}>🎬 VIDEO</button>
-                                        <button type="button" className="tpe-mode-btn" data-active={scene.mediaType === 'image'} onClick={() => updateScene(idx, { mediaType: 'image' })} title="Kinetic Ken Burns drift (100% to 104% continuous zoom)" style={{ padding: '3px 6px', fontSize: '8.5px' }}>🖼️ PHOTO</button>
-                                    </div>
-                                    {scenes.length > 1 && (
-                                        <button type="button" aria-label={`Delete ${sceneLabel} scene`} onClick={() => onChange({ ...draft, scenes: scenes.filter((_, i) => i !== idx) })} className="tpe-asset-btn tpe-asset-btn-danger tpe-storyboard-remove-btn" title="Delete scene"><CloseIcon width={16} height={16} /></button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Duration Timer & Actions */}
-                            <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '3px' }}>
-                                    <button type="button" aria-label="Decrease duration 1s" onClick={() => updateScene(idx, { duration: Math.max(2, Math.round((scene.duration - 1) * 10) / 10) })} className="tpe-asset-btn" style={{ width: '20px', height: '20px', fontSize: '11px', lineHeight: 1 }} title="Decrease 1s">-</button>
-                                    <div style={{ display: 'flex', alignItems: 'center', background: 'oklch(from var(--ui-bg) l c h / 0.85)', border: '1px solid var(--ui-border)', borderRadius: '4px', padding: '1px 4px' }}>
-                                        <SceneDurationInput
-                                            value={scene.duration}
-                                            onCommit={(nextDur) => updateScene(idx, { duration: nextDur })}
-                                        />
-                                        <span style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontWeight: 700 }}>s</span>
-                                    </div>
-                                    <button type="button" aria-label="Increase duration 1s" onClick={() => updateScene(idx, { duration: Math.max(2, Math.round((scene.duration + 1) * 10) / 10) })} className="tpe-asset-btn" style={{ width: '20px', height: '20px', fontSize: '11px', lineHeight: 1 }} title="Increase 1s">+</button>
-                                </div>
-                                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
-                                    {scene.mediaType === 'image' && <span style={{ fontSize: '8px', fontWeight: 800, letterSpacing: '0.06em', color: 'var(--ui-accent)', textTransform: 'uppercase' }}>KEN BURNS ✨</span>}
-                                    {Boolean(draft.subtitles?.length && bounds) && (
-                                        <button type="button" className="tpe-mode-btn" data-active={openSubSceneIdx === idx} onClick={(e) => { e.stopPropagation(); setOpenSubSceneIdx((prev) => (prev === idx ? null : idx)); }} title="View & edit subtitles playing during this angle card" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
-                                            💬 CC ({cardSubs.length})
-                                        </button>
-                                    )}
-                                    {idx === 0 && (
-                                        hasReHook ? (
-                                            <button type="button" className="tpe-mode-btn" onClick={(e) => { e.stopPropagation(); const b1 = sceneBoundaries[1]; if (b1) seekTo(b1.start); }} title={scenes[1]?.shareHookText !== false ? "Anchored to 02 Re-Hook (shared headline)" : "Un-anchored (02 Re-Hook uses its own headline)"} style={{ padding: '2px 7px', fontSize: '10px', whiteSpace: 'nowrap', lineHeight: 1, color: 'var(--ui-text)', opacity: scenes[1]?.shareHookText !== false ? 1 : 0.35, filter: scenes[1]?.shareHookText !== false ? 'none' : 'grayscale(1)', background: scenes[1]?.shareHookText !== false ? 'oklch(from var(--ui-accent) l c h / 0.16)' : 'transparent', border: `1px solid ${scenes[1]?.shareHookText !== false ? 'oklch(from var(--ui-accent) l c h / 0.5)' : 'var(--ui-border)'}`, boxShadow: scenes[1]?.shareHookText !== false ? '0 0 12px oklch(from var(--ui-accent) l c h / 0.22)' : 'none' }}>
-                                                <span style={{ display: 'inline-flex', alignItems: 'center' }}><HookGlyph role="hook" /><HookGlyph role="rehook" style={{ marginLeft: '-10.5px' }} /></span>
-                                            </button>
-                                        ) : (
-                                            <button type="button" className="tpe-mode-btn" onClick={(e) => { e.stopPropagation(); handleAddReHook(); }} title="Insert a 4s Re-Hook right after 01 The Hook" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.45)' }}>
-                                                + RE-HOOK
-                                            </button>
-                                        )
-                                    )}
-                                    {isReHook && (
-                                        <button type="button" className="tpe-mode-btn" data-active={scene.shareHookText !== false} onClick={(e) => { e.stopPropagation(); updateScene(idx, { shareHookText: scene.shareHookText === false }); }} title="Anchor Hook: lock 01. The Hook's headline & subheading continuously across both hooks with zero flash" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
-                                            ⚓ ANCHOR HOOK
-                                        </button>
-                                    )}
-                                    {isSetup && Boolean(draft.videoDuration && draft.videoDuration > 0) && (() => {
-                                        const adaptedDur = Math.max(2, Math.round((draft.videoDuration! - (scene.clipStartOffset || 0)) * 10) / 10);
-                                        return (
-                                            <button type="button" className="tpe-mode-btn" data-active={Math.abs(scene.duration - adaptedDur) < 0.2} onClick={(e) => { e.stopPropagation(); updateScene(idx, { duration: adaptedDur }); }} title="Adapt 03. The Story duration to match the remaining imported clip from its start offset" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
-                                                ADAPT TO CLIP ({formatTimecode(adaptedDur)})
-                                            </button>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-
-                            {/* Scoped Angle Subtitles Tab */}
-                            {openSubSceneIdx === idx && bounds && draft.subtitles?.length ? (() => {
-                                const cardCcOn = scene.showSubtitles ?? (draft.showSubtitles !== false);
-                                return (
-                                    <div onClick={(e) => e.stopPropagation()} style={{ padding: '6px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--ui-border)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '8.5px', fontWeight: 800, color: 'var(--ui-text-dim)', letterSpacing: '0.06em' }}>CARD CAPTIONS ({cardSubs.length})</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => updateScene(idx, { showSubtitles: !cardCcOn })}
-                                                className="tpe-mode-btn"
-                                                data-active={cardCcOn}
-                                                style={{ padding: '1px 7px', fontSize: '8.5px' }}
-                                                title="Toggle closed captions only for this angle card"
-                                            >
-                                                CC: {cardCcOn ? "ON" : "OFF"}
-                                            </button>
-                                        </div>
-                                        {cardSubs.length > 0 ? (
-                                            <SubtitleRowList
-                                                segments={cardSubs}
-                                                onUpdateText={handleUpdateSubtitleText}
-                                                onRemoveSeg={handleRemoveSubtitle}
-                                                onSeekMedia={(ms) => seekTo(bounds ? resolveSceneSubtitleSeekTime(draft, bounds, scene.duration, ms, preStoryDur, storyOffset) : Math.max(0, ms - (scene.clipStartOffset ?? 0)))}
-                                            />
-                                        ) : (
-                                            <div style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontStyle: 'italic' }}>No speech detected in this angle window.</div>
-                                        )}
-                                    </div>
-                                );
-                            })() : null}
-
-                            {/* Scoped Per-Card Mini-Timeline Scrubber */}
-                            {bounds && (
-                                <CardTimelineScrubber
-                                    sceneLabel={sceneLabel}
-                                    start={bounds.start}
-                                    end={bounds.end}
-                                    duration={scene.duration}
-                                    localTime={isSceneActive ? clamp(currentTime - bounds.start, 0, scene.duration) : (currentTime >= bounds.end ? scene.duration : 0)}
-                                    liveClock={liveClock}
-                                    isSceneActive={isSceneActive}
-                                    isPlaying={isPlaying}
-                                    keyframes={draft.keyframes}
-                                    fadeInDur={rf.inDur}
-                                    fadeOutDur={rf.outDur}
-                                    onSeek={seekTo}
-                                />
-                            )}
-
-                            {/* Side-by-side Clip Start Trimmer & Fade Control (Hook, Re-Hook & Setup) */}
-                            {(idx === 0 || isReHook || isSetup) && (
-                                <div className={draft.videoUrl ? "tpe-storyboard-controls-grid" : undefined} style={draft.videoUrl ? undefined : { display: 'grid', gridTemplateColumns: '1fr', gap: '8px', marginTop: '2px', alignItems: 'stretch' }}>
-                                    {!!draft.videoUrl && (
-                                        <ClipOffsetTrimmer
-                                            sceneIdx={idx}
-                                            mode={idx === 0 ? 'hook' : (isReHook ? 'rehook' : 'setup')}
-                                            clipStartOffset={scene.clipStartOffset}
-                                            sceneDuration={scene.duration}
-                                            currentMediaTime={scene.clipStartOffset !== undefined ? 0 : currentMediaTime}
-                                            isCardActive={isSceneActive}
-                                            onSetOffset={setSceneOffset}
-                                        />
-                                    )}
-                                    <FadePresetControl
-                                        sceneIdx={idx}
-                                        fadeInEnabled={rf.inEnabled} fadeInPreset={rf.inPreset} fadeInDuration={rf.rawInDur}
-                                        fadeOutEnabled={rf.outEnabled} fadeOutPreset={rf.outPreset} fadeOutDuration={rf.rawOutDur}
-                                        defaultSide={isSetup || isReHook ? 'in' : 'out'}
-                                        inHint={rf.inMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}
-                                        outHint={rf.outMode === 'micro' ? 'ANCHOR HOOK' : '🎬 ACT BREAK'}
-                                        isCardActive={isSceneActive}
-                                        onUpdate={updateScene} />
-                                </div>
-                            )}
-
-                            {/* Per-Scene Media Override (Scenes 02+) */}
-                            {idx > 0 && (
-                                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px', padding: '6px 8px', borderRadius: '6px', background: scene.mediaUrl ? 'oklch(from var(--ui-accent) l c h / 0.1)' : 'oklch(from var(--ui-text) l c h / 0.03)', border: scene.mediaUrl ? '1px solid oklch(from var(--ui-accent) l c h / 0.4)' : '1px dashed var(--ui-border)' }}>
-                                    <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.06em', color: scene.mediaUrl ? 'var(--ui-accent)' : 'var(--ui-text-dim)', whiteSpace: 'nowrap' }}>
-                                        {scene.mediaUrl ? 'CUSTOM' : 'MASTER'}
-                                    </span>
-                                    <input
-                                        type="text"
-                                        inputMode="url"
-                                        enterKeyHint="done"
-                                        spellCheck={false}
-                                        autoCorrect="off"
-                                        autoCapitalize="off"
-                                        aria-label="Scene media override URL"
-                                        placeholder="Override URL or upload clip/photo..."
-                                        value={scene.mediaUrl || ''}
-                                        onChange={(e) => updateScene(idx, { mediaUrl: e.target.value || undefined, mediaName: undefined })}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                                        style={{ flex: 1, minWidth: 0, fontSize: '9.5px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
-                                    />
-                                    <label className="tpe-upload-label" style={{ cursor: 'pointer', fontSize: '9px', fontWeight: 800, color: 'var(--ui-accent)', padding: '2px 6px', borderRadius: '4px', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', whiteSpace: 'nowrap' }} title="Upload custom video or photo for this angle">
-                                        UPLOAD
-                                        <input type="file" className="tpe-sr-only" accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSceneMediaUpload(idx, f); e.target.value = ''; }} />
-                                    </label>
-                                    {scene.mediaUrl && (
-                                        <button type="button" aria-label="Revert to master clip" onClick={() => updateScene(idx, { mediaUrl: undefined, mediaName: undefined })} className="tpe-asset-btn tpe-asset-btn-danger" style={{ width: '18px', height: '18px', fontSize: '10px', padding: 0 }} title="Revert to master clip">✕</button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-                {draft.enableOutro && (
-                    <div
-                        role="group"
-                        aria-roledescription="slide"
-                        aria-label={`${String(scenes.length + 1).padStart(2, '0')}. OUTRO, scene ${scenes.length + 1} of ${carouselItemCount}`}
-                        aria-current={isOutroActive ? "step" : undefined}
-                        className="tpe-storyboard-slide"
-                    >
-                        <TimelineOutroCard
-                            sceneCount={scenes.length}
-                            outroDuration={draft.outroDuration}
-                            outroCta={draft.outroCta}
-                            outroStart={outroStart}
-                            isOutroActive={isOutroActive}
-                            onSeekOutro={seekTo}
-                            onRemoveOutro={handleRemoveOutro}
-                        />
+                {/* Scene Storyboard Rack */}
+                {sceneUploadWarning && (
+                    <div role="status" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '5px 8px', borderRadius: '6px', background: 'rgba(250, 204, 21, 0.1)', border: '1px solid rgba(250, 204, 21, 0.35)', color: '#facc15', fontSize: '9px' }}>
+                        <span>{sceneUploadWarning}</span>
+                        <button type="button" aria-label="Dismiss warning" onClick={() => setSceneUploadWarning(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', padding: '0 2px' }}>×</button>
                     </div>
                 )}
-            </div>
-            <div className="tpe-storyboard-footer-controls">
-                <TimelineFooterCards
-                    enableOutro={Boolean(draft.enableOutro)}
-                    onAddAngle={handleAddScene}
-                    onAddOutro={handleAddOutro}
-                />
-            </div>
+                <div
+                    ref={mobileSceneRackRef}
+                    onScroll={handleMobileSceneScroll}
+                    role="region"
+                    aria-label="Swipeable scene cards"
+                    aria-roledescription="carousel"
+                    className="tpe-storyboard-rack"
+                >
+                    {scenes.map((scene, idx) => {
+                        const bounds = sceneBoundaries[idx];
+                        const isSceneActive = Boolean(bounds && currentTime >= bounds.start && currentTime < bounds.end);
+                        const isReHook = idx === 1 && hasReHook;
+                        const isSetup = idx === setupIdx;
+                        const sceneLabel = idx === 0
+                            ? "01. THE HOOK"
+                            : (isReHook ? "02. RE-HOOK" : (isSetup ? `${String(idx + 1).padStart(2, '0')}. THE STORY` : `${String(idx + 1).padStart(2, '0')}. ANGLE`));
+                        const roleColor = getSceneRoleColor(idx, isReHook, isSetup);
+                        const rf = sceneFadesList[idx] ?? resolveSceneFade(scenes, idx);
+                        const cardSubs = sceneSubtitlesList[idx] ?? [];
+                        const localTime = bounds
+                            ? (isSceneActive ? clamp(currentTime - bounds.start, 0, scene.duration) : (currentTime >= bounds.end ? scene.duration : 0))
+                            : 0;
+                        const isChecklistOpen = openChecklistIdx === idx;
+                        return (
+                            <SceneStoryboardCard
+                                key={`${scene.id}-${idx}`}
+                                idx={idx}
+                                scene={scene}
+                                sceneLabel={sceneLabel}
+                                roleColor={roleColor}
+                                carouselItemCount={carouselItemCount}
+                                canDelete={scenes.length > 1}
+                                bounds={bounds ? { start: bounds.start, end: bounds.end } : undefined}
+                                isSceneActive={isSceneActive}
+                                isReHook={isReHook}
+                                isSetup={isSetup}
+                                hasReHook={hasReHook}
+                                reHookAnchored={reHookAnchored}
+                                hasVideo={hasVideo}
+                                videoDuration={draft.videoDuration}
+                                hasSubtitles={hasSubtitles}
+                                globalShowSubtitles={globalShowSubtitles}
+                                keyframes={draft.keyframes}
+                                localTime={localTime}
+                                currentMediaTime={scene.clipStartOffset !== undefined ? 0 : currentMediaTime}
+                                liveClock={liveClock}
+                                isPlaying={isPlaying}
+                                rf={rf}
+                                cardSubs={cardSubs}
+                                isChecklistOpen={isChecklistOpen}
+                                isSubsOpen={openSubSceneIdx === idx}
+                                checklistRef={isChecklistOpen ? checklistRef : undefined}
+                                checklistDraft={isChecklistOpen ? draft : undefined}
+                                onSeekTo={seekTo}
+                                onUpdateScene={updateScene}
+                                onDeleteScene={handleDeleteScene}
+                                onSetOffset={setSceneOffset}
+                                onToggleChecklist={handleToggleChecklist}
+                                onToggleSubs={handleToggleSubs}
+                                onAddReHook={handleAddReHook}
+                                onJumpToReHook={handleJumpToReHook}
+                                onSceneMediaUpload={handleSceneMediaUpload}
+                                onUpdateSubtitleText={handleUpdateSubtitleText}
+                                onRemoveSubtitle={handleRemoveSubtitle}
+                                onSeekSceneSubtitle={handleSeekSceneSubtitle}
+                            />
+                        );
+                    })}
+                    {draft.enableOutro && (
+                        <div
+                            role="group"
+                            aria-roledescription="slide"
+                            aria-label={`${String(scenes.length + 1).padStart(2, '0')}. OUTRO, scene ${scenes.length + 1} of ${carouselItemCount}`}
+                            aria-current={isOutroActive ? "step" : undefined}
+                            className="tpe-storyboard-slide"
+                        >
+                            <TimelineOutroCard
+                                sceneCount={scenes.length}
+                                outroDuration={draft.outroDuration}
+                                outroCta={draft.outroCta}
+                                outroStart={outroStart}
+                                isOutroActive={isOutroActive}
+                                onSeekOutro={seekTo}
+                                onRemoveOutro={handleRemoveOutro}
+                            />
+                        </div>
+                    )}
+                </div>
+                <div className="tpe-storyboard-footer-controls">
+                    <TimelineFooterCards
+                        enableOutro={Boolean(draft.enableOutro)}
+                        onAddAngle={handleAddScene}
+                        onAddOutro={handleAddOutro}
+                    />
+                </div>
             </aside>
         </>
     );
 }, (prev, next) => {
-    // Skip 10Hz playback reconciliation completely when the mobile Scenes drawer is hidden off-screen
+    // Skip playback reconciliation completely when the mobile Scenes drawer is hidden off-screen
     const isHiddenMobileDrawer = !prev.isMobileDrawerOpen
         && !next.isMobileDrawerOpen
         && typeof window !== "undefined"

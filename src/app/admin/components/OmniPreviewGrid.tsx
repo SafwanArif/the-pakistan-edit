@@ -49,7 +49,7 @@ const PreviewItem = React.memo<PreviewItemProps>(({ p, displayDraft, currentStep
                 </div>
                 <div style={previewDimStyle}>{p.w} × {p.h}</div>
             </div>
-            <div ref={ref} style={{ width: '100%', position: "relative", overflow: "hidden", background: '#111', display: 'flex', justifyContent: 'center', aspectRatio: `${p.w} / ${p.h}` }}>
+            <div ref={ref} style={{ width: '100%', position: "relative", overflow: "hidden", contain: "layout style paint", background: '#111', display: 'flex', justifyContent: 'center', aspectRatio: `${p.w} / ${p.h}` }}>
                 <div style={{ position: "absolute", insetBlockStart: 0, transformOrigin: "top center", transform: `scale(${scale})`, width: `${p.w}px`, height: `${p.h}px` }}>
                     <NewsCard 
                         draft={displayDraft} 

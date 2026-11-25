@@ -175,7 +175,7 @@ export const VideoDraftResolver = {
 
     set: (path: string, value: string, draft: VideoDraft, currentTime: number = 0): VideoDraft => {
         const cleanPath = path.replace(VIDEO_PREFIX_RE, '');
-        const { sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
+        const { scene, sceneIndex, isOutro } = getActiveSceneAtTime(draft, currentTime);
 
         if (cleanPath === 'category') return { ...draft, category: value };
 
@@ -196,15 +196,21 @@ export const VideoDraftResolver = {
         }
 
         if (cleanPath === 'sourceName') {
-            const scenes = [...(draft.scenes || [])];
-            if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, sourceName: value };
-            return { ...draft, scenes, ...(sceneIndex === 0 ? { sourceName: value } : {}) };
+            if (scene?.sourceName) {
+                const scenes = [...(draft.scenes || [])];
+                if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, sourceName: value };
+                return { ...draft, scenes, ...(sceneIndex === 0 ? { sourceName: value } : {}) };
+            }
+            return { ...draft, sourceName: value };
         }
 
         if (cleanPath === 'creditName') {
-            const scenes = [...(draft.scenes || [])];
-            if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, creditName: value };
-            return { ...draft, scenes, ...(sceneIndex === 0 ? { creditName: value } : {}) };
+            if (scene?.creditName) {
+                const scenes = [...(draft.scenes || [])];
+                if (scenes[sceneIndex]) scenes[sceneIndex] = { ...scenes[sceneIndex]!, creditName: value };
+                return { ...draft, scenes, ...(sceneIndex === 0 ? { creditName: value } : {}) };
+            }
+            return { ...draft, creditName: value };
         }
 
         return { ...draft, [cleanPath]: value } as VideoDraft;

@@ -225,7 +225,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                             height: "100%",
                             transform: `scaleX(${pct / 100})`,
                             transformOrigin: "left center",
-                            willChange: "transform",
+                            willChange: (isSceneActive && isPlaying) || isDragging ? "transform" : undefined,
                             background: isSceneActive ? "var(--ui-accent)" : "oklch(from var(--ui-accent) l c h / 0.45)",
                             borderRadius: "99px",
                         }}

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, type SyntheticEvent } from "react";
+import { useRef, useEffect, useCallback, useMemo, type SyntheticEvent } from "react";
 import { VideoDraft, wrapMediaTime, mediaTimeToTimelineTime, evaluateSceneTransition, getTimelineStructure, clamp } from "../../../types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 import { clampMediaTarget, getNextCutMediaTarget, isStandbyReadyAt, preParkStandbyDeck } from "./dualDeckHelpers";
@@ -208,6 +208,12 @@ export const useVideoElementSync = ({
         }
     }, [isScrubbing]);
 
+    // Pure timing signature so headline/subtitle typing never re-runs `<video>` seek checks or pokes the standby decoder
+    const scenesTimingKey = useMemo(
+        () => (draft.scenes || []).map((s) => `${s.id}:${s.duration}:${s.clipStartOffset ?? ''}:${s.mediaUrl ?? ''}:${s.mediaType ?? ''}:${s.shareHookText ?? ''}`).join('|'),
+        [draft.scenes]
+    );
+
     // Keep desktop standby deck freshly pre-parked whenever Hook/Re-Hook/Story offsets or durations change
     useEffect(() => {
         if (standbySyncTimerRef.current !== null) {
@@ -225,7 +231,7 @@ export const useVideoElementSync = ({
                 standbySyncTimerRef.current = null;
             }
         };
-    }, [useStandbyDeck, overlayOnly, isScrubbing, isOutro, draft.scenes, playbackMode, getStandbyVideo]);
+    }, [useStandbyDeck, overlayOnly, isScrubbing, isOutro, scenesTimingKey, playbackMode, getStandbyVideo]);
 
     useEffect(() => {
         const video = getActiveVideo();
@@ -478,7 +484,7 @@ export const useVideoElementSync = ({
         ) {
             transitionToMediaTime(video, targetMediaTime, currentTime);
         }
-    }, [currentTime, seekNonce, isPlaying, isScrubbing, isOutro, overlayOnly, videoSrc, draft.scenes, draft.videoDuration, getActiveVideo, markNeedsAndroidResync, seekAndSync, transitionToMediaTime]);
+    }, [currentTime, seekNonce, isPlaying, isScrubbing, isOutro, overlayOnly, videoSrc, scenesTimingKey, draft.videoDuration, getActiveVideo, markNeedsAndroidResync, seekAndSync, transitionToMediaTime]);
 
     const syncTimelineTick = useCallback((video: HTMLVideoElement, mediaTime: number) => {
         if (!onTimeUpdate || isOutroRef.current || video.seeking) return;

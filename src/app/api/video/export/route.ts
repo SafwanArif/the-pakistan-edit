@@ -8,7 +8,7 @@ import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "../../.
 import { VIDEO_FORMAT_CONFIGS } from "../../../../config/omnichannel";
 import { assertDiskHeadroom, CACHE_DIR, computeExportVbvCeiling, createFileWebStream, fileExists, probeMediaFile, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
 import { buildAssSubtitles, escapeFfmpegFilterPath } from "../../../../lib/server/ffmpegFilters";
-import { buildSceneFilterStages } from "../../../../lib/server/ffmpegSceneGraph";
+import { buildSceneFilterStages, isAnimatedSceneOverlay } from "../../../../lib/server/ffmpegSceneGraph";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +38,13 @@ const resolveImageExt = (mimeType: string): string => {
 
 /** Renders the multi-scene timeline via native FFmpeg (`libx264` + `48kHz AAC`) with zero dropped frames. */
 export async function POST(request: Request) {
+    if (process.env.VERCEL === "1") {
+        return NextResponse.json(
+            { error: "Server-side FFmpeg MP4 export is unavailable on serverless deployments. Use PNG Overlays (.ZIP) or run the studio locally." },
+            { status: 501 }
+        );
+    }
+
     const tempFiles: string[] = [];
     const uid = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     void sweepStaleExportFiles();
@@ -67,7 +74,16 @@ export async function POST(request: Request) {
         }
         await fs.promises.mkdir(CACHE_DIR, { recursive: true });
         await assertDiskHeadroom();
-        const masterInfo = await probeVideoInfo(masterPath, request.signal);
+        const probeCache = new Map<string, ReturnType<typeof probeVideoInfo>>();
+        const getCachedProbe = (filePath: string) => {
+            let pending = probeCache.get(filePath);
+            if (!pending) {
+                pending = probeVideoInfo(filePath, request.signal);
+                probeCache.set(filePath, pending);
+            }
+            return pending;
+        };
+        const masterInfo = await getCachedProbe(masterPath);
 
         const { width: W, height: H } = format;
         const is45 = draft.aspectRatio === "4:5";
@@ -92,6 +108,18 @@ export async function POST(request: Request) {
             tempFiles.push(p);
             return p;
         };
+        const overlayPathByHash = new Map<string, string>();
+        const saveDeduplicatedOverlay = async (blob: Blob): Promise<string> => {
+            const buf = Buffer.from(await blob.arrayBuffer());
+            const hash = crypto.createHash("sha1").update(buf).digest("hex");
+            const existing = overlayPathByHash.get(hash);
+            if (existing) return existing;
+            const p = path.join(CACHE_DIR, `exp-${uid}-${tempFiles.length}.png`);
+            await fs.promises.writeFile(p, buf);
+            tempFiles.push(p);
+            overlayPathByHash.set(hash, p);
+            return p;
+        };
 
         for (let i = 0; i < quantizedScenes.length; i++) {
             const s = quantizedScenes[i]!;
@@ -101,7 +129,7 @@ export async function POST(request: Request) {
             if (!(ovBlob instanceof Blob)) {
                 return NextResponse.json({ error: `Missing overlay_${i}` }, { status: 400 });
             }
-            const ovPath = await saveTempBlob(ovBlob, ".png");
+            const ovPath = await saveDeduplicatedOverlay(ovBlob);
 
             const customMediaBlob = formData.get(`sceneMedia_${i}`);
             const cachedSceneVideo = await resolveCachedVideoPath(s.mediaUrl);
@@ -113,7 +141,7 @@ export async function POST(request: Request) {
                 const ext = isImage ? resolveImageExt(customMediaBlob.type) : ".mp4";
                 srcPath = await saveTempBlob(customMediaBlob, ext);
                 if (isImage) {
-                    const probed = await probeVideoInfo(srcPath, request.signal).catch(() => null);
+                    const probed = await getCachedProbe(srcPath).catch(() => null);
                     srcInfo = {
                         width: probed?.width ?? W,
                         height: probed?.height ?? H,
@@ -123,11 +151,11 @@ export async function POST(request: Request) {
                         isHdr: false,
                     };
                 } else {
-                    srcInfo = await probeVideoInfo(srcPath, request.signal);
+                    srcInfo = await getCachedProbe(srcPath);
                 }
             } else if (cachedSceneVideo && !isImage) {
                 srcPath = cachedSceneVideo;
-                srcInfo = await probeVideoInfo(srcPath, request.signal);
+                srcInfo = await getCachedProbe(srcPath);
             }
 
             const mediaIdx = inputIdx++;
@@ -172,7 +200,12 @@ export async function POST(request: Request) {
             }
 
             const ovIdx = inputIdx++;
-            args.push("-framerate", String(targetFps), "-loop", "1", "-t", dur.toFixed(3), "-i", ovPath);
+            if (isAnimatedSceneOverlay(draft, quantizedScenes, i)) {
+                args.push("-framerate", String(targetFps), "-loop", "1", "-t", dur.toFixed(3), "-i", ovPath);
+            } else {
+                // Single-frame PNG input paired with overlay eof_action=repeat (decodes & Lanczos-scales 1x instead of N*fps times)
+                args.push("-i", ovPath);
+            }
 
             const stage = buildSceneFilterStages({
                 index: i,
@@ -206,8 +239,9 @@ export async function POST(request: Request) {
             const outroDur = Math.max(1, Math.round(rawOutroDur * targetFps)) / targetFps;
             const outroPath = await saveTempBlob(outroBlob, ".png");
             const oIdx = inputIdx++;
-            args.push("-framerate", String(targetFps), "-loop", "1", "-t", outroDur.toFixed(3), "-i", outroPath);
-            filters.push(`[${oIdx}:v]fps=${targetFps},scale=${W}:${H}:flags=lanczos+accurate_rnd+full_chroma_int:out_color_matrix=bt709:out_range=tv,fade=t=in:st=0:d=0.25:color=#050505,format=yuv420p,setsar=1,settb=1/90000[v_outro]`);
+            // Decode & Lanczos-scale the static outro PNG once before cloning frames in YUV420p
+            args.push("-i", outroPath);
+            filters.push(`[${oIdx}:v]scale=${W}:${H}:flags=lanczos+accurate_rnd+full_chroma_int:out_color_matrix=bt709:out_range=tv,format=yuv420p,loop=loop=-1:size=1:start=0,fps=${targetFps},trim=duration=${outroDur.toFixed(3)},fade=t=in:st=0:d=0.25:color=#050505,setsar=1,settb=1/90000[v_outro]`);
             filters.push(`anullsrc=r=48000:cl=stereo:d=${outroDur.toFixed(3)}[a_outro]`);
             concatInputs.push(`[v_outro][a_outro]`);
         }

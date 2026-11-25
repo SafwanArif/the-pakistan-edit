@@ -502,7 +502,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                             draggable={false}
                             onPointerDown={(e) => startHandleDrag(e, "hook")}
                             title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
-                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: "6px 8px", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
+                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: "6px 0", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                         >
                             <HookGlyph role="hook" />
                         </button>
@@ -514,7 +514,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                                 draggable={false}
                                 onPointerDown={(e) => startHandleDrag(e, "rehook")}
                                 title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
-                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: "6px 8px", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
+                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: "6px 0", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                             >
                                 <HookGlyph role="rehook" />
                             </button>

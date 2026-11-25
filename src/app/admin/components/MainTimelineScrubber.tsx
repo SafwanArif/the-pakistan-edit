@@ -157,6 +157,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const hoverPillRef = useRef<HTMLDivElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
     const lastScrubTimeRef = useRef<number | null>(null);
+    const isDraggingRef = useRef(false);
     const handleDragCleanupRef = useRef<(() => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
@@ -247,8 +248,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
 
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
         e.stopPropagation();
+        e.preventDefault();
         const handleEl = e.currentTarget;
-        handleEl.setPointerCapture(e.pointerId);
+        const activePointerId = e.pointerId;
+        handleEl.setPointerCapture(activePointerId);
         setDragTarget(target);
         onHookDragStart?.();
         const startX = e.clientX;
@@ -257,9 +260,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         const maxOff = target === "hook" ? hookMax : rehookMax;
         let lastSent = startOffset;
         let moved = false;
+        let finished = false;
 
         const onMove = (ev: PointerEvent) => {
-            if (clipDuration <= 0) return;
+            if (ev.pointerId !== activePointerId || clipDuration <= 0) return;
             if (Math.abs(ev.clientX - startX) > 2) moved = true;
             const deltaRatio = (ev.clientX - startX) / trackWidth;
             const next = clamp(Math.round((startOffset + deltaRatio * safeDuration) * 10) / 10, 0, maxOff);
@@ -276,12 +280,19 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onCancel);
-            handleEl.removeEventListener("lostpointercapture", onCancel);
+            handleEl.removeEventListener("lostpointercapture", onLostCapture);
             handleDragCleanupRef.current = null;
         };
 
         const finishDrag = (didMove: boolean) => {
+            if (finished) return;
+            finished = true;
             cleanup();
+            try {
+                if (handleEl.hasPointerCapture(activePointerId)) {
+                    handleEl.releasePointerCapture(activePointerId);
+                }
+            } catch {}
             setDragTarget(null);
             hideHoverDom();
             if (onHookDragEnd) {
@@ -292,15 +303,22 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             }
         };
 
-        const onCancel = () => finishDrag(moved);
-        const onUp = () => finishDrag(moved);
+        const onCancel = (ev: PointerEvent) => {
+            if (ev.pointerId !== activePointerId) return;
+            finishDrag(moved);
+        };
+        const onUp = (ev: PointerEvent) => {
+            if (ev.pointerId !== activePointerId) return;
+            finishDrag(moved);
+        };
+        const onLostCapture = () => finishDrag(moved);
 
         handleDragCleanupRef.current?.();
         handleDragCleanupRef.current = cleanup;
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
         window.addEventListener("pointercancel", onCancel);
-        handleEl.addEventListener("lostpointercapture", onCancel);
+        handleEl.addEventListener("lostpointercapture", onLostCapture);
     };
 
     return (
@@ -309,6 +327,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 position: "relative",
                 width: "100%",
                 paddingBottom: showHookHandles && clipDuration > 0 ? "14px" : "0px",
+                touchAction: showHookHandles && clipDuration > 0 ? "none" : undefined,
             }}
         >
             <div
@@ -345,6 +364,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 onPointerDown={(e) => {
                     e.currentTarget.setPointerCapture(e.pointerId);
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
+                    isDraggingRef.current = true;
                     setIsDragging(true);
                     onScrubStart();
                     const next = timeAtClientX(e.clientX);
@@ -356,14 +376,19 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     if (dragTarget) return;
                     const next = timeAtClientX(e.clientX);
                     updateHoverDom(next.pct, next.time);
-                    if (isDragging && next.time !== lastScrubTimeRef.current) {
+                    if (isDraggingRef.current && next.time !== lastScrubTimeRef.current) {
                         lastScrubTimeRef.current = next.time;
                         onScrubMove(next.time);
                     }
                 }}
                 onPointerUp={(e) => {
-                    if (!isDragging) return;
-                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
+                    try {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                    } catch {}
                     setIsDragging(false);
                     const next = timeAtClientX(e.clientX);
                     dragRectRef.current = null;
@@ -372,20 +397,24 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     onScrubEnd(next.time);
                 }}
                 onPointerCancel={() => {
-                    if (!isDragging) return;
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
                     setIsDragging(false);
+                    const finalTime = lastScrubTimeRef.current ?? currentTime;
                     dragRectRef.current = null;
                     lastScrubTimeRef.current = null;
                     hideHoverDom();
-                    onScrubEnd(currentTime);
+                    onScrubEnd(finalTime);
                 }}
                 onLostPointerCapture={() => {
-                    if (!isDragging) return;
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
                     setIsDragging(false);
+                    const finalTime = lastScrubTimeRef.current ?? currentTime;
                     dragRectRef.current = null;
                     lastScrubTimeRef.current = null;
                     hideHoverDom();
-                    onScrubEnd(currentTime);
+                    onScrubEnd(finalTime);
                 }}
                 onMouseLeave={() => { if (!isDragging && !dragTarget) { dragRectRef.current = null; hideHoverDom(); } }}
                 style={{
@@ -470,9 +499,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: dragTarget === "hook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
                         <button
                             type="button"
+                            draggable={false}
                             onPointerDown={(e) => startHandleDrag(e, "hook")}
                             title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
-                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto" }}
+                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: "6px 8px", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                         >
                             <HookGlyph role="hook" />
                         </button>
@@ -481,9 +511,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                         <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: dragTarget === "rehook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
                             <button
                                 type="button"
+                                draggable={false}
                                 onPointerDown={(e) => startHandleDrag(e, "rehook")}
                                 title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
-                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: 0, fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto" }}
+                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: "6px 8px", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                             >
                                 <HookGlyph role="rehook" />
                             </button>

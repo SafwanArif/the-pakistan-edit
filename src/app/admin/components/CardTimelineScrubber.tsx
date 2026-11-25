@@ -61,6 +61,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const timeLabelRef = useRef<HTMLSpanElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
     const lastSentSeekRef = useRef<number | null>(null);
+    const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
 
     const currentTime = start + localTime;
@@ -179,26 +180,36 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                     e.currentTarget.setPointerCapture(e.pointerId);
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     lastSentSeekRef.current = null;
+                    isDraggingRef.current = true;
                     setIsDragging(true);
                     scrubAtClientX(e.clientX);
                 }}
                 onPointerMove={(e) => {
-                    if (!isDragging) return;
+                    if (!isDraggingRef.current) return;
                     scrubAtClientX(e.clientX);
                 }}
                 onPointerUp={(e) => {
-                    if (!isDragging) return;
-                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
+                    try {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                    } catch {}
                     setIsDragging(false);
                     dragRectRef.current = null;
                     lastSentSeekRef.current = null;
                 }}
                 onPointerCancel={() => {
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
                     setIsDragging(false);
                     dragRectRef.current = null;
                     lastSentSeekRef.current = null;
                 }}
                 onLostPointerCapture={() => {
+                    if (!isDraggingRef.current) return;
+                    isDraggingRef.current = false;
                     setIsDragging(false);
                     dragRectRef.current = null;
                     lastSentSeekRef.current = null;

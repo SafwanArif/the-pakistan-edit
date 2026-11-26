@@ -92,6 +92,7 @@ interface ParsedTrackSummary {
     sampleRate?: number;
     channels?: number;
     elstMediaTimeTicks: number;
+    elstEmptyDelayMovieTicks: number;
     frameCount: number;
     exactFps: number;
     isVfr: boolean;
@@ -109,6 +110,7 @@ const parseTrackBox = (view: DataView, trakStart: number, trakEnd: number): Pars
         width: 0,
         height: 0,
         elstMediaTimeTicks: 0,
+        elstEmptyDelayMovieTicks: 0,
         frameCount: 0,
         exactFps: 0,
         isVfr: false,
@@ -142,14 +144,17 @@ const parseTrackBox = (view: DataView, trakStart: number, trakEnd: number): Pars
                 if (edChild.type === 'elst' && edChild.dataStart + 8 <= edChild.end) {
                     const version = view.getUint8(edChild.dataStart);
                     const entryCount = view.getUint32(edChild.dataStart + 4, false);
-                    if (entryCount > 0) {
-                        const firstOff = edChild.dataStart + 8;
-                        if (version === 1 && firstOff + 16 <= edChild.end) {
-                            const mediaTime = readInt64(view, firstOff + 8);
-                            if (mediaTime >= 0) out.elstMediaTimeTicks = mediaTime;
-                        } else if (version === 0 && firstOff + 8 <= edChild.end) {
-                            const mediaTime = view.getInt32(firstOff + 4, false);
-                            if (mediaTime >= 0) out.elstMediaTimeTicks = mediaTime;
+                    const entrySize = version === 1 ? 20 : 12;
+                    let off = edChild.dataStart + 8;
+                    for (let i = 0; i < Math.min(entryCount, 8) && off + entrySize <= edChild.end; i++) {
+                        const segDur = version === 1 ? readUint64(view, off) : view.getUint32(off, false);
+                        const mediaTime = version === 1 ? readInt64(view, off + 8) : view.getInt32(off + 4, false);
+                        off += entrySize;
+                        if (mediaTime < 0) {
+                            out.elstEmptyDelayMovieTicks += segDur;
+                        } else {
+                            out.elstMediaTimeTicks = mediaTime;
+                            break;
                         }
                     }
                 }
@@ -324,6 +329,7 @@ export const parseMoovBuffer = (
 
     let videoTrack: ParsedTrackSummary | null = null;
     let audioTrack: ParsedTrackSummary | null = null;
+    let mvhdTimescale = 0;
     let mvhdDurationSec = 0;
     let isFragmented = false;
 
@@ -333,10 +339,12 @@ export const parseMoovBuffer = (
             if (version === 1 && child.dataStart + 32 <= child.end) {
                 const ts = view.getUint32(child.dataStart + 20, false);
                 const dur = readUint64(view, child.dataStart + 24);
+                mvhdTimescale = ts;
                 if (ts > 0) mvhdDurationSec = dur / ts;
             } else if (version === 0 && child.dataStart + 20 <= child.end) {
                 const ts = view.getUint32(child.dataStart + 12, false);
                 const dur = view.getUint32(child.dataStart + 16, false);
+                mvhdTimescale = ts;
                 if (ts > 0) mvhdDurationSec = dur / ts;
             }
         } else if (child.type === 'mvex') {
@@ -352,9 +360,14 @@ export const parseMoovBuffer = (
 
     const exactFps = videoTrack.exactFps > 0 ? videoTrack.exactFps : 30;
     const durationSec = videoTrack.durationSec > 0 ? videoTrack.durationSec : (mvhdDurationSec > 0 ? mvhdDurationSec : undefined);
-    const audioDelaySec = audioTrack && audioTrack.timescale > 0 && audioTrack.elstMediaTimeTicks > 0
-        ? Math.round((audioTrack.elstMediaTimeTicks / audioTrack.timescale) * 10000) / 10000
+    const mediaTrimSec = audioTrack && audioTrack.timescale > 0 && audioTrack.elstMediaTimeTicks > 0
+        ? audioTrack.elstMediaTimeTicks / audioTrack.timescale
         : 0;
+    const emptyEditDelaySec = audioTrack && mvhdTimescale > 0 && audioTrack.elstEmptyDelayMovieTicks > 0
+        ? audioTrack.elstEmptyDelayMovieTicks / mvhdTimescale
+        : 0;
+    const audioDelaySec = Math.round((emptyEditDelaySec - mediaTrimSec) * 10000) / 10000;
+    const resolvedAudioDelaySec = audioDelaySec === 0 ? 0 : (emptyEditDelaySec > 0 ? audioDelaySec : Math.round(mediaTrimSec * 10000) / 10000);
     const avDurationDeltaSec = audioTrack && videoTrack.durationSec > 0 && audioTrack.durationSec > 0
         ? Math.round((videoTrack.durationSec - audioTrack.durationSec) * 1000) / 1000
         : 0;
@@ -372,7 +385,7 @@ export const parseMoovBuffer = (
             hasAudio: Boolean(audioTrack),
             audioSampleRate: audioTrack?.sampleRate,
             audioChannels: audioTrack?.channels,
-            audioDelaySec,
+            audioDelaySec: resolvedAudioDelaySec,
             avDurationDeltaSec,
             maxGopSec: videoTrack.maxGopSec,
             avgGopSec: videoTrack.avgGopSec,
@@ -427,6 +440,244 @@ const inspectWebmHeader = (headerBytes: Uint8Array, fileSize: number): ClientMed
     };
 };
 
+const locateIsoBmffMoov = async (
+    blob: Blob
+): Promise<{ container: 'mp4' | 'mov'; moovBuf: ArrayBuffer; moovBeforeMdat: boolean } | null> => {
+    let container: 'mp4' | 'mov' = 'mp4';
+    let moovOffset = -1;
+    let moovSize = 0;
+    let mdatOffset = -1;
+    let pos = 0;
+    let boxCount = 0;
+
+    while (pos + 8 <= blob.size && boxCount < MAX_TOP_LEVEL_BOXES) {
+        boxCount += 1;
+        const hdrBuf = await blob.slice(pos, Math.min(blob.size, pos + 16)).arrayBuffer();
+        if (hdrBuf.byteLength < 8) break;
+        const hv = new DataView(hdrBuf);
+        let size = hv.getUint32(0, false);
+        const type = readFourCC(hv, 4);
+        let headerSize = 8;
+        if (size === 1) {
+            if (hdrBuf.byteLength < 16) break;
+            size = readUint64(hv, 8);
+            headerSize = 16;
+        } else if (size === 0) {
+            size = blob.size - pos;
+        }
+        if (size < headerSize || pos + size > blob.size) break;
+
+        if (type === 'ftyp' && hdrBuf.byteLength >= 12) {
+            const brand = readFourCC(hv, 8).toLowerCase();
+            if (brand === 'qt  ') container = 'mov';
+        } else if (type === 'moov') {
+            moovOffset = pos;
+            moovSize = size;
+            if (mdatOffset >= 0) break;
+        } else if (type === 'mdat' && mdatOffset < 0) {
+            mdatOffset = pos;
+            if (moovOffset >= 0) break;
+        }
+        pos += size;
+    }
+
+    if (moovOffset < 0 || moovSize < 16 || moovSize > MAX_MOOV_BYTES) return null;
+    const moovBuf = await blob.slice(moovOffset, moovOffset + moovSize).arrayBuffer();
+    return { container, moovBuf, moovBeforeMdat: mdatOffset < 0 || moovOffset < mdatOffset };
+};
+
+const buildM4aFtypBox = (): Uint8Array => {
+    // 28-byte ISO-BMFF ftyp: major='M4A ', minor=0, compatible=['M4A ', 'mp42', 'isom']
+    const out = new Uint8Array(28);
+    new DataView(out.buffer).setUint32(0, 28, false);
+    const brands = 'ftypM4A \0\0\0\0M4A mp42isom';
+    for (let i = 0; i < brands.length; i++) out[4 + i] = brands.charCodeAt(i);
+    return out;
+};
+
+/**
+ * Extracts a pure, `+faststart` audio-only `.m4a` `Blob` from a non-fragmented ISO-BMFF MP4/MOV `Blob`
+ * in `< 25ms` with zero dependencies and zero video-byte reads (slices only audio chunks via `blob.slice()`).
+ * Returns `null` for WebM/MKV, fragmented MP4 (`mvex`), or audio-less clips so callers fall back cleanly.
+ */
+export const extractAudioM4aBlob = async (blob: Blob): Promise<Blob | null> => {
+    try {
+        if (!blob || blob.size < 32) return null;
+        const probeHead = await blob.slice(0, 16).arrayBuffer();
+        if (probeHead.byteLength < 8 || new DataView(probeHead).getUint32(0, false) === 0x1a45dfa3) return null;
+
+        const located = await locateIsoBmffMoov(blob);
+        if (!located) return null;
+        const { moovBuf } = located;
+        const moovBytes = new Uint8Array(moovBuf);
+        const view = new DataView(moovBuf);
+        const rootType = readFourCC(view, 4);
+        const moovDataStart = rootType === 'moov' ? (view.getUint32(0, false) === 1 ? 16 : 8) : 0;
+
+        let mvhdBox: ParsedBox | null = null;
+        let audioTrakBox: ParsedBox | null = null;
+        let stscBox: ParsedBox | null = null;
+        let stszBox: ParsedBox | null = null;
+        let chunkOffsetBox: (ParsedBox & { is64: boolean }) | null = null;
+
+        for (const child of iterChildBoxes(view, moovDataStart, moovBuf.byteLength)) {
+            if (child.type === 'mvex') return null; // Fragmented MP4 requires moof/trun remuxing -> fallback
+            if (child.type === 'mvhd' && !mvhdBox) {
+                mvhdBox = child;
+            } else if (child.type === 'trak' && !audioTrakBox) {
+                let isSoun = false;
+                let foundStsc: ParsedBox | null = null;
+                let foundStsz: ParsedBox | null = null;
+                let foundChunkOff: (ParsedBox & { is64: boolean }) | null = null;
+                for (const tChild of iterChildBoxes(view, child.dataStart, child.end)) {
+                    if (tChild.type !== 'mdia') continue;
+                    for (const mChild of iterChildBoxes(view, tChild.dataStart, tChild.end)) {
+                        if (mChild.type === 'hdlr' && mChild.dataStart + 12 <= mChild.end) {
+                            isSoun = readFourCC(view, mChild.dataStart + 8) === 'soun';
+                        } else if (mChild.type === 'minf') {
+                            for (const minfChild of iterChildBoxes(view, mChild.dataStart, mChild.end)) {
+                                if (minfChild.type !== 'stbl') continue;
+                                for (const sChild of iterChildBoxes(view, minfChild.dataStart, minfChild.end)) {
+                                    if (sChild.type === 'stsc') foundStsc = sChild;
+                                    else if (sChild.type === 'stsz') foundStsz = sChild;
+                                    else if (sChild.type === 'stco') foundChunkOff = { ...sChild, is64: false };
+                                    else if (sChild.type === 'co64') foundChunkOff = { ...sChild, is64: true };
+                                }
+                            }
+                        }
+                    }
+                }
+                if (isSoun && foundStsc && foundStsz && foundChunkOff) {
+                    audioTrakBox = child;
+                    stscBox = foundStsc;
+                    stszBox = foundStsz;
+                    chunkOffsetBox = foundChunkOff;
+                }
+            }
+        }
+
+        if (!mvhdBox || !audioTrakBox || !stscBox || !stszBox || !chunkOffsetBox) return null;
+        if (chunkOffsetBox.dataStart + 8 > chunkOffsetBox.end || stscBox.dataStart + 8 > stscBox.end || stszBox.dataStart + 12 > stszBox.end) return null;
+
+        const chunkCount = view.getUint32(chunkOffsetBox.dataStart + 4, false);
+        const entryByteSize = chunkOffsetBox.is64 ? 8 : 4;
+        if (chunkCount === 0 || chunkOffsetBox.dataStart + 8 + chunkCount * entryByteSize > chunkOffsetBox.end) return null;
+
+        // Parse stsc (1-based chunk index -> samples per chunk)
+        const stscCount = view.getUint32(stscBox.dataStart + 4, false);
+        if (stscCount === 0 || stscBox.dataStart + 8 + stscCount * 12 > stscBox.end) return null;
+        const stsc: Array<{ firstChunk: number; spc: number }> = [];
+        for (let i = 0; i < stscCount; i++) {
+            const off = stscBox.dataStart + 8 + i * 12;
+            stsc.push({ firstChunk: view.getUint32(off, false), spc: view.getUint32(off + 4, false) });
+        }
+
+        // Parse stsz (uniform sample size or per-sample size table)
+        const uniformSampleSize = view.getUint32(stszBox.dataStart + 4, false);
+        const sampleCount = view.getUint32(stszBox.dataStart + 8, false);
+        if (sampleCount === 0) return null;
+        if (uniformSampleSize === 0 && stszBox.dataStart + 12 + sampleCount * 4 > stszBox.end) return null;
+
+        // Compute exact byte range for each audio chunk & coalesce adjacent slices to minimize BlobPart count
+        const newChunkRelOffsets = new Float64Array(chunkCount);
+        const slices: Blob[] = [];
+        let sampleIdx = 0;
+        let stscIdx = 0;
+        let totalAudioBytes = 0;
+        let runStart = -1;
+        let runEnd = -1;
+
+        for (let c = 0; c < chunkCount; c++) {
+            const chunkNum = c + 1;
+            while (stscIdx + 1 < stsc.length && stsc[stscIdx + 1]!.firstChunk <= chunkNum) {
+                stscIdx += 1;
+            }
+            const spc = stsc[stscIdx]!.spc;
+            if (sampleIdx + spc > sampleCount) return null;
+
+            let chunkBytes = 0;
+            if (uniformSampleSize > 0) {
+                chunkBytes = spc * uniformSampleSize;
+            } else {
+                const tableBase = stszBox.dataStart + 12;
+                for (let s = 0; s < spc; s++) {
+                    chunkBytes += view.getUint32(tableBase + (sampleIdx + s) * 4, false);
+                }
+            }
+            sampleIdx += spc;
+
+            const offPos = chunkOffsetBox.dataStart + 8 + c * entryByteSize;
+            const srcOffset = chunkOffsetBox.is64 ? readUint64(view, offPos) : view.getUint32(offPos, false);
+            if (srcOffset < 0 || srcOffset + chunkBytes > blob.size) return null;
+
+            newChunkRelOffsets[c] = totalAudioBytes;
+            totalAudioBytes += chunkBytes;
+
+            if (chunkBytes > 0) {
+                if (runStart >= 0 && srcOffset === runEnd) {
+                    runEnd = srcOffset + chunkBytes;
+                } else {
+                    if (runStart >= 0) slices.push(blob.slice(runStart, runEnd));
+                    runStart = srcOffset;
+                    runEnd = srcOffset + chunkBytes;
+                }
+            }
+        }
+        if (runStart >= 0) slices.push(blob.slice(runStart, runEnd));
+        if (totalAudioBytes <= 0 || slices.length === 0) return null;
+
+        // Build `+faststart` `.m4a`: [ftyp][moov(mvhd + cloned soun trak with rewritten stco/co64)][mdat]
+        const ftyp = buildM4aFtypBox();
+        const mvhdSlice = moovBytes.subarray(mvhdBox.start, mvhdBox.end);
+        const trakSlice = moovBytes.subarray(audioTrakBox.start, audioTrakBox.end);
+        const newMoovSize = 8 + mvhdSlice.length + trakSlice.length;
+        const newMoov = new Uint8Array(newMoovSize);
+        const newMoovView = new DataView(newMoov.buffer);
+        newMoovView.setUint32(0, newMoovSize, false);
+        newMoov[4] = 0x6d; newMoov[5] = 0x6f; newMoov[6] = 0x6f; newMoov[7] = 0x76; // 'moov'
+        newMoov.set(mvhdSlice, 8);
+        const trakDestStart = 8 + mvhdSlice.length;
+        newMoov.set(trakSlice, trakDestStart);
+
+        const use64Mdat = totalAudioBytes + 8 > 0xffffffff;
+        const mdatHeaderSize = use64Mdat ? 16 : 8;
+        const mdatDataStart = ftyp.length + newMoovSize + mdatHeaderSize;
+        if (!chunkOffsetBox.is64 && mdatDataStart + totalAudioBytes > 0xffffffff) return null;
+
+        // Patch chunk offsets in-place inside cloned soun trak (exact same byte length -> zero parent box resizing!)
+        const tableDestOffset = trakDestStart + (chunkOffsetBox.dataStart - audioTrakBox.start) + 8;
+        for (let c = 0; c < chunkCount; c++) {
+            const absOff = mdatDataStart + newChunkRelOffsets[c]!;
+            const dest = tableDestOffset + c * entryByteSize;
+            if (chunkOffsetBox.is64) {
+                newMoovView.setUint32(dest, Math.floor(absOff / 4294967296), false);
+                newMoovView.setUint32(dest + 4, absOff >>> 0, false);
+            } else {
+                newMoovView.setUint32(dest, absOff >>> 0, false);
+            }
+        }
+
+        const mdatHeader = new Uint8Array(mdatHeaderSize);
+        const mdatView = new DataView(mdatHeader.buffer);
+        if (use64Mdat) {
+            mdatView.setUint32(0, 1, false);
+            mdatHeader[4] = 0x6d; mdatHeader[5] = 0x64; mdatHeader[6] = 0x61; mdatHeader[7] = 0x74;
+            const totalMdat = totalAudioBytes + 16;
+            mdatView.setUint32(8, Math.floor(totalMdat / 4294967296), false);
+            mdatView.setUint32(12, totalMdat >>> 0, false);
+        } else {
+            mdatView.setUint32(0, (totalAudioBytes + 8) >>> 0, false);
+            mdatHeader[4] = 0x6d; mdatHeader[5] = 0x64; mdatHeader[6] = 0x61; mdatHeader[7] = 0x74;
+        }
+
+        return new Blob([ftyp.buffer as ArrayBuffer, newMoov.buffer as ArrayBuffer, mdatHeader.buffer as ArrayBuffer, ...slices], {
+            type: 'audio/mp4',
+        });
+    } catch {
+        return null;
+    }
+};
+
 /**
  * Inspects an uploaded `Blob` / `File` locally in `< 5ms` by reading only its container header (`moov` or EBML header)
  * to extract video/audio codecs, GOP spacing, `+faststart` health, and exact `stss` keyframe timestamps.
@@ -443,49 +694,13 @@ export const inspectVideoBlob = async (blob: Blob): Promise<ClientMediaInspectio
             return inspectWebmHeader(new Uint8Array(ebmlSlice), blob.size);
         }
 
-        // ISO-BMFF (MP4 / MOV / M4V): walk top-level boxes without reading `mdat`
-        let container: 'mp4' | 'mov' = 'mp4';
-        let moovOffset = -1;
-        let moovSize = 0;
-        let mdatOffset = -1;
-        let pos = 0;
-        let boxCount = 0;
-
-        while (pos + 8 <= blob.size && boxCount < MAX_TOP_LEVEL_BOXES) {
-            boxCount += 1;
-            const hdrBuf = await blob.slice(pos, Math.min(blob.size, pos + 16)).arrayBuffer();
-            if (hdrBuf.byteLength < 8) break;
-            const hv = new DataView(hdrBuf);
-            let size = hv.getUint32(0, false);
-            const type = readFourCC(hv, 4);
-            let headerSize = 8;
-            if (size === 1) {
-                if (hdrBuf.byteLength < 16) break;
-                size = readUint64(hv, 8);
-                headerSize = 16;
-            } else if (size === 0) {
-                size = blob.size - pos;
-            }
-            if (size < headerSize || pos + size > blob.size) break;
-
-            if (type === 'ftyp' && hdrBuf.byteLength >= 12) {
-                const brand = readFourCC(hv, 8).toLowerCase();
-                if (brand === 'qt  ') container = 'mov';
-            } else if (type === 'moov') {
-                moovOffset = pos;
-                moovSize = size;
-                if (mdatOffset >= 0) break;
-            } else if (type === 'mdat' && mdatOffset < 0) {
-                mdatOffset = pos;
-                if (moovOffset >= 0) break;
-            }
-            pos += size;
-        }
-
-        if (moovOffset < 0 || moovSize < 16 || moovSize > MAX_MOOV_BYTES) return null;
-        const moovBuf = await blob.slice(moovOffset, moovOffset + moovSize).arrayBuffer();
-        const moovBeforeMdat = mdatOffset < 0 || moovOffset < mdatOffset;
-        return parseMoovBuffer(moovBuf, { container, moovBeforeMdat, fileSize: blob.size });
+        const located = await locateIsoBmffMoov(blob);
+        if (!located) return null;
+        return parseMoovBuffer(located.moovBuf, {
+            container: located.container,
+            moovBeforeMdat: located.moovBeforeMdat,
+            fileSize: blob.size,
+        });
     } catch {
         return null;
     }

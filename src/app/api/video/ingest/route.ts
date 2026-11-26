@@ -15,6 +15,55 @@ const MAX_CACHED_VIDEOS = 8;
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const STALE_TEMP_AGE_MS = 60 * 60 * 1000;
 const FRAME_LOG_SUFFIX = ".tpe-frame-index.json";
+const AUDIO_SIDECAR_SUFFIX = ".tpe-audio.m4a";
+
+const computeGopStats = (frameIndex: SourceFrameIndex | null, durationSec: number): Pick<SourceMediaInfo, "maxGopSec" | "avgGopSec" | "keyframeCount" | "isVfr"> => {
+    if (!frameIndex || !frameIndex.keyframes.length) return {};
+    const fps = frameIndex.fps > 0 ? frameIndex.fps : frameIndex.nominalFps;
+    const times: number[] = [];
+    for (const idx of frameIndex.keyframes) {
+        const t = !frameIndex.cfr && frameIndex.pts[idx] !== undefined ? frameIndex.pts[idx]! : (fps > 0 ? idx / fps : NaN);
+        if (Number.isFinite(t) && (times.length === 0 || t > times[times.length - 1]!)) times.push(t);
+    }
+    if (!times.length) return { isVfr: !frameIndex.cfr };
+    let maxGap = 0;
+    let gapSum = 0;
+    for (let i = 1; i < times.length; i++) {
+        const gap = times[i]! - times[i - 1]!;
+        if (gap > maxGap) maxGap = gap;
+        gapSum += gap;
+    }
+    const tailGap = durationSec > times[times.length - 1]! ? durationSec - times[times.length - 1]! : 0;
+    if (tailGap > maxGap) maxGap = tailGap;
+    return {
+        maxGopSec: Math.round((times.length >= 2 ? maxGap : durationSec) * 1000) / 1000,
+        avgGopSec: Math.round((times.length >= 2 ? gapSum / (times.length - 1) : durationSec) * 1000) / 1000,
+        keyframeCount: times.length,
+        isVfr: !frameIndex.cfr,
+    };
+};
+
+const extractAudioSidecar = async (mp4Path: string, signal?: AbortSignal): Promise<void> => {
+    const sidecarPath = `${mp4Path}${AUDIO_SIDECAR_SUFFIX}`;
+    try {
+        await spawnExec("ffmpeg", [
+            "-y",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-nostats",
+            "-i", mp4Path,
+            "-vn",
+            "-sn",
+            "-dn",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            sidecarPath,
+        ], { signal, timeoutMs: 30_000 });
+    } catch (err) {
+        await fs.promises.unlink(sidecarPath).catch(() => {});
+        if (signal?.aborted) throw err;
+    }
+};
 
 const probeSourceFrameIndex = async (
     inputPath: string,
@@ -142,13 +191,21 @@ const runLosslessVideoIngest = async (
             }
         } : undefined,
     });
-    onStage?.("INDEXING SOURCE FRAMES...");
-    const frameIndex = await probeSourceFrameIndex(outputPath, "", fps, mediaInfo.exactFps, signal);
+    onStage?.("INDEXING SOURCE FRAMES & AUDIO RAIL...");
+    const [frameIndex] = await Promise.all([
+        probeSourceFrameIndex(outputPath, "", fps, mediaInfo.exactFps, signal),
+        mediaInfo.hasAudio ? extractAudioSidecar(outputPath, signal) : Promise.resolve(),
+    ]);
     return {
         fps,
         duration: durationSec,
         frameIndex,
-        mediaInfo: { ...mediaInfo, moovBeforeMdat: true, container: "mp4" },
+        mediaInfo: {
+            ...mediaInfo,
+            ...computeGopStats(frameIndex, durationSec),
+            moovBeforeMdat: true,
+            container: "mp4",
+        },
     };
 };
 
@@ -157,16 +214,21 @@ const pruneCacheDir = async (keepFilename: string): Promise<void> => {
     try {
         const entries = await fs.promises.readdir(CACHE_DIR, { withFileTypes: true });
         const keepFrameIndex = `${keepFilename}${FRAME_LOG_SUFFIX}`;
+        const keepAudioSidecar = `${keepFilename}${AUDIO_SIDECAR_SUFFIX}`;
         const mediaFiles: { name: string; mtimeMs: number }[] = [];
-        const frameIndexFiles: { name: string; mtimeMs: number }[] = [];
+        const sidecarFiles: { name: string; suffix: string }[] = [];
 
         for (const entry of entries) {
-            if (!entry.isFile() || entry.name === keepFilename || entry.name === keepFrameIndex) continue;
+            if (!entry.isFile() || entry.name === keepFilename || entry.name === keepFrameIndex || entry.name === keepAudioSidecar) continue;
             const fullPath = path.join(CACHE_DIR, entry.name);
             const stat = await fs.promises.stat(fullPath).catch(() => null);
             if (!stat) continue;
             if (entry.name.endsWith(FRAME_LOG_SUFFIX)) {
-                frameIndexFiles.push({ name: entry.name, mtimeMs: stat.mtimeMs });
+                sidecarFiles.push({ name: entry.name, suffix: FRAME_LOG_SUFFIX });
+                continue;
+            }
+            if (entry.name.endsWith(AUDIO_SIDECAR_SUFFIX)) {
+                sidecarFiles.push({ name: entry.name, suffix: AUDIO_SIDECAR_SUFFIX });
                 continue;
             }
             if (!SAFE_MEDIA_ID_RE.test(entry.name)) {
@@ -183,11 +245,12 @@ const pruneCacheDir = async (keepFilename: string): Promise<void> => {
         for (const stale of mediaFiles.slice(MAX_CACHED_VIDEOS - 1)) {
             await fs.promises.unlink(path.join(CACHE_DIR, stale.name)).catch(() => {});
             await fs.promises.unlink(path.join(CACHE_DIR, `${stale.name}${FRAME_LOG_SUFFIX}`)).catch(() => {});
+            await fs.promises.unlink(path.join(CACHE_DIR, `${stale.name}${AUDIO_SIDECAR_SUFFIX}`)).catch(() => {});
         }
-        for (const idxFile of frameIndexFiles) {
-            const ownerMedia = idxFile.name.slice(0, -FRAME_LOG_SUFFIX.length);
+        for (const sidecar of sidecarFiles) {
+            const ownerMedia = sidecar.name.slice(0, -sidecar.suffix.length);
             if (!keptMediaNames.has(ownerMedia)) {
-                await fs.promises.unlink(path.join(CACHE_DIR, idxFile.name)).catch(() => {});
+                await fs.promises.unlink(path.join(CACHE_DIR, sidecar.name)).catch(() => {});
             }
         }
     } catch { /* non-fatal cache pruning */ }
@@ -219,15 +282,23 @@ const parseByteRange = (rangeHeader: string, totalSize: number): { start: number
     return { start, end };
 };
 
-const resolveMediaFile = async (request: Request): Promise<{ filePath: string; totalSize: number } | NextResponse> => {
-    const id = new URL(request.url).searchParams.get("id") || "";
+const resolveMediaFile = async (request: Request): Promise<{ filePath: string; totalSize: number; contentType: string } | NextResponse> => {
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id") || "";
     if (!SAFE_MEDIA_ID_RE.test(id)) {
         return NextResponse.json({ error: "Invalid video id" }, { status: 400 });
     }
-    const filePath = path.join(CACHE_DIR, path.basename(id));
+    const basePath = path.join(CACHE_DIR, path.basename(id));
+    if (url.searchParams.get("track") === "audio") {
+        const sidecarPath = `${basePath}${AUDIO_SIDECAR_SUFFIX}`;
+        const sidecarStat = await fs.promises.stat(sidecarPath).catch(() => null);
+        if (sidecarStat && sidecarStat.size > 0) {
+            return { filePath: sidecarPath, totalSize: sidecarStat.size, contentType: "audio/mp4" };
+        }
+    }
     try {
-        const stat = await fs.promises.stat(filePath);
-        return { filePath, totalSize: stat.size };
+        const stat = await fs.promises.stat(basePath);
+        return { filePath: basePath, totalSize: stat.size, contentType: "video/mp4" };
     } catch {
         return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
@@ -295,7 +366,10 @@ export async function POST(request: Request) {
                         mediaInfo: metadata.mediaInfo,
                     });
                 } catch (err) {
-                    if (outPath) await fs.promises.unlink(outPath).catch(() => {});
+                    if (outPath) {
+                        await fs.promises.unlink(outPath).catch(() => {});
+                        await fs.promises.unlink(`${outPath}${AUDIO_SIDECAR_SUFFIX}`).catch(() => {});
+                    }
                     const msg = err instanceof Error ? err.message : "Video ingest failed";
                     console.error("VIDEO_INGEST_ERROR:", msg);
                     send({ error: msg });
@@ -311,7 +385,10 @@ export async function POST(request: Request) {
         const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
         return NextResponse.json({ url: mediaUrl, fps: metadata.fps, duration: metadata.duration, frameIndexUrl, mediaInfo: metadata.mediaInfo });
     } catch (error) {
-        if (outPath) await fs.promises.unlink(outPath).catch(() => {});
+        if (outPath) {
+            await fs.promises.unlink(outPath).catch(() => {});
+            await fs.promises.unlink(`${outPath}${AUDIO_SIDECAR_SUFFIX}`).catch(() => {});
+        }
         const message = error instanceof Error ? error.message : "Video ingest failed";
         console.error("VIDEO_INGEST_ERROR:", message);
         return NextResponse.json({ error: message }, { status: 500 });
@@ -329,7 +406,7 @@ export async function HEAD(request: Request) {
         headers: {
             "Accept-Ranges": "bytes",
             "Content-Length": String(resolved.totalSize),
-            "Content-Type": "video/mp4",
+            "Content-Type": resolved.contentType,
             "Cache-Control": "private, max-age=31536000, immutable",
         },
     });
@@ -357,7 +434,7 @@ export async function GET(request: Request) {
     }
     const resolved = await resolveMediaFile(request);
     if (resolved instanceof NextResponse) return resolved;
-    const { filePath, totalSize } = resolved;
+    const { filePath, totalSize, contentType } = resolved;
     const rangeHeader = request.headers.get("range");
 
     if (rangeHeader) {
@@ -372,7 +449,7 @@ export async function GET(request: Request) {
                 "Content-Range": `bytes ${start}-${end}/${totalSize}`,
                 "Accept-Ranges": "bytes",
                 "Content-Length": String(end - start + 1),
-                "Content-Type": "video/mp4",
+                "Content-Type": contentType,
                 "Cache-Control": "private, max-age=31536000, immutable",
             },
         });
@@ -383,13 +460,13 @@ export async function GET(request: Request) {
         headers: {
             "Accept-Ranges": "bytes",
             "Content-Length": String(totalSize),
-            "Content-Type": "video/mp4",
+            "Content-Type": contentType,
             "Cache-Control": "private, max-age=31536000, immutable",
         },
     });
 }
 
-/** Immediately removes a cached studio video and its frame-index sidecar on explicit clear/reset. */
+/** Immediately removes a cached studio video and its frame-index & audio sidecars on explicit clear/reset. */
 export async function DELETE(request: Request) {
     if (process.env.VERCEL === "1") {
         return new Response(null, { status: 204 });
@@ -402,6 +479,7 @@ export async function DELETE(request: Request) {
     await Promise.all([
         fs.promises.unlink(path.join(CACHE_DIR, base)).catch(() => {}),
         fs.promises.unlink(path.join(CACHE_DIR, `${base}${FRAME_LOG_SUFFIX}`)).catch(() => {}),
+        fs.promises.unlink(path.join(CACHE_DIR, `${base}${AUDIO_SIDECAR_SUFFIX}`)).catch(() => {}),
     ]);
     return new Response(null, { status: 204 });
 }

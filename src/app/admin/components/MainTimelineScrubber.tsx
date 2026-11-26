@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
-import { safeReleasePointerCapture } from "../utils/domUtils";
+import { isPrimaryPointer, safeReleasePointerCapture } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 interface SceneMarker {
@@ -158,6 +158,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const hoverPillRef = useRef<HTMLDivElement>(null);
     const dragRectRef = useRef<DOMRect | null>(null);
     const lastScrubTimeRef = useRef<number | null>(null);
+    const activePointerIdRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
     const handleDragCleanupRef = useRef<(() => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -341,12 +342,13 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 tabIndex={0}
                 onKeyDown={(e) => {
                     const step = e.shiftKey ? 5 : 1;
+                    const live = isPlaying && liveClock ? clamp(liveClock.getTime(), 0, safeDuration) : currentTime;
                     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
                         e.preventDefault();
-                        onJumpToTime(Math.min(safeDuration, currentTime + step));
+                        onJumpToTime(Math.min(safeDuration, live + step));
                     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
                         e.preventDefault();
-                        onJumpToTime(Math.max(0, currentTime - step));
+                        onJumpToTime(Math.max(0, live - step));
                     } else if (e.key === 'Home') {
                         e.preventDefault();
                         onJumpToTime(0);
@@ -359,7 +361,9 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                 }}
                 onPointerDown={(e) => {
+                    if (!isPrimaryPointer(e) || isDraggingRef.current) return;
                     e.currentTarget.setPointerCapture(e.pointerId);
+                    activePointerIdRef.current = e.pointerId;
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     isDraggingRef.current = true;
                     setIsDragging(true);
@@ -371,6 +375,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 }}
                 onPointerMove={(e) => {
                     if (dragTarget) return;
+                    if (isDraggingRef.current && e.pointerId !== activePointerIdRef.current) return;
                     const next = timeAtClientX(e.clientX);
                     updateHoverDom(next.pct, next.time);
                     if (isDraggingRef.current && next.time !== lastScrubTimeRef.current) {
@@ -379,8 +384,9 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     }
                 }}
                 onPointerUp={(e) => {
-                    if (!isDraggingRef.current) return;
+                    if (!isDraggingRef.current || e.pointerId !== activePointerIdRef.current) return;
                     isDraggingRef.current = false;
+                    activePointerIdRef.current = null;
                     safeReleasePointerCapture(e.currentTarget, e.pointerId);
                     setIsDragging(false);
                     const next = timeAtClientX(e.clientX);
@@ -389,9 +395,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     if (e.pointerType !== "mouse") hideHoverDom();
                     onScrubEnd(next.time);
                 }}
-                onPointerCancel={() => {
-                    if (!isDraggingRef.current) return;
+                onPointerCancel={(e) => {
+                    if (!isDraggingRef.current || (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current)) return;
                     isDraggingRef.current = false;
+                    activePointerIdRef.current = null;
                     setIsDragging(false);
                     const finalTime = lastScrubTimeRef.current ?? currentTime;
                     dragRectRef.current = null;
@@ -402,6 +409,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 onLostPointerCapture={() => {
                     if (!isDraggingRef.current) return;
                     isDraggingRef.current = false;
+                    activePointerIdRef.current = null;
                     setIsDragging(false);
                     const finalTime = lastScrubTimeRef.current ?? currentTime;
                     dragRectRef.current = null;

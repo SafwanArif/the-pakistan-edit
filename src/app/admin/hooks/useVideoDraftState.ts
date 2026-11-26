@@ -18,7 +18,7 @@ import { del, get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
 import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
 import { createLivePlaybackClock } from '../utils/livePlaybackClock';
-import { extractKeyframeTimesFromFrameIndex, inspectVideoBlob } from '../utils/clientMediaInspector';
+import { extractAudioM4aBlob, extractKeyframeTimesFromFrameIndex, inspectVideoBlob } from '../utils/clientMediaInspector';
 import { STORAGE_KEYS } from '../utils/storageKeys';
 import {
     inferAspectRatioFromDimensions,
@@ -41,6 +41,21 @@ export const useVideoDraftState = () => {
     const [videoDraft, setVideoDraft] = useState<VideoDraft>(createDefaultVideoDraft());
     const [isOptimisingVideo, setIsOptimisingVideo] = useState(false);
     const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+    const [companionAudioUrl, setCompanionAudioUrl] = useState<string | undefined>(undefined);
+    const companionAudioUrlRef = useRef<string | undefined>(undefined);
+
+    const replaceCompanionAudioUrl = useCallback((next?: string) => {
+        if (companionAudioUrlRef.current && companionAudioUrlRef.current !== next) {
+            revokeBlobUrl(companionAudioUrlRef.current);
+        }
+        companionAudioUrlRef.current = next;
+        setCompanionAudioUrl(next);
+    }, []);
+
+    const createCompanionAudioUrlForBlob = useCallback(async (blob: Blob): Promise<string> => {
+        const m4aBlob = await extractAudioM4aBlob(blob).catch(() => null);
+        return URL.createObjectURL(m4aBlob ?? blob);
+    }, []);
 
     // Playback state synchronised across all preview cards
     const [liveClock] = useState(() => createLivePlaybackClock(0));
@@ -57,6 +72,7 @@ export const useVideoDraftState = () => {
     const ingestAbortRef = useRef<AbortController | null>(null);
     const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
     const rVfcAnchorRef = useRef<{ time: number; perfNow: number } | null>(null);
+    const lockedLoopSceneIdxRef = useRef<number | null>(null);
     const lastDiscreteKeyRef = useRef("");
 
     useEffect(() => {
@@ -64,7 +80,11 @@ export const useVideoDraftState = () => {
     }, [videoDraft.scenes]);
 
     useEffect(() => {
-        return () => ingestAbortRef.current?.abort();
+        return () => {
+            ingestAbortRef.current?.abort();
+            revokeBlobUrl(companionAudioUrlRef.current);
+            companionAudioUrlRef.current = undefined;
+        };
     }, []);
     const videoDraftRef = useRef<VideoDraft>(videoDraft);
     const currentTimeRef = useRef(currentTime);
@@ -115,15 +135,18 @@ export const useVideoDraftState = () => {
             if (previousUrl?.startsWith('blob:')) revokeBlobUrl(previousUrl);
             else deleteServerCachedVideo(previousUrl);
             const fallbackUrl = URL.createObjectURL(blob);
-            setIngestStatus("INSPECTING CODECS & DURATION...");
-            const [meta, inspected] = await Promise.all([
+            setIngestStatus("INSPECTING CODECS & AUDIO RAIL...");
+            const [meta, inspected, audioUrl] = await Promise.all([
                 probeVideoMetadata(fallbackUrl),
                 inspectVideoBlob(blob).catch(() => null),
+                createCompanionAudioUrlForBlob(blob),
             ]);
             if (controller.signal.aborted) {
                 revokeBlobUrl(fallbackUrl);
+                revokeBlobUrl(audioUrl);
                 return;
             }
+            replaceCompanionAudioUrl(audioUrl);
             const base = resetClipBoundFields(videoDraftRef.current);
             const clipDuration = meta?.duration ?? inspected?.durationSec ?? base.videoDuration ?? 60;
             const ratio = meta?.aspectRatio ?? inferAspectRatioFromDimensions(inspected?.mediaInfo.width, inspected?.mediaInfo.height) ?? base.aspectRatio;
@@ -222,6 +245,7 @@ export const useVideoDraftState = () => {
 
             if (previousUrl?.startsWith('blob:')) revokeBlobUrl(previousUrl);
             else if (!options?.preserveScenes && previousUrl && previousUrl !== url) deleteServerCachedVideo(previousUrl);
+            replaceCompanionAudioUrl(undefined);
             await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
             await updateVideoDraft(nextDraft);
         } catch (err) {
@@ -235,7 +259,7 @@ export const useVideoDraftState = () => {
                 setIngestStatus(null);
             }
         }
-    }, [updateVideoDraft]);
+    }, [createCompanionAudioUrlForBlob, replaceCompanionAudioUrl, updateVideoDraft]);
 
     useEffect(() => {
         let cancelled = false;
@@ -264,6 +288,17 @@ export const useVideoDraftState = () => {
             const hydratedUrl = draft.videoUrl;
             setVideoDraft(draft);
             setIsMounted(true);
+
+            // Build pure `.m4a` companion audio rail for local `blob:` sessions on reload (`A5`)
+            if (savedBlob && hydratedUrl?.startsWith('blob:')) {
+                void createCompanionAudioUrlForBlob(savedBlob).then((audioUrl) => {
+                    if (cancelled || videoDraftRef.current.videoUrl !== hydratedUrl) {
+                        revokeBlobUrl(audioUrl);
+                        return;
+                    }
+                    replaceCompanionAudioUrl(audioUrl);
+                }).catch(() => {});
+            }
 
             // Rehydrate transient in-memory keyframe & codec inspection from IndexedDB blob on page reload
             if (savedBlob && (!draft.sourceKeyframeTimes?.length || !draft.sourceMediaInfo)) {
@@ -327,7 +362,7 @@ export const useVideoDraftState = () => {
         };
         void init();
         return () => { cancelled = true; };
-    }, [ingestVideoBlob, scheduleDraftSave]);
+    }, [createCompanionAudioUrlForBlob, ingestVideoBlob, replaceCompanionAudioUrl, scheduleDraftSave]);
 
     // Synthetic 120Hz clock ONLY when no native <video> is driving playback (no video, Photo scene, or Outro).
     // During native video playback, `useSmoothFramingLoop` is the single 120Hz rAF PLL emitting directly to `liveClock`.
@@ -389,6 +424,11 @@ export const useVideoDraftState = () => {
             const exactPausedTime = liveClock.getTime();
             currentTimeRef.current = exactPausedTime;
             setCurrentTime(exactPausedTime);
+            lockedLoopSceneIdxRef.current = null;
+        } else if (playbackModeRef.current === 'loop-angle') {
+            const t = currentTimeRef.current;
+            const idx = sceneBoundsRef.current.findIndex(b => t >= b.start && t < b.end);
+            lockedLoopSceneIdxRef.current = idx >= 0 ? idx : null;
         }
         isPlayingRef.current = !wasPlaying;
         setIsPlaying(!wasPlaying);
@@ -397,6 +437,12 @@ export const useVideoDraftState = () => {
     const seekTo = useCallback((time: number) => {
         rVfcAnchorRef.current = { time, perfNow: performance.now() };
         currentTimeRef.current = time;
+        if (playbackModeRef.current === 'loop-angle') {
+            const idx = sceneBoundsRef.current.findIndex(b => time >= b.start && time < b.end);
+            lockedLoopSceneIdxRef.current = idx >= 0 ? idx : null;
+        } else {
+            lockedLoopSceneIdxRef.current = null;
+        }
         liveClock.emit(time);
         setCurrentTime(time);
         setSeekNonce((n) => n + 1);
@@ -413,7 +459,10 @@ export const useVideoDraftState = () => {
     const syncTimeFromVideo = useCallback((mediaTime: number, mediaDuration?: number) => {
         if (playbackModeRef.current === 'loop-angle') {
             const prev = currentTimeRef.current;
-            const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
+            const lockedIdx = lockedLoopSceneIdxRef.current;
+            const active = (lockedIdx !== null ? sceneBoundsRef.current[lockedIdx] : undefined)
+                ?? sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
+            if (active && lockedIdx === null) lockedLoopSceneIdxRef.current = active.idx;
             const { hasReHook, preStoryDur, hookOffset, storyOffset } = getTimelineStructure(videoDraftRef.current.scenes || []);
             // Hook/Re-Hook wraps with custom jumps are owned exclusively by `syncTimelineTick` (0.022s cut) to prevent double-seeks
             const ownedByVideoSync = Boolean(active && active.start < preStoryDur && (hasReHook || hookOffset > 0 || storyOffset > 0));
@@ -429,10 +478,11 @@ export const useVideoDraftState = () => {
 
         const now = performance.now();
         const prevAnchor = rVfcAnchorRef.current;
+        // Widen elapsed clamp to 1.0s so a single 350ms 4K decode hiccup doesn't trigger `isJump` root re-renders (`A17`)
         const expectedT = prevAnchor
-            ? prevAnchor.time + Math.min(0.12, Math.max(0, (now - prevAnchor.perfNow) / 1000))
+            ? prevAnchor.time + Math.min(1.0, Math.max(0, (now - prevAnchor.perfNow) / 1000))
             : currentTimeRef.current;
-        const isJump = Math.abs(mediaTime - expectedT) >= 0.22;
+        const isJump = Math.abs(mediaTime - expectedT) >= 0.35;
         rVfcAnchorRef.current = { time: mediaTime, perfNow: now };
         currentTimeRef.current = mediaTime;
 
@@ -451,11 +501,14 @@ export const useVideoDraftState = () => {
             setCurrentTime(mediaTime);
         }
 
-        if (mediaDuration && mediaDuration > 0 && !Number.isNaN(mediaDuration)) {
+        if (mediaDuration !== undefined && Number.isFinite(mediaDuration) && mediaDuration > 0) {
             if (!curDraft.videoDuration || Math.abs(curDraft.videoDuration - mediaDuration) > 1.5) {
-                const updated: VideoDraft = { ...curDraft, videoDuration: mediaDuration };
-                setVideoDraft(updated);
-                scheduleDraftSave(updated);
+                setVideoDraft((prev) => {
+                    if (prev.videoDuration && Math.abs(prev.videoDuration - mediaDuration) <= 1.5) return prev;
+                    const updated: VideoDraft = { ...prev, videoDuration: mediaDuration };
+                    scheduleDraftSave(updated);
+                    return updated;
+                });
             }
         }
     }, [totalDuration, seekTo, scheduleDraftSave]);
@@ -472,6 +525,7 @@ export const useVideoDraftState = () => {
         const current = videoDraftRef.current;
         if (current.videoUrl?.startsWith('blob:')) revokeBlobUrl(current.videoUrl);
         else deleteServerCachedVideo(current.videoUrl);
+        replaceCompanionAudioUrl(undefined);
         await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
         await updateVideoDraft({
             ...resetClipBoundFields(current),
@@ -481,7 +535,7 @@ export const useVideoDraftState = () => {
             sourceName: "",
             creditName: "",
         });
-    }, [liveClock, updateVideoDraft]);
+    }, [liveClock, replaceCompanionAudioUrl, updateVideoDraft]);
 
     const resetVideoDraft = useCallback(async () => {
         ingestAbortRef.current?.abort();
@@ -490,6 +544,7 @@ export const useVideoDraftState = () => {
         setIngestStatus(null);
         const current = videoDraftRef.current;
         revokeDraftBlobUrls(current);
+        replaceCompanionAudioUrl(undefined);
         deleteServerCachedVideo(current.videoUrl);
         const defaultDraft = createDefaultVideoDraft();
         setVideoDraft(defaultDraft);
@@ -499,10 +554,10 @@ export const useVideoDraftState = () => {
         setCurrentTime(0);
         await saveDraftNow(defaultDraft);
         await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
-    }, [liveClock, saveDraftNow]);
+    }, [liveClock, replaceCompanionAudioUrl, saveDraftNow]);
 
     return {
-        isMounted, videoDraft, updateVideoDraft, clearVideo, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
+        isMounted, videoDraft, companionAudioUrl, updateVideoDraft, clearVideo, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
         isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, liveClock, seekNonce,
         setCurrentTime, seekTo, isMuted, toggleMute, syncTimeFromVideo
     };

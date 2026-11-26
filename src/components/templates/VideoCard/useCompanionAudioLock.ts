@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useRef, useState, type RefObject } from "react";
 import {
     clamp,
     evaluateSceneTransition,
@@ -13,48 +13,53 @@ import {
     VIDEO_FOLLOW_SNAP_COOLDOWN_MS,
     computeVideoToAudioClockAdjustment,
     type AvSyncDiagSnapshot,
+    type PlaybackEngineState,
 } from "./avSyncHelpers";
+import { seekMediaElement, waitForMediaEvent, waitForNextVideoFrame } from "./mediaAsyncHelpers";
+
+export interface VideoSyncRuntimeCtx {
+    draft: VideoDraft;
+    videoSrc: string;
+    isPlaying: boolean;
+    isScrubbing: boolean;
+    isOutro: boolean;
+    playbackMode: 'play-all' | 'loop-angle';
+    playbackProfile: PlaybackSyncProfile;
+    effectiveMuted: boolean;
+    useStandbyDeck: boolean;
+    keyframeTimes?: number[];
+}
 
 interface UseCompanionAudioLockOptions {
     videoSrc: string;
-    videoSrcRef: RefObject<string>;
-    playbackProfileRef: RefObject<PlaybackSyncProfile>;
-    effectiveMutedRef: RefObject<boolean>;
-    isPlayingRef: RefObject<boolean>;
-    isScrubbingRef: RefObject<boolean>;
-    isOutroRef: RefObject<boolean>;
+    ctxRef: RefObject<VideoSyncRuntimeCtx>;
     currentTimeRef: RefObject<number>;
-    draftRef: RefObject<VideoDraft>;
     audioOutputRef: RefObject<HTMLMediaElement | null>;
     avDiagRef: RefObject<AvSyncDiagSnapshot>;
-    playGateCleanupRef: RefObject<(() => void) | null>;
-    cancelPlayGate: () => void;
+    engineStateRef: RefObject<PlaybackEngineState>;
     getActiveVideo: () => HTMLVideoElement | null;
     releaseDetachedDeck: (el: HTMLMediaElement | null) => void;
 }
 
+const getSafeDuration = (el: HTMLMediaElement | null, fallback?: HTMLMediaElement | null): number => {
+    if (el && Number.isFinite(el.duration) && el.duration > 0.05) return el.duration;
+    if (fallback && Number.isFinite(fallback.duration) && fallback.duration > 0.05) return fallback.duration;
+    return 10;
+};
+
 /**
- * Owns the decoupled companion `<audio>` rail & Video-Follower Lock for high-risk
- * 4K AV1 / HEVC / long-GOP / fragmented / mobile `blob:` clips:
- * - Parks & buffers `<audio>` to `readyState >= 3` before starting muted `<video>`.
- * - Releases `<audio>` on `<video>`'s first painted `rVFC` frame (`metadata.mediaTime`).
- * - Smoothly pulls muted `<video>` (`0.80x–1.25x`) for 50–500ms drift, pauses `<audio>` if
- *   `<video>` stalls buffering, and fast-relocks `<audio>` (`<15ms`) if drift persists >500ms.
+ * Owns the decoupled pure-`.m4a` companion `<audio>` rail & `AbortSignal`-scoped Video-Follower Lock:
+ * - Per-DOM-element gesture unlock (`WeakSet<HTMLAudioElement>`) awaited cleanly before launch (`A1`, `A12`).
+ * - Linear `AbortSignal`-scoped video-first painted-frame launch (`A2`, `A3`, `A11`).
+ * - Single `engineStateRef` (`'idle' | 'seeking' | 'priming' | 'playing' | 'buffering'`) with zero leaked timers (`A4`).
  */
 export const useCompanionAudioLock = ({
     videoSrc,
-    videoSrcRef,
-    playbackProfileRef,
-    effectiveMutedRef,
-    isPlayingRef,
-    isScrubbingRef,
-    isOutroRef,
+    ctxRef,
     currentTimeRef,
-    draftRef,
     audioOutputRef,
     avDiagRef,
-    playGateCleanupRef,
-    cancelPlayGate,
+    engineStateRef,
     getActiveVideo,
     releaseDetachedDeck,
 }: UseCompanionAudioLockOptions) => {
@@ -63,58 +68,37 @@ export const useCompanionAudioLock = ({
 
     const companionAudioRef = useRef<HTMLAudioElement>(null);
     const lastCompanionAudioElRef = useRef<HTMLAudioElement | null>(null);
+    const unlockedAudioElsRef = useRef(new WeakSet<HTMLAudioElement>());
+    const unlockPromiseRef = useRef<Promise<void> | null>(null);
     const companionAudioFailedRef = useRef(false);
-    const companionAudioUnlockedRef = useRef(false);
-    const unlockPendingRef = useRef(false);
-    const pendingParkAfterUnlockRef = useRef<number | null>(null);
-    const audioLaunchClaimedRef = useRef(false);
     const audioMasterStartedAtRef = useRef(0);
     const lastVideoRateAdjustAtRef = useRef(0);
     const lastAudioSnapAtRef = useRef(0);
     const consecutiveSnapFramesRef = useRef(0);
-    const pausedForVideoBufferRef = useRef(false);
-    const watchdogTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const stopWatchdog = useCallback(() => {
-        if (watchdogTimerRef.current !== null) {
-            clearInterval(watchdogTimerRef.current);
-            watchdogTimerRef.current = null;
-        }
-        pausedForVideoBufferRef.current = false;
-    }, []);
-
-    useEffect(() => () => stopWatchdog(), [stopWatchdog]);
 
     const isDecoupledActive = useCallback(
-        () => playbackProfileRef.current === 'decoupled-audio-lock' && !companionAudioFailedRef.current,
-        [playbackProfileRef]
+        () => ctxRef.current.playbackProfile === 'decoupled-audio-lock' && !companionAudioFailedRef.current,
+        [ctxRef]
     );
 
-    const isAudioUnlocking = useCallback(() => unlockPendingRef.current, []);
-    const isAudioLaunchClaimed = useCallback(() => audioLaunchClaimedRef.current, []);
+    const isAudioUnlocking = useCallback(() => unlockPromiseRef.current !== null, []);
 
     const pauseCompanionAudio = useCallback(() => {
-        stopWatchdog();
         const audio = companionAudioRef.current;
         if (audio) {
-            if (unlockPendingRef.current) {
+            if (unlockPromiseRef.current) {
                 audio.muted = true;
             } else if (!audio.paused) {
                 audio.pause();
             }
         }
-        audioLaunchClaimedRef.current = false;
         audioMasterStartedAtRef.current = 0;
         consecutiveSnapFramesRef.current = 0;
-    }, [stopWatchdog]);
+    }, []);
 
     const resetForNewSource = useCallback(() => {
-        stopWatchdog();
         companionAudioFailedRef.current = false;
-        companionAudioUnlockedRef.current = false;
-        unlockPendingRef.current = false;
-        pendingParkAfterUnlockRef.current = null;
-        audioLaunchClaimedRef.current = false;
+        unlockPromiseRef.current = null;
         audioMasterStartedAtRef.current = 0;
         lastVideoRateAdjustAtRef.current = 0;
         lastAudioSnapAtRef.current = 0;
@@ -123,7 +107,7 @@ export const useCompanionAudioLock = ({
         avDiagRef.current.videoBufferingPauses = 0;
         avDiagRef.current.audioSnaps = 0;
         avDiagRef.current.lastError = null;
-    }, [avDiagRef, stopWatchdog]);
+    }, [avDiagRef]);
 
     const syncDetachedAudioRef = useCallback(() => {
         const prevAudio = lastCompanionAudioElRef.current;
@@ -134,17 +118,14 @@ export const useCompanionAudioLock = ({
     }, [releaseDetachedDeck]);
 
     const releaseCompanionAudio = useCallback(() => {
-        stopWatchdog();
         releaseDetachedDeck(lastCompanionAudioElRef.current);
-    }, [releaseDetachedDeck, stopWatchdog]);
+    }, [releaseDetachedDeck]);
 
     const fallbackToNativeVideoAudio = useCallback((permanent = true) => {
-        stopWatchdog();
         if (permanent) {
             companionAudioFailedRef.current = true;
-            setFailedVideoSrc(videoSrcRef.current);
+            setFailedVideoSrc(ctxRef.current.videoSrc);
         }
-        audioLaunchClaimedRef.current = false;
         audioMasterStartedAtRef.current = 0;
         consecutiveSnapFramesRef.current = 0;
         const audio = companionAudioRef.current;
@@ -152,110 +133,102 @@ export const useCompanionAudioLock = ({
             try {
                 audio.pause();
                 audio.playbackRate = 1;
-            } catch { /* ignore detached audio element teardown error */ }
+            } catch { /* ignore detached audio teardown error */ }
         }
         const video = getActiveVideo();
         if (video) {
             video.playbackRate = 1;
-            video.muted = effectiveMutedRef.current;
+            video.muted = ctxRef.current.effectiveMuted;
             audioOutputRef.current = video;
         }
         avDiagRef.current.companionAudioActive = false;
         avDiagRef.current.companionAudioFallback = permanent;
-    }, [audioOutputRef, avDiagRef, effectiveMutedRef, getActiveVideo, stopWatchdog, videoSrcRef]);
+    }, [audioOutputRef, avDiagRef, ctxRef, getActiveVideo]);
 
     const handleCompanionAudioError = useCallback(() => {
         avDiagRef.current.lastError = 'CompanionAudioMediaError';
         fallbackToNativeVideoAudio(true);
     }, [avDiagRef, fallbackToNativeVideoAudio]);
 
-    /** Synchronously primes companion `<audio>` (strictly muted) inside Play/Scrub-release gestures. */
+    /** Gracefully handles shorter audio tracks reaching EOF slightly before `<video>` (`A15`). */
+    const handleCompanionAudioEnded = useCallback(() => {
+        audioMasterStartedAtRef.current = 0;
+        consecutiveSnapFramesRef.current = 0;
+    }, []);
+
+    /** Synchronously primes the current `<audio>` DOM element (strictly muted) inside Play/Scrub-release gestures. */
     const unlockCompanionAudio = useCallback(() => {
         if (!isDecoupledActive()) return;
         const audio = companionAudioRef.current;
-        if (!audio || companionAudioUnlockedRef.current || unlockPendingRef.current) return;
-        unlockPendingRef.current = true;
-        pendingParkAfterUnlockRef.current = null;
+        if (!audio || unlockedAudioElsRef.current.has(audio) || unlockPromiseRef.current) return;
         audio.muted = true;
-        audio.play().then(() => {
-            unlockPendingRef.current = false;
-            companionAudioUnlockedRef.current = true;
-            if (!audioLaunchClaimedRef.current || !isPlayingRef.current || isScrubbingRef.current) {
-                audio.pause();
-                const parkTarget = pendingParkAfterUnlockRef.current;
-                pendingParkAfterUnlockRef.current = null;
-                if (parkTarget !== null && audio.readyState >= 1) {
-                    const clamped = clampMediaTarget(parkTarget, audio.duration || getActiveVideo()?.duration || 10);
-                    if (Math.abs(audio.currentTime - clamped) > 0.045) audio.currentTime = clamped;
-                }
-            } else {
-                pendingParkAfterUnlockRef.current = null;
-                audio.muted = effectiveMutedRef.current;
-            }
+        const p = audio.play().then(() => {
+            unlockedAudioElsRef.current.add(audio);
+            audio.pause();
         }).catch(() => {
-            unlockPendingRef.current = false;
-            pendingParkAfterUnlockRef.current = null;
-            audio.muted = effectiveMutedRef.current;
+            /* real launch will fall back to native video audio if browser blocks playback */
+        }).finally(() => {
+            if (unlockPromiseRef.current === p) unlockPromiseRef.current = null;
         });
-    }, [effectiveMutedRef, getActiveVideo, isDecoupledActive, isPlayingRef, isScrubbingRef]);
+        unlockPromiseRef.current = p;
+    }, [isDecoupledActive]);
 
     const syncCompanionAudioToTime = useCallback((targetMediaTime: number, shouldPause: boolean) => {
         const audio = companionAudioRef.current;
         if (!audio || !isDecoupledActive()) return;
         if (shouldPause) {
-            stopWatchdog();
-            audioLaunchClaimedRef.current = false;
             audioMasterStartedAtRef.current = 0;
             consecutiveSnapFramesRef.current = 0;
-            if (unlockPendingRef.current) {
-                // Keep silent unlock in-flight so it resolves & marks `<audio>` unlocked, then parks cleanly
+            if (unlockPromiseRef.current) {
                 audio.muted = true;
-                pendingParkAfterUnlockRef.current = targetMediaTime;
                 return;
             }
             if (!audio.paused) audio.pause();
         }
         audio.playbackRate = 1;
         if (audio.readyState >= 1) {
-            const clamped = clampMediaTarget(targetMediaTime, audio.duration || getActiveVideo()?.duration || 10);
+            const clamped = clampMediaTarget(targetMediaTime, getSafeDuration(audio, getActiveVideo()));
             if (Math.abs(audio.currentTime - clamped) > 0.045) {
                 audio.currentTime = clamped;
             }
         }
-    }, [getActiveVideo, isDecoupledActive, stopWatchdog]);
+    }, [getActiveVideo, isDecoupledActive]);
 
     const handleCompanionAudioLoadedMetadata = useCallback(() => {
         const audio = companionAudioRef.current;
-        if (!audio || !isDecoupledActive()) return;
-        const vDur = getActiveVideo()?.duration || audio.duration || 10;
-        const targetMediaTime = wrapMediaTime(draftRef.current, currentTimeRef.current, vDur);
-        syncCompanionAudioToTime(targetMediaTime, !audioLaunchClaimedRef.current);
-    }, [currentTimeRef, draftRef, getActiveVideo, isDecoupledActive, syncCompanionAudioToTime]);
+        if (!audio || !isDecoupledActive() || engineStateRef.current === 'playing' || engineStateRef.current === 'priming') return;
+        const vDur = getSafeDuration(getActiveVideo(), audio);
+        const targetMediaTime = wrapMediaTime(ctxRef.current.draft, currentTimeRef.current, vDur);
+        syncCompanionAudioToTime(targetMediaTime, true);
+    }, [ctxRef, currentTimeRef, engineStateRef, getActiveVideo, isDecoupledActive, syncCompanionAudioToTime]);
 
-    const startWatchdog = useCallback((video: HTMLVideoElement, audio: HTMLAudioElement) => {
-        stopWatchdog();
-        watchdogTimerRef.current = setInterval(() => {
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current || !audioLaunchClaimedRef.current || !isDecoupledActive()) {
-                stopWatchdog();
+    /** Signal-scoped buffering & drift monitor: auto-cleans on `signal.abort` with zero leaked intervals (`A2`, `A4`). */
+    const attachMonitor = useCallback((video: HTMLVideoElement, audio: HTMLAudioElement, signal: AbortSignal) => {
+        if (signal.aborted) return;
+        const timer = setInterval(() => {
+            const ctx = ctxRef.current;
+            if (signal.aborted || !ctx.isPlaying || ctx.isScrubbing || ctx.isOutro || !isDecoupledActive()) {
+                clearInterval(timer);
                 return;
             }
-            // If `<video>` stalls buffering (e.g. 4K AV1 decoder starves), pause `<audio>` instead of letting it sail 2s ahead
-            if (video.readyState < 3 && !video.seeking && !audio.paused) {
-                pausedForVideoBufferRef.current = true;
+            // Pause `<audio>` whenever `<video>` starves (`readyState < 3`) so audio never sails ahead
+            if (video.readyState < 3 && !video.seeking && engineStateRef.current === 'playing') {
+                engineStateRef.current = 'buffering';
                 avDiagRef.current.videoBufferingPauses += 1;
-                audio.pause();
+                if (!audio.paused) audio.pause();
                 return;
             }
-            if (pausedForVideoBufferRef.current && video.readyState >= 3 && !video.seeking && !video.paused) {
-                pausedForVideoBufferRef.current = false;
-                const target = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
-                if (Math.abs(audio.currentTime - target) > 0.05) audio.currentTime = target;
+            if (engineStateRef.current === 'buffering' && video.readyState >= 3 && !video.seeking && !video.paused) {
+                const target = clampMediaTarget(video.currentTime, getSafeDuration(audio, video));
+                if (Math.abs(audio.currentTime - target) > 0.045) audio.currentTime = target;
                 audioMasterStartedAtRef.current = performance.now();
+                engineStateRef.current = 'playing';
                 audio.play().catch(() => { /* ignore aborted resume */ });
                 return;
             }
             // Backstop if `rVFC` stopped firing while both elements claim to be rolling
             if (
+                engineStateRef.current === 'playing' &&
                 !video.paused && !video.seeking && !audio.paused && !audio.seeking &&
                 video.readyState >= 3 && audioMasterStartedAtRef.current > 0 &&
                 performance.now() - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS
@@ -266,201 +239,142 @@ export const useCompanionAudioLock = ({
                     lastAudioSnapAtRef.current = performance.now();
                     avDiagRef.current.audioSnaps += 1;
                     video.playbackRate = 1;
-                    audio.currentTime = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
+                    audio.currentTime = clampMediaTarget(video.currentTime, getSafeDuration(audio, video));
                 }
             }
         }, 250);
-    }, [avDiagRef, isDecoupledActive, isOutroRef, isPlayingRef, isScrubbingRef, stopWatchdog]);
+        signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+    }, [avDiagRef, ctxRef, engineStateRef, isDecoupledActive]);
 
     /**
-     * Video-First Painted-Frame Launch:
-     * 1. Parks & buffers `<audio>` to `readyState >= 3` (HAVE_FUTURE_DATA) before starting `<video>`.
-     * 2. Starts muted `<video>` and waits for its first painted `rVFC` frame (`metadata.mediaTime`).
-     * 3. Releases `<audio>` locked to that exact frame timestamp and stamps the PLL clock on `'playing'`.
+     * Linear, `AbortSignal`-scoped Video-First Painted-Frame Launch:
+     * 0. Awaits any in-flight gesture unlock (`A1`).
+     * 1. Parks & buffers `.m4a` `<audio>` to `readyState >= 3` before starting `<video>`.
+     * 2. Starts muted `<video>` and awaits its first real painted `rVFC` frame (`A11` — no blind 400ms launch).
+     * 3. Micro-verifies alignment (`<= 45ms`, pausing `<video>` briefly if `<audio>` must seek) and releases `<audio>`.
      */
-    const launchDecoupledAudioMaster = useCallback((video: HTMLVideoElement): boolean => {
+    const launchDecoupledAudioMaster = useCallback(async (video: HTMLVideoElement, signal: AbortSignal): Promise<boolean> => {
         const audio = companionAudioRef.current;
         if (!isDecoupledActive() || !audio) return false;
 
-        stopWatchdog();
-        const { audioGain } = evaluateSceneTransition(draftRef.current, currentTimeRef.current);
+        engineStateRef.current = 'priming';
+        const ctx = ctxRef.current;
+        const { audioGain } = evaluateSceneTransition(ctx.draft, currentTimeRef.current);
         video.muted = true;
         video.playbackRate = 1;
         audio.playbackRate = 1;
-        audio.volume = clamp((draftRef.current.volume ?? 1) * audioGain, 0, 1);
+        audio.volume = clamp((ctx.draft.volume ?? 1) * audioGain, 0, 1);
 
-        const playAudioNow = () => {
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-            audio.muted = effectiveMutedRef.current;
-            audioLaunchClaimedRef.current = true;
-            audioMasterStartedAtRef.current = 0;
-            lastVideoRateAdjustAtRef.current = 0;
-            consecutiveSnapFramesRef.current = 0;
-            audioOutputRef.current = audio;
-            avDiagRef.current.companionAudioActive = true;
-            avDiagRef.current.audioReadyStateAtPlay = audio.readyState;
-            avDiagRef.current.lastError = null;
-
-            const markStarted = () => {
-                if (audioMasterStartedAtRef.current === 0) {
-                    audioMasterStartedAtRef.current = performance.now();
-                }
-                startWatchdog(video, audio);
-            };
-            audio.addEventListener('playing', markStarted, { once: true });
-            audio.play().then(() => {
-                if (!audio.paused && audio.readyState >= 3) markStarted();
-            }).catch((err) => {
-                audio.removeEventListener('playing', markStarted);
-                audioLaunchClaimedRef.current = false;
-                if (err instanceof DOMException && err.name === 'AbortError') return;
-                avDiagRef.current.lastError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-                const isPermanent = !(err instanceof DOMException && err.name === 'NotAllowedError');
-                fallbackToNativeVideoAudio(isPermanent);
-            });
-        };
-
-        const alignAndPlayAudio = (paintedMediaTime: number) => {
-            cancelPlayGate();
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-            const audioDur = audio.duration || video.duration || 10;
-            const targetAudio = clampMediaTarget(paintedMediaTime, audioDur);
-            if (audio.readyState >= 1 && Math.abs(audio.currentTime - targetAudio) > 0.05) {
-                audio.currentTime = targetAudio;
-            }
-            if (audio.seeking) {
-                const onSeeked = () => {
-                    playGateCleanupRef.current = null;
-                    playAudioNow();
-                };
-                playGateCleanupRef.current = () => audio.removeEventListener('seeked', onSeeked);
-                audio.addEventListener('seeked', onSeeked, { once: true });
-            } else {
-                playAudioNow();
-            }
-        };
-
-        const startVideoThenLockAudio = () => {
-            cancelPlayGate();
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-            let locked = false;
-            let rVfcId: number | null = null;
-            let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
-            const cleanupLock = () => {
-                if (fallbackTimer !== null) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-                if (rVfcId !== null && typeof video.cancelVideoFrameCallback === 'function') {
-                    video.cancelVideoFrameCallback(rVfcId);
-                    rVfcId = null;
-                }
-                video.removeEventListener('playing', onVideoPlayingFallback);
-            };
-            const lockAt = (mediaTime: number) => {
-                if (locked) return;
-                locked = true;
-                cleanupLock();
-                alignAndPlayAudio(mediaTime);
-            };
-            const onVideoPlayingFallback = () => {
-                if (fallbackTimer === null) {
-                    fallbackTimer = setTimeout(() => lockAt(video.currentTime), 400);
-                }
-            };
-
-            playGateCleanupRef.current = cleanupLock;
-            video.play().then(() => {
-                if (locked || !isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-                if (typeof video.requestVideoFrameCallback === 'function') {
-                    rVfcId = video.requestVideoFrameCallback((_now, meta) => lockAt(meta.mediaTime));
-                    fallbackTimer = setTimeout(() => lockAt(video.currentTime), 400);
-                } else {
-                    lockAt(video.currentTime);
-                }
-            }).catch(() => { /* ignore aborted play promise */ });
-            video.addEventListener('playing', onVideoPlayingFallback, { once: true });
-        };
-
-        const waitForAudioBufferThenLaunch = () => {
-            cancelPlayGate();
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-            if (!audio.seeking && audio.readyState >= 3) {
-                startVideoThenLockAudio();
-                return;
-            }
-            const bufTimer = setTimeout(startVideoThenLockAudio, 1500);
-            const onBuffered = () => {
-                if (!audio.seeking && audio.readyState >= 3) startVideoThenLockAudio();
-            };
-            playGateCleanupRef.current = () => {
-                clearTimeout(bufTimer);
-                audio.removeEventListener('seeked', onBuffered);
-                audio.removeEventListener('canplay', onBuffered);
-                audio.removeEventListener('canplaythrough', onBuffered);
-            };
-            audio.addEventListener('seeked', onBuffered);
-            audio.addEventListener('canplay', onBuffered);
-            audio.addEventListener('canplaythrough', onBuffered);
-        };
-
-        const parkAudioAndLaunch = () => {
-            cancelPlayGate();
-            if (!isPlayingRef.current || isScrubbingRef.current || isOutroRef.current) return;
-            if (!audio.paused && !unlockPendingRef.current) audio.pause();
-            if (audio.readyState >= 1) {
-                const clampedAudio = clampMediaTarget(video.currentTime, audio.duration || video.duration || 10);
-                if (Math.abs(audio.currentTime - clampedAudio) > 0.045) audio.currentTime = clampedAudio;
-            }
-            waitForAudioBufferThenLaunch();
-        };
-
-        if (audio.readyState < 1) {
-            const metaTimer = setTimeout(parkAudioAndLaunch, 1500);
-            const onAudioMeta = () => parkAudioAndLaunch();
-            playGateCleanupRef.current = () => {
-                clearTimeout(metaTimer);
-                audio.removeEventListener('loadedmetadata', onAudioMeta);
-                audio.removeEventListener('canplay', onAudioMeta);
-            };
-            audio.addEventListener('loadedmetadata', onAudioMeta, { once: true });
-            audio.addEventListener('canplay', onAudioMeta, { once: true });
-        } else {
-            parkAudioAndLaunch();
+        // Step 0: Wait for any synchronous gesture unlock to finish & pause `<audio>` cleanly
+        if (unlockPromiseRef.current) {
+            await unlockPromiseRef.current;
+            if (signal.aborted) return true;
         }
+
+        // Step 1: Ensure `<audio>` metadata is loaded, then park & buffer to readyState >= 3
+        if (audio.readyState < 1) {
+            await waitForMediaEvent(audio, ["loadedmetadata", "canplay"], { signal, timeoutMs: 2500, predicate: () => audio.readyState >= 1 });
+            if (signal.aborted) return true;
+        }
+        if (!audio.paused) audio.pause();
+        const audioDur = getSafeDuration(audio, video);
+        const initialTarget = clampMediaTarget(video.currentTime, audioDur);
+        if (audio.readyState >= 1) {
+            await seekMediaElement(audio, initialTarget, { signal, toleranceSec: 0.045, timeoutMs: 2000 });
+            if (signal.aborted) return true;
+        }
+        if (audio.readyState < 3) {
+            await waitForMediaEvent(audio, ["canplay", "canplaythrough"], {
+                signal,
+                timeoutMs: 2000,
+                predicate: () => !audio.seeking && audio.readyState >= 3,
+            });
+            if (signal.aborted) return true;
+        }
+
+        // Step 2: Start muted `<video>` and await a REAL painted frame (never launch audio blindly while video is unbuffered)
+        try {
+            await video.play();
+        } catch {
+            return true;
+        }
+        if (signal.aborted) return true;
+
+        let paintedTime = await waitForNextVideoFrame(video, { signal, timeoutMs: 2000 });
+        if (signal.aborted) return true;
+        if (paintedTime === null) {
+            await waitForMediaEvent(video, ["canplay", "canplaythrough", "playing"], {
+                signal,
+                timeoutMs: 2500,
+                predicate: () => !video.seeking && video.readyState >= 3,
+            });
+            if (signal.aborted) return true;
+            paintedTime = (await waitForNextVideoFrame(video, { signal, timeoutMs: 1200 })) ?? video.currentTime;
+            if (signal.aborted) return true;
+        }
+
+        // Step 3: Micro-align `<audio>` to painted frame; briefly hold `<video>` if `<audio>` must seek (`A11`)
+        const targetAudio = clampMediaTarget(paintedTime, getSafeDuration(audio, video));
+        if (audio.readyState >= 1 && Math.abs(audio.currentTime - targetAudio) > 0.045) {
+            const videoWasRolling = !video.paused;
+            if (videoWasRolling) video.pause();
+            await seekMediaElement(audio, targetAudio, { signal, toleranceSec: 0.04, timeoutMs: 1200 });
+            if (signal.aborted) return true;
+            if (videoWasRolling) {
+                await video.play().catch(() => { /* ignore aborted resume */ });
+                if (signal.aborted) return true;
+            }
+        }
+
+        // Step 4: Release `<audio>` locked to `<video>` and transition to `'playing'`
+        const liveCtx = ctxRef.current;
+        if (signal.aborted || !liveCtx.isPlaying || liveCtx.isScrubbing || liveCtx.isOutro) return true;
+        audio.muted = liveCtx.effectiveMuted;
+        audioMasterStartedAtRef.current = 0;
+        lastVideoRateAdjustAtRef.current = 0;
+        consecutiveSnapFramesRef.current = 0;
+        audioOutputRef.current = audio;
+        avDiagRef.current.companionAudioActive = true;
+        avDiagRef.current.audioReadyStateAtPlay = audio.readyState;
+        avDiagRef.current.lastError = null;
+
+        try {
+            await audio.play();
+        } catch (err) {
+            if (signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return true;
+            avDiagRef.current.lastError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+            const isPermanent = !(err instanceof DOMException && err.name === 'NotAllowedError');
+            fallbackToNativeVideoAudio(isPermanent);
+            if (!video.paused) engineStateRef.current = 'playing';
+            return true;
+        }
+        if (signal.aborted) return true;
+
+        unlockedAudioElsRef.current.add(audio);
+        if (audio.readyState < 3) {
+            await waitForMediaEvent(audio, ["playing", "canplay"], { signal, timeoutMs: 1000, predicate: () => !audio.paused && audio.readyState >= 3 });
+            if (signal.aborted) return true;
+        }
+        audioMasterStartedAtRef.current = performance.now();
+        engineStateRef.current = 'playing';
+        attachMonitor(video, audio, signal);
         return true;
-    }, [
-        audioOutputRef,
-        avDiagRef,
-        cancelPlayGate,
-        currentTimeRef,
-        draftRef,
-        effectiveMutedRef,
-        fallbackToNativeVideoAudio,
-        isDecoupledActive,
-        isOutroRef,
-        isPlayingRef,
-        isScrubbingRef,
-        playGateCleanupRef,
-        startWatchdog,
-        stopWatchdog,
-    ]);
+    }, [attachMonitor, audioOutputRef, avDiagRef, ctxRef, currentTimeRef, engineStateRef, fallbackToNativeVideoAudio, isDecoupledActive]);
 
     /**
-     * Video-Follower Lock tick run inside `rVFC`: keeps `<audio>` untouched under 500ms drift via muted
-     * `video.playbackRate` (0.80x–1.25x), and fast-relocks `<audio>` (`<15ms`) if drift persists >500ms.
+     * Video-Follower Lock tick run inside `rVFC` strictly when `engineStateRef.current === 'playing'`:
+     * keeps `<audio>` untouched under 500ms drift via muted `video.playbackRate` (0.80x–1.25x),
+     * and fast-relocks `<audio>` (`<5ms` on `.m4a`) if drift persists >500ms.
      */
     const applyVideoFollowerTick = useCallback((video: HTMLVideoElement, frameMediaTime: number): number => {
         const audio = companionAudioRef.current;
         const decoupled = isDecoupledActive();
-        const audioRolling = decoupled && Boolean(audio) && audio!.readyState >= 1 && !audio!.paused && !audio!.seeking;
-        if (decoupled && audio && video.readyState >= 2 && audioLaunchClaimedRef.current) {
+        const audioRolling = decoupled && engineStateRef.current === 'playing' && Boolean(audio) && audio!.readyState >= 1 && !audio!.paused && !audio!.seeking;
+        if (decoupled && audio && video.readyState >= 2 && engineStateRef.current === 'playing') {
             video.muted = true;
-            const frameTime = clampMediaTarget(frameMediaTime, video.duration || 10);
+            const frameTime = clampMediaTarget(frameMediaTime, getSafeDuration(video));
             const nowMs = performance.now();
-            if (
-                audioRolling &&
-                audioMasterStartedAtRef.current > 0 &&
-                nowMs - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS
-            ) {
+            if (audioRolling && audioMasterStartedAtRef.current > 0 && nowMs - audioMasterStartedAtRef.current >= AUDIO_MASTER_GRACE_MS) {
                 const adj = computeVideoToAudioClockAdjustment(frameTime, audio.currentTime);
                 avDiagRef.current.lastAudioDriftMs = Math.round(adj.driftSec * 1000);
 
@@ -475,7 +389,7 @@ export const useCompanionAudioLock = ({
                         lastAudioSnapAtRef.current = nowMs;
                         avDiagRef.current.audioSnaps += 1;
                         video.playbackRate = 1;
-                        audio.currentTime = clampMediaTarget(adj.targetAudioTime, audio.duration || video.duration || 10);
+                        audio.currentTime = clampMediaTarget(adj.targetAudioTime, getSafeDuration(audio, video));
                     }
                 } else {
                     consecutiveSnapFramesRef.current = 0;
@@ -490,27 +404,27 @@ export const useCompanionAudioLock = ({
             }
         }
         return audioRolling && audio ? audio.currentTime : frameMediaTime;
-    }, [avDiagRef, isDecoupledActive]);
+    }, [avDiagRef, engineStateRef, isDecoupledActive]);
 
     const getRollingCompanionAudioTime = useCallback((): number | null => {
         const audio = companionAudioRef.current;
-        if (isDecoupledActive() && audio && audio.readyState >= 1 && !audio.paused && !audio.seeking) {
+        if (isDecoupledActive() && engineStateRef.current === 'playing' && audio && audio.readyState >= 1 && !audio.paused && !audio.seeking) {
             return audio.currentTime;
         }
         return null;
-    }, [isDecoupledActive]);
+    }, [engineStateRef, isDecoupledActive]);
 
     return {
         companionAudioRef,
         isCompanionFallback,
         isDecoupledActive,
         isAudioUnlocking,
-        isAudioLaunchClaimed,
         pauseCompanionAudio,
         resetForNewSource,
         syncDetachedAudioRef,
         releaseCompanionAudio,
         handleCompanionAudioError,
+        handleCompanionAudioEnded,
         unlockCompanionAudio,
         syncCompanionAudioToTime,
         handleCompanionAudioLoadedMetadata,

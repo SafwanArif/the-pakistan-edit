@@ -391,7 +391,12 @@ export const wrapMediaTime = (draft: VideoDraft, timelineTime: number, clipDurat
  * Maps a native video media timestamp back to timeline currentTime,
  * tracking loop iterations when the source clip is shorter than the timeline.
  */
-export const mediaTimeToTimelineTime = (draft: VideoDraft, mediaTime: number, currentTimelineTime: number): number => {
+export const mediaTimeToTimelineTime = (
+    draft: VideoDraft,
+    mediaTime: number,
+    currentTimelineTime: number,
+    actualClipDuration?: number
+): number => {
     const scenes = draft.scenes && draft.scenes.length > 0 ? draft.scenes : [];
     if (scenes.length === 0) return mediaTime;
 
@@ -401,17 +406,17 @@ export const mediaTimeToTimelineTime = (draft: VideoDraft, mediaTime: number, cu
     if (hasCustomJump && currentTimelineTime < hookDur) {
         if (Math.abs(currentTimelineTime - hookDur) < 0.25) {
             const nextOffset = hasReHook ? rehookOffset : storyOffset;
-            if (Math.abs(mediaTime - nextOffset) < 0.25 && Math.abs(mediaTime - (hookOffset + hookDur)) > 0.4) {
+            if (Math.abs(mediaTime - nextOffset) < 0.35 && Math.abs(mediaTime - (hookOffset + hookDur)) > 0.4) {
                 return hookDur + Math.max(0, mediaTime - nextOffset);
             }
         }
         return clamp(mediaTime - hookOffset, 0, hookDur);
     }
     if (hasReHook && currentTimelineTime >= hookDur && currentTimelineTime < preStoryDur) {
-        if (Math.abs(currentTimelineTime - hookDur) < 0.25 && Math.abs(mediaTime - (hookOffset + hookDur)) < 0.25 && Math.abs(mediaTime - rehookOffset) > 0.4) {
+        if (Math.abs(currentTimelineTime - hookDur) < 0.25 && Math.abs(mediaTime - (hookOffset + hookDur)) < 0.35 && Math.abs(mediaTime - rehookOffset) > 0.4) {
             return hookDur;
         }
-        if (Math.abs(currentTimelineTime - preStoryDur) < 0.25 && Math.abs(mediaTime - storyOffset) < 0.25 && Math.abs(mediaTime - (rehookOffset + (preStoryDur - hookDur))) > 0.4) {
+        if (Math.abs(currentTimelineTime - preStoryDur) < 0.25 && Math.abs(mediaTime - storyOffset) < 0.35 && Math.abs(mediaTime - (rehookOffset + (preStoryDur - hookDur))) > 0.4) {
             return preStoryDur + Math.max(0, mediaTime - storyOffset);
         }
         return clamp(hookDur + Math.max(0, mediaTime - rehookOffset), hookDur, preStoryDur);
@@ -419,7 +424,7 @@ export const mediaTimeToTimelineTime = (draft: VideoDraft, mediaTime: number, cu
 
     if (hasCustomJump && Math.abs(currentTimelineTime - preStoryDur) < 0.25) {
         const prevEndMedia = hasReHook ? (rehookOffset + (preStoryDur - hookDur)) : (hookOffset + hookDur);
-        if (Math.abs(mediaTime - prevEndMedia) < 0.35 && Math.abs(mediaTime - storyOffset) > 0.5) {
+        if (Math.abs(mediaTime - prevEndMedia) < 0.5 && Math.abs(mediaTime - storyOffset) > 0.5) {
             return preStoryDur;
         }
     }
@@ -427,7 +432,9 @@ export const mediaTimeToTimelineTime = (draft: VideoDraft, mediaTime: number, cu
     const baseOffset = hasCustomJump ? preStoryDur : 0;
     const relMedia = hasCustomJump && storyOffset > 0 ? Math.max(0, mediaTime - storyOffset) : mediaTime;
     const prevNarrativeTime = Math.max(0, currentTimelineTime - baseOffset);
-    const rawClipDur = draft.videoDuration && draft.videoDuration > 1 ? draft.videoDuration : 0;
+    const liveDur = actualClipDuration && Number.isFinite(actualClipDuration) && actualClipDuration > 1 ? actualClipDuration : 0;
+    const draftDur = draft.videoDuration && Number.isFinite(draft.videoDuration) && draft.videoDuration > 1 ? draft.videoDuration : 0;
+    const rawClipDur = liveDur || draftDur;
     const clipDur = rawClipDur > 0 ? Math.max(1, rawClipDur - (hasCustomJump ? storyOffset : 0)) : 0;
 
     if (clipDur > 0) {

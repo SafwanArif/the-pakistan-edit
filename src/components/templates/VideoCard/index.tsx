@@ -56,6 +56,7 @@ interface VideoCardProps {
     onTimeUpdate?: (current: number, duration: number) => void;
     onTogglePlay?: () => void;
     onRegisterAudioUnlock?: (unlock: (() => void) | null) => void;
+    companionAudioUrl?: string;
     overlayOnly?: boolean;
     pausedFramingOverride?: { zoom: number; posX: number; posY: number };
     starPreviewNonce?: number;
@@ -76,6 +77,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     onTimeUpdate,
     onTogglePlay,
     onRegisterAudioUnlock,
+    companionAudioUrl,
     overlayOnly = false,
     pausedFramingOverride,
     starPreviewNonce = 0,
@@ -174,8 +176,10 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         [activeMediaInfo, isCompactOrTouch, videoSrc]
     );
     const useDecoupledAudioLock = !isImage && !overlayOnly && Boolean(videoSrc) && playbackProfile === 'decoupled-audio-lock';
-    // Break Chromium's HTTP cache Range-request serialization lock when two elements stream the same `/api/video/ingest` URL
-    const companionAudioSrc = videoSrc.startsWith('/api/video/ingest') ? `${videoSrc}&track=audio` : videoSrc;
+    // Server clips serve lossless `.m4a` sidecar on `&track=audio`; client `blob:` clips use extracted `.m4a` `companionAudioUrl`
+    const companionAudioSrc = videoSrc.startsWith('/api/video/ingest')
+        ? `${videoSrc}&track=audio`
+        : (isMasterMedia && companionAudioUrl ? companionAudioUrl : videoSrc);
     const standbyVideoSrc = videoSrc.startsWith('/api/video/ingest') ? `${videoSrc}&deck=standby` : videoSrc;
     const keyframeTimes = useMemo(
         () => (isMasterMedia ? (draft.sourceKeyframeTimes ?? extractKeyframeTimesFromFrameIndex(draft.sourceFrameIndex)) : undefined),
@@ -183,7 +187,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     );
     const useStandbyDeck = !isImage && !overlayOnly && shouldUseStandbyDeck(draft, isCompactOrTouch);
 
-    const { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, isCompanionFallback, unlockCompanionAudio, handleCompanionAudioError, handleCompanionAudioLoadedMetadata, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
+    const { videoRef, standbyVideoRef, companionAudioRef, activeVideoRef, audioOutputRef, engineStateRef, currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef, ambientCanvasRef, midEdgeCanvasRef, nearEdgeCanvasRef, topAmbientCanvasRef, topMidEdgeCanvasRef, topNearEdgeCanvasRef, isCompanionFallback, unlockCompanionAudio, handleCompanionAudioError, handleCompanionAudioEnded, handleCompanionAudioLoadedMetadata, refreshAmbientGlow, handleLoadedMetadata, handleStandbyLoadedMetadata, handleTimeUpdate, handleEnded } = useVideoElementSync({
         draft,
         videoSrc,
         isPlaying,
@@ -219,7 +223,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
     useSmoothFramingLoop({
         draft, is45, isImage, isPlaying, isScrubbing, isOutro, overlayOnly, currentTime, sceneStart, sceneDuration,
         mediaNaturalAspect, dimensions, liveTimelineTimeRef: currentTimeRef, ambientCropRef, ambientVisibilityRef, isCameraGlidingRef,
-        videoRef: activeVideoRef, audioOutputRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef, liveClock,
+        videoRef: activeVideoRef, audioOutputRef, engineStateRef, imageRef, bgBlurImgRef, clipWrapperRef, progressBarRef, fadeOverlayRef, topAmbientWrapRef, botAmbientWrapRef, logoWordmarkDriveRef, liveClock,
     });
     const sceneElapsed = Math.max(0, currentTime - sceneStart);
     const kenBurnsScale = isImage
@@ -404,6 +408,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                             crossOrigin="anonymous"
                                             muted={effectiveMuted}
                                             onLoadedMetadata={handleCompanionAudioLoadedMetadata}
+                                            onEnded={handleCompanionAudioEnded}
                                             onError={handleCompanionAudioError}
                                             style={{ display: 'none' }}
                                         />

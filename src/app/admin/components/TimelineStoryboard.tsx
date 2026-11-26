@@ -21,6 +21,7 @@ interface TimelineStoryboardProps {
     isPlaying?: boolean;
     seekTo: (time: number) => void;
     onScrubStart?: () => void;
+    onScrubMove?: (time: number) => void;
     onScrubEnd?: (finalTime: number) => void;
     playbackMode?: 'play-all' | 'loop-angle';
     onTogglePlaybackMode?: () => void;
@@ -87,7 +88,7 @@ export function resolveSceneSubtitleSeekTime(
 
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
-    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, onScrubStart, onScrubEnd, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
+    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, onScrubStart, onScrubMove, onScrubEnd, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
 }) => {
     const isMobileViewport = useMediaQuery("(max-width: 900px)");
     const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
@@ -101,6 +102,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     }, [onCloseMobileDrawer]);
     const mobileDrawerRef = useClickOutside(handleCloseDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
     const mobileSceneRackRef = useRef<HTMLDivElement>(null);
+    const suppressScrollSeekRef = useRef(false);
     const carouselSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const offsetSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const scenes = useMemo(() => draft.scenes || [], [draft.scenes]);
@@ -140,7 +142,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     useEffect(() => {
         const rack = mobileSceneRackRef.current;
         if (isMobileDrawerOpen && rack?.clientWidth) {
+            suppressScrollSeekRef.current = true;
             rack.scrollTo({ left: mobileSceneIndexRef.current * rack.clientWidth, behavior: 'auto' });
+            requestAnimationFrame(() => { suppressScrollSeekRef.current = false; });
         }
     }, [carouselItemCount, isMobileDrawerOpen]);
 
@@ -179,8 +183,10 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const rack = event.currentTarget;
         if (!rack.clientWidth || carouselItemCount === 0) return;
         const nextIndex = clamp(Math.round(rack.scrollLeft / rack.clientWidth), 0, carouselItemCount - 1);
+        const prevIndex = mobileSceneIndexRef.current;
         mobileSceneIndexRef.current = nextIndex;
         setDrawerSceneIndex((current) => current === nextIndex ? current : nextIndex);
+        if (suppressScrollSeekRef.current || nextIndex === prevIndex) return;
         if (carouselSeekTimeoutRef.current !== null) clearTimeout(carouselSeekTimeoutRef.current);
         carouselSeekTimeoutRef.current = setTimeout(() => {
             if (nextIndex < scenes.length) {
@@ -476,6 +482,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                 checklistDraft={isChecklistOpen ? draft : undefined}
                                 onSeekTo={seekTo}
                                 onScrubStart={onScrubStart}
+                                onScrubMove={onScrubMove}
                                 onScrubEnd={onScrubEnd}
                                 onUpdateScene={updateScene}
                                 onDeleteScene={handleDeleteScene}
@@ -533,6 +540,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         && prev.isPlaying === next.isPlaying
         && prev.seekTo === next.seekTo
         && prev.onScrubStart === next.onScrubStart
+        && prev.onScrubMove === next.onScrubMove
         && prev.onScrubEnd === next.onScrubEnd
         && prev.playbackMode === next.playbackMode
         && prev.onTogglePlaybackMode === next.onTogglePlaybackMode

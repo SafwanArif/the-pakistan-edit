@@ -10,6 +10,7 @@ import {
 } from "@/types/news";
 import { interpolateKeyframeInto } from "@/utils/videoTimeline";
 import type { LivePlaybackClock } from "@/app/admin/utils/livePlaybackClock";
+import type { PlaybackEngineState } from "./avSyncHelpers";
 
 export interface AmbientCropRect {
     xFrac: number;
@@ -42,6 +43,7 @@ interface SmoothFramingLoopOptions {
     isCameraGlidingRef?: React.MutableRefObject<boolean>;
     videoRef: React.RefObject<HTMLVideoElement | null>;
     audioOutputRef?: React.RefObject<HTMLMediaElement | null>;
+    engineStateRef?: React.RefObject<PlaybackEngineState>;
     imageRef: React.RefObject<HTMLImageElement | null>;
     bgBlurImgRef: React.RefObject<HTMLImageElement | null>;
     clipWrapperRef: React.RefObject<HTMLDivElement | null>;
@@ -95,6 +97,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
         let lastBotVis = "";
         let lastFade = NaN;
         let lastBarScaleX = NaN;
+        let lastWrittenVol = NaN;
         let cachedDraft: VideoDraft | null = null;
         let cachedRatio: VideoDraft["aspectRatio"] | null = null;
         let cachedTotalDur = 1;
@@ -125,8 +128,11 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 lastSeenPropTime = o.currentTime;
             }
 
+            const engineState = o.engineStateRef?.current;
+            const engineRolling = !engineState || engineState === 'playing';
             const audioOut = o.audioOutputRef?.current;
             const useAudioMaster = Boolean(
+                engineRolling &&
                 audioOut &&
                 audioOut !== video &&
                 audioOut.readyState >= 1 &&
@@ -142,7 +148,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 } else {
                     liveT = clamp(lastLiveT + dt, 0, totalDur);
                 }
-            } else if (video.seeking && !useAudioMaster) {
+            } else if (!engineRolling || (video.seeking && !useAudioMaster)) {
                 latestMappedTime = o.liveTimelineTimeRef.current;
                 liveT = latestMappedTime;
             } else {
@@ -167,7 +173,8 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                 if (clockEl && clockEl.readyState >= minReadyState) {
                     const mt = clockEl.currentTime;
                     if (lastMediaTime < 0 || Math.abs(mt - lastMediaTime) > 0.0005) {
-                        latestMappedTime = mediaTimeToTimelineTime(o.draft, mt, o.liveTimelineTimeRef.current);
+                        const liveClipDur = Number.isFinite(video.duration) && video.duration > 1 ? video.duration : undefined;
+                        latestMappedTime = mediaTimeToTimelineTime(o.draft, mt, o.liveTimelineTimeRef.current, liveClipDur);
                         lastMediaTime = mt;
                         if (awaitingFirstTickAfterSwap) {
                             awaitingFirstTickAfterSwap = false;
@@ -233,7 +240,8 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
             const audioEl = o.audioOutputRef?.current ?? video;
             if (audioEl && !o.isImage && !audioEl.muted) {
                 const nextVol = clamp((o.draft.volume ?? 1) * audioGain, 0, 1);
-                if (Math.abs(audioEl.volume - nextVol) > 0.015 || (nextVol === 1 && audioEl.volume < 0.999)) {
+                if (Number.isNaN(lastWrittenVol) || Math.abs(lastWrittenVol - nextVol) > 0.015 || (nextVol === 1 && lastWrittenVol < 0.999)) {
+                    lastWrittenVol = nextVol;
                     audioEl.volume = nextVol;
                 }
             }

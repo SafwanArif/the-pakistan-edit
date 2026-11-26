@@ -169,7 +169,7 @@ export const probeVideoMetadata = (url: string): Promise<{ aspectRatio: VideoAsp
         const timer = setTimeout(() => finish(null), 8000);
         vid.onloadedmetadata = () => {
             const aspectRatio: VideoAspectRatio = inferAspectRatioFromDimensions(vid.videoWidth, vid.videoHeight) ?? '4:5';
-            const duration = vid.duration && !Number.isNaN(vid.duration) && vid.duration > 0 ? vid.duration : 60;
+            const duration = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : 60;
             finish({ aspectRatio, duration });
         };
         vid.onerror = () => finish(null);

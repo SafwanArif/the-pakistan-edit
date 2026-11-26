@@ -401,7 +401,7 @@ export const probeMediaFile = async (
         const { stdout } = await spawnExec("ffprobe", [
             "-v", "error",
             "-show_entries",
-            "format=duration,start_time,bit_rate,size:stream=codec_type,codec_name,width,height,pix_fmt,color_transfer,bit_rate,initial_padding,r_frame_rate,avg_frame_rate,sample_rate,channels:stream_tags=rotate:stream_side_data=rotation",
+            "format=duration,start_time,bit_rate,size:stream=codec_type,codec_name,width,height,pix_fmt,color_transfer,bit_rate,initial_padding,r_frame_rate,avg_frame_rate,sample_rate,channels,start_time:stream_tags=rotate:stream_side_data=rotation",
             "-of", "json",
             filePath,
         ], { signal: options.signal, timeoutMs: options.timeoutMs ?? 30_000 });
@@ -420,6 +420,7 @@ export const probeMediaFile = async (
                 avg_frame_rate?: string;
                 sample_rate?: string;
                 channels?: number;
+                start_time?: string;
                 tags?: { rotate?: string };
                 side_data_list?: { rotation?: number | string }[];
             }[];
@@ -431,6 +432,11 @@ export const probeMediaFile = async (
         const videoStream = parsed.streams?.find((s) => s.codec_type === "video");
         const audioStream = parsed.streams?.find((s) => s.codec_type === "audio");
         const hasAudio = Boolean(audioStream);
+        const rawVideoStart = Number(videoStream?.start_time ?? 0);
+        const rawAudioStart = Number(audioStream?.start_time ?? 0);
+        const videoStartTime = Number.isFinite(rawVideoStart) ? rawVideoStart : 0;
+        const audioStartTime = Number.isFinite(rawAudioStart) ? rawAudioStart : 0;
+        const streamStartDeltaSec = hasAudio ? Math.round((audioStartTime - videoStartTime) * 10000) / 10000 : 0;
         const { exactFps, nominalFps } = parseVideoFrameRate(videoStream?.avg_frame_rate, videoStream?.r_frame_rate);
 
         const codedW = videoStream?.width || 1920;
@@ -461,10 +467,11 @@ export const probeMediaFile = async (
             isHdr,
             audioSampleRate: toPositiveInt(audioStream?.sample_rate),
             audioChannels: toPositiveInt(audioStream?.channels),
+            audioDelaySec: Math.abs(streamStartDeltaSec) > 0.005 ? streamStartDeltaSec : undefined,
             fileSize: toPositiveInt(parsed.format?.size) ?? (options.fileSize && options.fileSize > 0 ? options.fileSize : undefined),
         };
 
-        const copyAudio = startTime < -0.05
+        const copyAudio = startTime < -0.05 || Math.abs(streamStartDeltaSec) > 0.03
             ? false
             : (!audioStream || (audioStream.codec_name === "aac" && (audioStream.initial_padding ?? 0) <= 2048));
 

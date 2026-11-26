@@ -22,6 +22,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     const [exporting, setExporting] = useState<string | null>(null);
     const [isMobileScenesOpen, setIsMobileScenesOpen] = useState(false);
     const [isCardScrubbing, setIsCardScrubbing] = useState(false);
+    const [cardScrubTime, setCardScrubTime] = useState<number | null>(null);
     const wasPlayingBeforeCardScrubRef = useRef(false);
     const audioUnlockRef = useRef<(() => void) | null>(null);
     const exportAbortRef = useRef<AbortController | null>(null);
@@ -29,6 +30,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     const {
         isMounted,
         videoDraft,
+        companionAudioUrl,
         updateVideoDraft,
         clearVideo,
         resetVideoDraft,
@@ -75,6 +77,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     }, [togglePlay]);
 
     const handleCardScrubEnd = useCallback((finalTime: number) => {
+        setCardScrubTime(null);
         setIsCardScrubbing(false);
         seekTo(finalTime);
         if (wasPlayingBeforeCardScrubRef.current) {
@@ -190,6 +193,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         isPlaying={isPlaying}
                         seekTo={seekTo}
                         onScrubStart={handleCardScrubStart}
+                        onScrubMove={setCardScrubTime}
                         onScrubEnd={handleCardScrubEnd}
                         playbackMode={playbackMode}
                         onTogglePlaybackMode={handleTogglePlaybackMode}
@@ -200,6 +204,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                     {/* 🏛️ RIGHT PANE: Focused Program Monitor with Platform Switcher & Docked Transport */}
                     <StudioVideoMonitor
                         draft={videoDraft}
+                        companionAudioUrl={companionAudioUrl}
                         updateDraft={updateVideoDraft}
                         isPlaying={isPlaying}
                         togglePlay={handleTogglePlay}
@@ -217,6 +222,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         isMobileScenesOpen={isMobileScenesOpen}
                         onToggleMobileScenes={handleToggleMobileScenes}
                         externalIsScrubbing={isCardScrubbing}
+                        externalScrubTime={cardScrubTime}
                     />
                 </div>
             </main>

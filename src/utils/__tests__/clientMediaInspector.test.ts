@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
     classifyPlaybackProfile,
+    extractAudioM4aBlob,
     extractKeyframeTimesFromFrameIndex,
     findNearestKeyframe,
     inspectVideoBlob,
@@ -292,5 +293,94 @@ describe("clientMediaInspector", () => {
         expect(res!.keyframeTimes.slice(0, 4)).toEqual([0, 5, 10, 15]);
         expect(classifyPlaybackProfile(res!.mediaInfo, true, true)).toBe("decoupled-audio-lock");
         expect(classifyPlaybackProfile(res!.mediaInfo, false, false)).toBe("keyframe-scrub");
+
+        // Pure-JS ISO-BMFF audio-only .m4a extraction on the real 77MB 4K AV1 clip
+        const m4a = await extractAudioM4aBlob(blob);
+        expect(m4a).not.toBeNull();
+        expect(m4a!.type).toBe("audio/mp4");
+        expect(m4a!.size).toBeGreaterThan(1_000_000);
+        expect(m4a!.size).toBeLessThan(10_000_000);
+    });
+
+    it("extracts a valid +faststart audio-only .m4a Blob from synthetic MP4 and returns null for fragmented/WebM", async () => {
+        const audioChunk1 = new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd]);
+        const audioChunk2 = new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+        const videoChunk = new Uint8Array(64).fill(0xff);
+
+        // Build placeholder stsc / stsz / stco for 2 chunks (1 sample each: 4 bytes, 6 bytes)
+        const makeStsc = () => {
+            const body = new Uint8Array(20);
+            const v = new DataView(body.buffer);
+            v.setUint32(4, 1, false);
+            v.setUint32(8, 1, false);
+            v.setUint32(12, 1, false);
+            v.setUint32(16, 1, false);
+            return makeBox("stsc", body);
+        };
+        const makeStsz = (sizes: number[]) => {
+            const body = new Uint8Array(12 + sizes.length * 4);
+            const v = new DataView(body.buffer);
+            v.setUint32(8, sizes.length, false);
+            sizes.forEach((sz, i) => v.setUint32(12 + i * 4, sz, false));
+            return makeBox("stsz", body);
+        };
+        const makeStco = (offsets: number[]) => {
+            const body = new Uint8Array(8 + offsets.length * 4);
+            const v = new DataView(body.buffer);
+            v.setUint32(4, offsets.length, false);
+            offsets.forEach((off, i) => v.setUint32(8 + i * 4, off, false));
+            return makeBox("stco", body);
+        };
+
+        const buildMp4WithOffsets = (off1: number, off2: number) => {
+            const ftyp = makeBox("ftyp", new Uint8Array([0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0]));
+            const moov = makeBox(
+                "moov",
+                makeMvhd(1000, 10000),
+                makeBox("trak", makeTkhd(1920, 1080), makeBox("mdia", makeMdhd(30000, 300000), makeHdlr("vide"), makeBox("minf", makeBox("stbl", makeVisualStsd("avc1", 1920, 1080))))),
+                makeBox(
+                    "trak",
+                    makeBox("mdia", makeMdhd(48000, 480000), makeHdlr("soun"), makeBox("minf", makeBox("stbl", makeAudioStsd("mp4a", 2, 48000), makeStts(2, 1024), makeStsc(), makeStsz([4, 6]), makeStco([off1, off2]))))
+                )
+            );
+            const mdat = makeBox("mdat", videoChunk, audioChunk1, videoChunk, audioChunk2);
+            return { ftyp, moov, mdat, full: concatBytes(ftyp, moov, mdat) };
+        };
+
+        const probe = buildMp4WithOffsets(0, 0);
+        const mdatPayloadStart = probe.ftyp.length + probe.moov.length + 8;
+        const off1 = mdatPayloadStart + videoChunk.length;
+        const off2 = off1 + audioChunk1.length + videoChunk.length;
+        const { full } = buildMp4WithOffsets(off1, off2);
+
+        const m4a = await extractAudioM4aBlob(new Blob([full.buffer as ArrayBuffer]));
+        expect(m4a).not.toBeNull();
+        expect(m4a!.type).toBe("audio/mp4");
+        const m4aBytes = new Uint8Array(await m4a!.arrayBuffer());
+        expect(new TextDecoder("latin1").decode(m4aBytes.slice(4, 12))).toBe("ftypM4A ");
+        // Tail 10 bytes must match exact audio chunks with all video bytes stripped
+        expect(Array.from(m4aBytes.slice(m4aBytes.length - 10))).toEqual([...audioChunk1, ...audioChunk2]);
+
+        // Empty-edit elst delay test (A16): entry 0 mediaTime=-1 (500ms in movie timescale 1000), entry 1 mediaTime=0
+        const elstBody = new Uint8Array(8 + 24);
+        const ev = new DataView(elstBody.buffer);
+        ev.setUint32(4, 2, false);
+        ev.setUint32(8, 500, false);
+        ev.setInt32(12, -1, false);
+        ev.setUint32(20, 9500, false);
+        ev.setInt32(24, 0, false);
+        const delayMoov = makeBox(
+            "moov",
+            makeMvhd(1000, 10000),
+            makeBox("trak", makeTkhd(1080, 1920), makeBox("mdia", makeMdhd(30000, 300000), makeHdlr("vide"), makeBox("minf", makeBox("stbl", makeVisualStsd("avc1", 1080, 1920))))),
+            makeBox("trak", makeBox("edts", makeBox("elst", elstBody)), makeBox("mdia", makeMdhd(48000, 480000), makeHdlr("soun"), makeBox("minf", makeBox("stbl", makeAudioStsd("mp4a", 2, 48000)))))
+        );
+        const delayParsed = parseMoovBuffer(delayMoov.buffer.slice(delayMoov.byteOffset, delayMoov.byteOffset + delayMoov.byteLength) as ArrayBuffer);
+        expect(delayParsed?.mediaInfo.audioDelaySec).toBe(0.5);
+
+        // WebM returns null cleanly
+        const webm = new Uint8Array(64);
+        webm.set([0x1a, 0x45, 0xdf, 0xa3], 0);
+        expect(await extractAudioM4aBlob(new Blob([webm.buffer as ArrayBuffer]))).toBeNull();
     });
 });

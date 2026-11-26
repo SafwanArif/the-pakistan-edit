@@ -88,6 +88,7 @@ interface SceneStoryboardCardProps {
     checklistDraft?: VideoDraft;
     onSeekTo: (time: number) => void;
     onScrubStart?: () => void;
+    onScrubMove?: (time: number) => void;
     onScrubEnd?: (finalTime: number) => void;
     onUpdateScene: (index: number, patch: Partial<TimelineScene>) => void;
     onDeleteScene: (index: number) => void;
@@ -154,6 +155,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     checklistDraft,
     onSeekTo,
     onScrubStart,
+    onScrubMove,
     onScrubEnd,
     onUpdateScene,
     onDeleteScene,
@@ -341,6 +343,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                     fadeOutDur={rf.outDur}
                     onSeek={onSeekTo}
                     onScrubStart={onScrubStart}
+                    onScrubMove={onScrubMove}
                     onScrubEnd={onScrubEnd}
                 />
             )}
@@ -437,6 +440,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     && areSubArraysEqual(prev.cardSubs, next.cardSubs)
     && prev.onSeekTo === next.onSeekTo
     && prev.onScrubStart === next.onScrubStart
+    && prev.onScrubMove === next.onScrubMove
     && prev.onScrubEnd === next.onScrubEnd
     && prev.onUpdateScene === next.onUpdateScene
     && prev.onDeleteScene === next.onDeleteScene

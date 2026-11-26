@@ -7,6 +7,9 @@ import type { PlaybackSyncProfile } from "@/types/news";
 import { clamp } from "@/types/news";
 import { findNearestKeyframe } from "@/app/admin/utils/clientMediaInspector";
 
+/** Explicit single-source playback engine state shared across `useVideoElementSync`, `useCompanionAudioLock`, and `useSmoothFramingLoop`. */
+export type PlaybackEngineState = 'idle' | 'seeking' | 'priming' | 'playing' | 'buffering';
+
 type PlaybackSyncAction =
     | 'outro'
     | 'scrub'

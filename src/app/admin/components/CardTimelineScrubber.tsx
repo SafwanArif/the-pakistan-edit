@@ -32,13 +32,14 @@ interface CardTimelineScrubberProps {
     fadeOutDur?: number;
     onSeek: (time: number) => void;
     onScrubStart?: () => void;
+    onScrubMove?: (time: number) => void;
     onScrubEnd?: (finalTime: number) => void;
 }
 
 /** Full-width per-card timeline scrubber with playhead, fade cues, keyframe diamonds, and 120Hz active timecode. */
 export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.memo(({
     sceneLabel, start, end, duration, localTime, liveClock, isSceneActive,
-    isPlaying = false, keyframes = [], fadeInDur = 0, fadeOutDur = 0, onSeek, onScrubStart, onScrubEnd,
+    isPlaying = false, keyframes = [], fadeInDur = 0, fadeOutDur = 0, onSeek, onScrubStart, onScrubMove, onScrubEnd,
 }) => {
     const trackRef = useRef<HTMLDivElement>(null);
     const fillRef = useRef<HTMLDivElement>(null);
@@ -111,7 +112,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         paintDom(snapped - safeStart);
         if (snapped !== lastSentSeekRef.current) {
             lastSentSeekRef.current = snapped;
-            onSeek(snapped);
+            if (onScrubMove) onScrubMove(snapped);
+            else onSeek(snapped);
         }
     };
 

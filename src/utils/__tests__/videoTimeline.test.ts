@@ -305,6 +305,12 @@ describe("timelineTimeToMediaTime, wrapMediaTime & mediaTimeToTimelineTime", () 
         expect(mediaTimeToTimelineTime(draft, 13.5, 1.5)).toBe(1.5);
         expect(mediaTimeToTimelineTime(draft, 21.0, 5.0)).toBe(5.0);
         expect(mediaTimeToTimelineTime(draft, 4.0, 10.0)).toBe(10.0);
+
+        // Bug A14: outgoing Re-Hook frame at 3.60s during Story start (8.0s) on default draft must NOT teleport to 11.60s
+        const defaultDraft = makeDraft({ videoDuration: 170 });
+        expect(mediaTimeToTimelineTime(defaultDraft, 3.6, 8.0, 170)).toBe(8.0);
+        // Live actualClipDuration overrides stale draft.videoDuration for loop wrap math
+        expect(mediaTimeToTimelineTime(draft, 2.5, 40.0, 32)).toBeCloseTo(38.5, 5);
     });
 });
 

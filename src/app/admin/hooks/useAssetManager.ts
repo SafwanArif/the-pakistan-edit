@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Draft } from '../../../types/news';
+import { Draft } from '@/types/news';
+import { revokeBlobUrl } from '@/utils/idUtils';
 import { DraftResolver } from '../utils/dataAccessors';
 
 // Session cache for proxied remote image dimensions
@@ -63,9 +64,7 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
     /** Reads a local image upload losslessly via Object URL and records natural dimensions. */
     const ingestFile = useCallback((file: File, slideNum: number) => {
         const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
-        if (typeof prevUrl === 'string' && prevUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(prevUrl);
-        }
+        if (typeof prevUrl === 'string') revokeBlobUrl(prevUrl);
         const objectUrl = URL.createObjectURL(file);
         const applyImage = (w: number, h: number) => {
             onChangeRef.current(DraftResolver.patchSlide(slideNum, {
@@ -96,9 +95,7 @@ export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
     /** Resets image and focal framing fields on a slide to defaults and revokes any object URL. */
     const clearAsset = useCallback((slideNum: number) => {
         const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
-        if (typeof prevUrl === 'string' && prevUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(prevUrl);
-        }
+        if (typeof prevUrl === 'string') revokeBlobUrl(prevUrl);
         onChangeRef.current(DraftResolver.patchSlide(slideNum, {
             image: '',
             imageWidth: 0,

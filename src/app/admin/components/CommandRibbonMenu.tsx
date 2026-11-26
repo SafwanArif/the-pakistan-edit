@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { PostMode } from "../../../types/news";
-import { CarouselIcon, VideoIcon } from "../../../components/icons/TPEIcons";
-import { TPEVectorLogo, type LogoMotionConfig } from "../../../components/templates/TPEVectorLogo";
+import { PostMode } from "@/types/news";
+import { CarouselIcon, VideoIcon } from "@/components/icons/TPEIcons";
+import { TPEVectorLogo, type LogoMotionConfig } from "@/components/templates/TPEVectorLogo";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 interface CommandRibbonMenuProps {

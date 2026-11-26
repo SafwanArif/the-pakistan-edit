@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { del, set } from "idb-keyval";
-import { PostMode, VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "../../../types/news";
-import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
+import { del } from "idb-keyval";
+import { PostMode, VideoDraft, calculatePsychologyPacedScenes, downloadSrtFile, getSceneRoleLabel, isSharedReHookScene } from "@/types/news";
+import { revokeBlobUrl } from "@/utils/idUtils";
+import { UploadIcon, LinkIcon, CloseIcon } from "@/components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { probeVideoMetadata, resetClipBoundFields } from "../hooks/useVideoDraftState";
 import { deleteServerCachedVideo } from "../utils/serverCapabilities";
+import { STORAGE_KEYS } from "../utils/storageKeys";
 import { VideoCreditToolbar, SourcePrefixToolbar, EmojiToolbar } from "./EditorialTools";
 import { CommandRibbonMenu } from "./CommandRibbonMenu";
 
@@ -15,10 +17,9 @@ interface VideoDraftFormProps {
     onChange: (d: VideoDraft) => void;
     onExportOverlay: () => void;
     onExportMP4: () => void;
-    onClearVideo?: () => void | Promise<void>;
+    onClearVideo: () => void | Promise<void>;
     onReset?: () => void;
-    onUploadVideo?: (file: File, name?: string) => void | Promise<void>;
-    isOptimisingVideo?: boolean;
+    onUploadVideo: (file: File, name?: string) => void | Promise<void>;
     isExporting?: boolean;
     mode: PostMode;
     onModeChange: (mode: PostMode) => void;
@@ -63,37 +64,25 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
 
     const detectAspectRatioFromMedia = (url: string, videoName: string) => {
         void probeVideoMetadata(url).then((meta) => {
-            if (!meta) return;
             const current = draftRef.current;
+            if (!meta || current.videoUrl !== url) return;
             const pacedScenes = calculatePsychologyPacedScenes(meta.duration, current.scenes);
             onChange({ ...current, videoUrl: url, videoName, videoDuration: meta.duration, aspectRatio: meta.aspectRatio, scenes: pacedScenes });
         });
     };
 
-    const revokePreviousBlob = () => {
-        if (draft.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(draft.videoUrl);
-    };
-
     const handleFileUpload = (file: File) => {
         setIsAssetTrayOpen(false);
         setShowLinkInput(false);
-        if (onUploadVideo) {
-            void onUploadVideo(file, file.name);
-            return;
-        }
-        revokePreviousBlob();
-        const objectUrl = URL.createObjectURL(file);
-        void set('tpe_video_blob', file).catch(() => {});
-        onChange({ ...resetClipBoundFields(draft), videoUrl: objectUrl, videoName: file.name });
-        detectAspectRatioFromMedia(objectUrl, file.name);
+        void onUploadVideo(file, file.name);
     };
 
     const handleLinkSubmit = () => {
         const clean = urlInput.trim();
         if (!clean) return;
-        revokePreviousBlob();
+        revokeBlobUrl(draft.videoUrl);
         deleteServerCachedVideo(draft.videoUrl);
-        void del('tpe_video_blob').catch(() => {});
+        void del(STORAGE_KEYS.VIDEO_BLOB).catch(() => { /* best-effort cleanup */ });
         const videoName = clean.split('/').pop() || "Remote Video";
         onChange({
             ...resetClipBoundFields(draft),
@@ -108,21 +97,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
     };
 
     const handleClearVideo = () => {
-        if (onClearVideo) {
-            void onClearVideo();
-            return;
-        }
-        revokePreviousBlob();
-        deleteServerCachedVideo(draft.videoUrl);
-        void del('tpe_video_blob').catch(() => {});
-        onChange({
-            ...resetClipBoundFields(draft),
-            videoUrl: "",
-            videoName: "",
-            videoDuration: undefined,
-            sourceName: "",
-            creditName: "",
-        });
+        void onClearVideo();
     };
 
     const updateActiveSceneText = (patch: { title?: string; subtitle?: string }) => {
@@ -228,7 +203,7 @@ export const VideoDraftForm: React.FC<VideoDraftFormProps> = React.memo(({
                 {/* Asset Toolbar */}
                 <div className="tpe-flex-row tpe-ribbon-assets" style={{ gap: '8px', position: 'relative', alignItems: 'center' }} ref={assetContainerRef}>
                     <button type="button" aria-label={hasVideo ? `Video loaded: ${draft.videoName || 'Custom Video'}` : "Upload video and source"} aria-expanded={isAssetTrayOpen} onClick={() => setIsAssetTrayOpen(!isAssetTrayOpen)} className="tpe-asset-btn" data-active={hasVideo || !!draft.sourceName} title={hasVideo ? `Video loaded: ${draft.videoName || 'Custom Video'}` : "Upload video & source"}>
-                        <UploadIcon fill={hasVideo ? "var(--ui-accent)" : "currentColor"} />
+                        <UploadIcon stroke={hasVideo ? "var(--ui-accent)" : "currentColor"} />
                     </button>
 
                     <div className={`${isAssetTrayOpen ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>

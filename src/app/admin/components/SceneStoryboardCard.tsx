@@ -9,13 +9,13 @@ import {
     type TimelineScene,
     type VideoDraft,
     type VideoKeyframe,
-} from "../../../types/news";
+} from "@/types/news";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { FadePresetControl, SceneChecklistPopover } from "./SceneChecklistPopover";
 import { SubtitleRowList } from "./SubtitleEditorTray";
 import { CardTimelineScrubber } from "./CardTimelineScrubber";
-import { CloseIcon } from "../../../components/icons/TPEIcons";
+import { CloseIcon } from "@/components/icons/TPEIcons";
 
 const playingPillStyle: React.CSSProperties = {
     fontSize: '8px',
@@ -58,7 +58,7 @@ const SceneDurationInput: React.FC<{ value: number; onCommit: (next: number) => 
 });
 SceneDurationInput.displayName = "SceneDurationInput";
 
-export interface SceneStoryboardCardProps {
+interface SceneStoryboardCardProps {
     idx: number;
     scene: TimelineScene;
     sceneLabel: string;

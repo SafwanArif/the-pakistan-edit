@@ -2,6 +2,10 @@ interface FaceDetectorInstance {
     detect: (image: HTMLCanvasElement) => Promise<{ boundingBox: { x: number; width: number; height: number } }[]>;
 }
 
+interface WindowWithFaceDetector extends Window {
+    FaceDetector?: new (opts?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorInstance;
+}
+
 /** Finds up to N horizontal skin-saliency clusters across the frame to estimate speaker positions & count. */
 const estimateSubjectClusters = (ctx: CanvasRenderingContext2D, w: number, h: number): { primaryX: number; clusterXs: number[] } => {
     const data = ctx.getImageData(0, 0, w, h).data;
@@ -122,7 +126,7 @@ export const detectFaceInHookWindow = async (
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return false;
 
-        const FaceDetCtor = (window as unknown as { FaceDetector?: new (opts?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorInstance }).FaceDetector;
+        const FaceDetCtor = (window as WindowWithFaceDetector).FaceDetector;
         const detector = FaceDetCtor ? new FaceDetCtor({ fastMode: true, maxDetectedFaces: 3 }) : null;
         const vDur = Math.max(0.5, video.duration || 1);
 

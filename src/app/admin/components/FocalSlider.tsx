@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { clamp } from "../../../types/news";
+import { clamp } from "@/types/news";
 
 const sliderColStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', inlineSize: '100%', alignItems: 'center', gap: '4px' };
 const sliderLabelStyle: React.CSSProperties = { fontSize: '7px', fontWeight: 800, opacity: 0.5, letterSpacing: '0.05em' };
@@ -69,11 +69,10 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                     setTextInput(val);
                 }}
                 onBlur={handleInputBlur}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { 
-                    if (e.key === 'Enter') { 
-                        handleInputBlur(); 
-                        e.currentTarget.blur(); 
-                    } 
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                    }
                 }}
             />
         </div>

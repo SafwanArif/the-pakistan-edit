@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Draft, createDefaultDraft } from '../../../types/news';
+import { Draft, createDefaultDraft } from '@/types/news';
 import { get, set } from 'idb-keyval';
 import { useDebouncedIdbSave } from './useDebouncedIdbSave';
+import { STORAGE_KEYS } from '../utils/storageKeys';
 
 const fingerprintImage = (img?: string) => (img ? `${img.length}:${img.slice(0, 32)}` : '');
 
@@ -26,7 +27,7 @@ export const useEditorialState = () => {
     const [activeDraft, setActiveDraft] = useState<Draft>(createDefaultDraft());
     const [historyState, setHistoryState] = useState<{ stack: Draft[], index: number }>({ stack: [], index: -1 });
     const historyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow } = useDebouncedIdbSave<Draft>('tpe_active_draft');
+    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow } = useDebouncedIdbSave<Draft>(STORAGE_KEYS.ACTIVE_DRAFT);
 
     const commitToHistory = useCallback((draftToCommit: Draft) => {
         setHistoryState(prev => {
@@ -48,7 +49,7 @@ export const useEditorialState = () => {
             let draft = createDefaultDraft();
             let step = 1;
 
-            const savedDraft = await get<Draft>('tpe_active_draft');
+            const savedDraft = await get<Draft>(STORAGE_KEYS.ACTIVE_DRAFT);
             if (savedDraft) {
                 draft = { ...draft, ...savedDraft };
                 // Ephemeral object URLs do not survive page reloads; strip dead blob: refs cleanly
@@ -68,7 +69,7 @@ export const useEditorialState = () => {
                 }
             }
 
-            const savedStep = await get<number>('tpe_current_step');
+            const savedStep = await get<number>(STORAGE_KEYS.CURRENT_STEP);
             if (savedStep) step = savedStep;
 
             if (cancelled) return;
@@ -131,7 +132,7 @@ export const useEditorialState = () => {
 
     const updateStep = useCallback(async (step: number) => {
         setCurrentStep(step);
-        await set('tpe_current_step', step);
+        await set(STORAGE_KEYS.CURRENT_STEP, step);
     }, []);
 
     const resetState = useCallback(async () => {
@@ -141,7 +142,7 @@ export const useEditorialState = () => {
         setCurrentStep(1);
         setHistoryState({ stack: [defaultDraft], index: 0 });
         await saveDraftNow(defaultDraft);
-        await set('tpe_current_step', 1);
+        await set(STORAGE_KEYS.CURRENT_STEP, 1);
     }, [saveDraftNow]);
 
     return {

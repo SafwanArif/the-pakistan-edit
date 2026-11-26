@@ -1,5 +1,6 @@
 import type { VideoDraft, SubtitleSegment, TimelineScene } from "../types/news";
-import { getSceneBoundaries, getTimelineStructure, timelineTimeToMediaTime, wrapMediaTime } from "./videoTimeline";
+import { getSceneBoundaries, getTimelineStructure } from "./sceneTimeline";
+import { timelineTimeToMediaTime, wrapMediaTime } from "./videoTimeline";
 
 /** Triggers a browser file download for a Blob and revokes the temporary object URL after 10s. */
 export const downloadBlob = (blob: Blob, filename: string): void => {
@@ -13,6 +14,22 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
 };
 
+const sortedSubtitleCache = new WeakMap<readonly SubtitleSegment[], boolean>();
+
+const isSubtitleArraySorted = (subtitles: readonly SubtitleSegment[]): boolean => {
+    const cached = sortedSubtitleCache.get(subtitles);
+    if (cached !== undefined) return cached;
+    let sorted = true;
+    for (let i = 1; i < subtitles.length; i++) {
+        if (subtitles[i]!.start < subtitles[i - 1]!.start) {
+            sorted = false;
+            break;
+        }
+    }
+    sortedSubtitleCache.set(subtitles, sorted);
+    return sorted;
+};
+
 /**
  * Finds the active subtitle cue at `mediaTime` using a half-open `[start, end)` boundary
  * with a `2ms` tolerance. Uses O(log N) binary search for sorted transcripts with safe linear fallback.
@@ -23,7 +40,7 @@ export const findSubtitleAtMediaTime = (
 ): SubtitleSegment | undefined => {
     if (!subtitles?.length) return undefined;
     const t = mediaTime + 0.002;
-    if (subtitles.length > 8) {
+    if (subtitles.length > 8 && isSubtitleArraySorted(subtitles)) {
         let lo = 0;
         let hi = subtitles.length - 1;
         while (lo < hi) {
@@ -35,13 +52,9 @@ export const findSubtitleAtMediaTime = (
         if (t >= cand.start && t < cand.end) return cand;
         if (lo > 0) {
             const prev = subtitles[lo - 1]!;
-            if (prev.start <= cand.start) {
-                return t >= prev.start && t < prev.end ? prev : undefined;
-            }
-            // Out-of-order segments detected — fall through to linear scan
-        } else if (subtitles[0]!.start <= subtitles[subtitles.length - 1]!.start) {
-            return undefined;
+            return t >= prev.start && t < prev.end ? prev : undefined;
         }
+        return undefined;
     }
     for (let i = 0; i < subtitles.length; i++) {
         const seg = subtitles[i]!;
@@ -93,6 +106,7 @@ export const projectSubtitlesToTimeline = (
             : [];
     }
 
+    const effectiveDraft = options?.scenes ? { ...draft, scenes } : draft;
     const bounds = options?.bounds ?? getSceneBoundaries(scenes);
     const masterDuration = options?.masterDuration ?? (draft.videoDuration || 0);
     const minCueDuration = options?.minCueDuration ?? 0;
@@ -113,7 +127,7 @@ export const projectSubtitlesToTimeline = (
         if (hasCustomMedia || masterDuration <= 0) {
             const mediaStart = hasCustomMedia
                 ? (sc.clipStartOffset ?? 0)
-                : timelineTimeToMediaTime(draft, b.start);
+                : timelineTimeToMediaTime(effectiveDraft, b.start);
             slices.push({ timelineStart: b.start, mediaStart, mediaEnd: mediaStart + dur });
         } else {
             const loopStart = b.start >= preStoryDur && storyOffset > 0 && storyOffset < masterDuration - 0.5
@@ -121,7 +135,7 @@ export const projectSubtitlesToTimeline = (
                 : 0;
             let cursorTimeline = b.start;
             let remaining = dur;
-            let curMedia = wrapMediaTime(draft, b.start, masterDuration);
+            let curMedia = wrapMediaTime(effectiveDraft, b.start, masterDuration);
             while (remaining > 0.0005) {
                 const avail = Math.max(0.001, masterDuration - curMedia);
                 const take = Math.min(remaining, avail);
@@ -162,7 +176,7 @@ export const projectSubtitlesToTimeline = (
  * respecting Hook/Re-Hook/Story offsets and per-card `showSubtitles` overrides.
  */
 export const getActiveSubtitleTimelineTimes = (draft: VideoDraft): number[] => {
-    const projected = projectSubtitlesToTimeline(draft, { masterDuration: 0 });
+    const projected = projectSubtitlesToTimeline(draft);
     if (!projected.length) return [];
     return Array.from(new Set(projected.map((c) => c.start))).sort((a, b) => a - b);
 };
@@ -181,7 +195,10 @@ export const buildSrtContent = (segments: SubtitleSegment[]): string =>
 
 /** Builds timeline-aligned `.SRT` subtitles matching the exact Hook/Re-Hook/Story cuts and per-scene CC toggles. */
 export const buildTimelineSrtContent = (draft: VideoDraft): string => {
-    const projected = projectSubtitlesToTimeline(draft, { minCueDuration: 0.05 });
+    const projected = projectSubtitlesToTimeline(
+        draft.showSubtitles === false ? { ...draft, showSubtitles: true } : draft,
+        { minCueDuration: 0.05 }
+    );
     return buildSrtContent(projected.length ? projected : (draft.subtitles || []));
 };
 

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "../../../types/news";
+import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "@/types/news";
+import { generateShortId, revokeBlobUrl } from "@/utils/idUtils";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { canUseServerIngest } from "../utils/serverCapabilities";
@@ -10,7 +11,7 @@ import { getSceneSubtitles } from "./SubtitleEditorTray";
 import { MasterChecklistControl } from "./MasterChecklistPopover";
 import { TimelineFooterCards, TimelineOutroCard } from "./TimelineFooterCards";
 import { SceneStoryboardCard } from "./SceneStoryboardCard";
-import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons/TPEIcons";
 
 interface TimelineStoryboardProps {
     draft: VideoDraft;
@@ -205,7 +206,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const updated = [...(curDraft.scenes || [])];
         const prev = updated[index];
         if (!prev) return;
-        if ('mediaUrl' in patch && prev.mediaUrl?.startsWith('blob:') && patch.mediaUrl !== prev.mediaUrl) URL.revokeObjectURL(prev.mediaUrl);
+        if ('mediaUrl' in patch && patch.mediaUrl !== prev.mediaUrl) revokeBlobUrl(prev.mediaUrl);
         updated[index] = { ...prev, ...patch };
         onChange({ ...curDraft, scenes: updated });
     }, [onChange]);
@@ -213,8 +214,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     const handleDeleteScene = useCallback((index: number) => {
         const curDraft = draftRef.current;
         const curScenes = curDraft.scenes || [];
-        const removed = curScenes[index];
-        if (removed?.mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(removed.mediaUrl);
+        revokeBlobUrl(curScenes[index]?.mediaUrl);
         onChange({ ...curDraft, scenes: curScenes.filter((_, i) => i !== index) });
     }, [onChange]);
 
@@ -236,7 +236,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     const handleAddScene = useCallback(() => {
         const curDraft = draftRef.current;
         const curScenes = curDraft.scenes || [];
-        onChange({ ...curDraft, scenes: [...curScenes, { id: `scene-${crypto.randomUUID().slice(0, 8)}`, title: `KEY ANGLE ${curScenes.length + 1}: STRATEGIC ANALYSIS`, subtitle: "Verified intelligence breakdown and future market impact.", duration: 15, mediaType: 'video' }] });
+        onChange({ ...curDraft, scenes: [...curScenes, { id: `scene-${generateShortId()}`, title: `KEY ANGLE ${curScenes.length + 1}: STRATEGIC ANALYSIS`, subtitle: "Verified intelligence breakdown and future market impact.", duration: 15, mediaType: 'video' }] });
     }, [onChange]);
 
     const handleAddOutro = useCallback(() => {
@@ -259,7 +259,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     const handleAddReHook = useCallback(() => {
         const curDraft = draftRef.current;
         const updated = [...(curDraft.scenes || [])];
-        updated.splice(1, 0, { id: `rehook-${crypto.randomUUID().slice(0, 8)}`, title: "WAIT — HERE IS ==THE REAL SHIFT==", subtitle: "The overlooked turning point right before the full picture emerged.", duration: 4, mediaType: 'video', shareHookText: true });
+        updated.splice(1, 0, { id: `rehook-${generateShortId()}`, title: "WAIT — HERE IS ==THE REAL SHIFT==", subtitle: "The overlooked turning point right before the full picture emerged.", duration: 4, mediaType: 'video', shareHookText: true });
         onChange({ ...curDraft, scenes: updated });
     }, [onChange]);
 
@@ -276,9 +276,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         setOpenSubSceneIdx((prev) => (prev === idx ? null : idx));
     }, []);
 
-    const ingestAbortRef = React.useRef<AbortController | null>(null);
+    const ingestAbortRef = useRef<AbortController | null>(null);
 
-    React.useEffect(() => {
+    useEffect(() => {
         return () => ingestAbortRef.current?.abort();
     }, []);
 
@@ -306,8 +306,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     }, [seekTo]);
 
     const handleSceneMediaUpload = useCallback(async (idx: number, file: File) => {
-        const prevUrl = draftRef.current.scenes?.[idx]?.mediaUrl;
-        if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
+        revokeBlobUrl(draftRef.current.scenes?.[idx]?.mediaUrl);
         if (file.type.startsWith('image/')) {
             updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'image', mediaName: file.name });
             return;

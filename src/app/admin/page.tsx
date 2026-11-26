@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { get, set } from "idb-keyval";
-import type { PostMode } from "../../types/news";
+import type { PostMode } from "@/types/news";
+import { STORAGE_KEYS } from "./utils/storageKeys";
 
 const CarouselStudio = dynamic(() => import("./components/CarouselStudio"), { ssr: false });
 const VideoStudio = dynamic(() => import("./components/VideoStudio"), { ssr: false });
@@ -18,7 +19,7 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         let cancelled = false;
-        void get<PostMode>('tpe_post_mode')
+        void get<PostMode>(STORAGE_KEYS.POST_MODE)
             .then((savedMode) => {
                 if (!cancelled) setPostMode(savedMode === 'video' ? 'video' : 'carousel');
             })
@@ -32,7 +33,7 @@ export default function AdminDashboard() {
 
     const handleSetPostMode = useCallback((mode: PostMode) => {
         setPostMode(mode);
-        void set('tpe_post_mode', mode).catch(() => {});
+        void set(STORAGE_KEYS.POST_MODE, mode).catch(() => {});
     }, []);
 
     if (!postMode) return null;

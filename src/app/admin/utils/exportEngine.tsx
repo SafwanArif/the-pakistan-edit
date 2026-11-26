@@ -1,14 +1,15 @@
 import JSZip from "jszip";
 import { getFontEmbedCSS, toBlob } from "html-to-image";
-import { Draft, getSlideCount, downloadBlob } from "../../../types/news";
-import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
+import { Draft, getSlideCount, downloadBlob } from "@/types/news";
+import { OMNI_CONFIG, Platform } from "@/config/omnichannel";
 import React from "react";
-import { NewsCard } from "../../../components/templates/NewsCard/index";
+import { NewsCard } from "@/components/templates/NewsCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
 
 let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
 
-const setCarouselExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
+/** Updates an export status banner and cancels any previously scheduled auto-clear timer. */
+export const setExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
     if (statusClearTimer !== null) {
         clearTimeout(statusClearTimer);
         statusClearTimer = null;
@@ -23,7 +24,7 @@ const setCarouselExportStatus = (onStatus: (s: string | null) => void, msg: stri
 };
 
 /** Renders a DOM node to a PNG Blob with an explicit timeout guard. */
-export const renderNodeToBlobWithTimeout = (
+const renderNodeToBlobWithTimeout = (
     node: HTMLElement,
     options: Parameters<typeof toBlob>[1],
     timeoutMs: number,
@@ -71,7 +72,7 @@ const waitForCaptureReady = async (node: HTMLElement): Promise<void> => {
     await new Promise((r) => requestAnimationFrame(r));
 };
 
-export interface DomCaptureSession {
+interface DomCaptureSession {
     capture: (
         element: React.ReactNode,
         config: {
@@ -146,11 +147,10 @@ export const createDomCaptureSession = async (
 };
 
 /**
- * Institutional Export Engine: Deterministic Asset Generation Pipeline
- * v2027.Simplified: Streamlined root management and centralized naming.
+ * Deterministic multi-platform Carousel PNG bundle exporter (`pixelRatio: 2`, cached fonts).
  */
 export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void) => {
-    setCarouselExportStatus(onStatus, "Initializing Institutional Pipeline...");
+    setExportStatus(onStatus, "Initializing Institutional Pipeline...");
     
     const totalSlides = getSlideCount(draft);
     const platforms: Platform[] = ["tiktok", "instagram", "square"];
@@ -170,7 +170,7 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
             for (const p of platforms) {
                 for (let s = 1; s <= totalSlides; s++) {
                     count++;
-                    onStatus(`[${count}/${total}] Rendering ${p} S${s}...`);
+                    setExportStatus(onStatus, `[${count}/${total}] Rendering ${p} S${s}...`);
 
                     const blob = await session.capture(
                         <NewsCard draft={draft} step={s} platform={p} />,
@@ -190,7 +190,8 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
 
                     const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
                     const slideAnchor = s === 1 ? anchorKW : (s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s-3]?.heading || "angle"));
-                    const fileName = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}.png`.substring(0, 150);
+                    const fileStem = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}`.substring(0, 146);
+                    const fileName = `${fileStem}.png`;
 
                     zip.file(fileName, blob);
                 }
@@ -199,14 +200,15 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
             session.dispose();
         }
 
-        onStatus("Packaging Institutional Bundle...");
+        setExportStatus(onStatus, "Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
-        downloadBlob(content, `TPE-${sanitize(draft.headline.split(' ').slice(0, 5).join('-'))}.zip`);
+        const zipSlug = sanitize(draft.headline.split(' ').slice(0, 5).join('-')) || anchorKW;
+        downloadBlob(content, `TPE-${zipSlug}.zip`);
         
-        setCarouselExportStatus(onStatus, "Complete! 🎉", 3000);
+        setExportStatus(onStatus, "Complete! 🎉", 3000);
     } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Export Failed";
-        setCarouselExportStatus(onStatus, `ERROR: ${msg}`);
+        setExportStatus(onStatus, `ERROR: ${msg}`);
         throw e;
     }
 };

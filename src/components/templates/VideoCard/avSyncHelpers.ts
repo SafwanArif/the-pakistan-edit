@@ -3,11 +3,11 @@
  * Keeps the single-coordinator state machine, real keyframe scrubbing, and audio-master
  * video-follower lock math directly unit-testable.
  */
-import type { PlaybackSyncProfile } from "../../../types/news";
-import { clamp } from "../../../types/news";
-import { findNearestKeyframe } from "../../../app/admin/utils/clientMediaInspector";
+import type { PlaybackSyncProfile } from "@/types/news";
+import { clamp } from "@/types/news";
+import { findNearestKeyframe } from "@/app/admin/utils/clientMediaInspector";
 
-export type PlaybackSyncAction =
+type PlaybackSyncAction =
     | 'outro'
     | 'scrub'
     | 'pause-seek'
@@ -15,7 +15,7 @@ export type PlaybackSyncAction =
     | 'explicit-play-seek'
     | 'noop';
 
-export interface PlaybackSyncTransitionInput {
+interface PlaybackSyncTransitionInput {
     isOutro: boolean;
     isScrubbing: boolean;
     isPlaying: boolean;
@@ -67,13 +67,13 @@ export const resolveScrubSeekTarget = (
     return findNearestKeyframe(keyframeTimes, safe) ?? safe;
 };
 
-export const VIDEO_FOLLOW_DEADBAND_SEC = 0.12;
-export const VIDEO_FOLLOW_HARD_SNAP_SEC = 0.75;
+const VIDEO_FOLLOW_DEADBAND_SEC = 0.12;
+const VIDEO_FOLLOW_HARD_SNAP_SEC = 0.75;
 export const AUDIO_MASTER_GRACE_MS = 600;
 export const VIDEO_FOLLOW_RATE_INTERVAL_MS = 250;
 export const VIDEO_FOLLOW_SNAP_COOLDOWN_MS = 3000;
 
-export interface VideoFollowAdjustment {
+interface VideoFollowAdjustment {
     mode: 'hold' | 'pull' | 'snap-video';
     videoPlaybackRate: number;
     targetVideoTime?: number;

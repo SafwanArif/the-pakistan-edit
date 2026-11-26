@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
+import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 
 const pairConnectorBaseStyle: React.CSSProperties = {
     position: "absolute",
@@ -120,11 +120,29 @@ interface TimelineKeyframeTrackProps {
     onJump: (time: number, side?: 'pre' | 'post') => void;
 }
 
-const getFocusedKeyframeKey = (keyframes: VideoKeyframe[], currentTime: number, isPlaying = false): string => {
+const getKeyframeEarliestTime = (kf: VideoKeyframe): number =>
+    kf.easing === 'snap' && kf.pre?.time !== undefined ? Math.min(kf.time, kf.pre.time) : kf.time;
+
+const isKeyframeInRange = (kf: VideoKeyframe, rangeStart: number, rangeEnd: number): boolean => {
+    const earliest = getKeyframeEarliestTime(kf);
+    return (earliest >= rangeStart && earliest <= rangeEnd) || (kf.time >= rangeStart && kf.time <= rangeEnd);
+};
+
+const getFocusedKeyframeKey = (
+    keyframes: VideoKeyframe[],
+    rangeStart: number,
+    rangeDuration: number,
+    currentTime: number,
+    isPlaying = false
+): string => {
     if (isPlaying) return "";
+    const rangeEnd = rangeStart + Math.max(0.1, rangeDuration);
     const kf = keyframes.find((k) =>
-        Math.abs(k.time - currentTime) <= 0.06
-        || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - currentTime) <= 0.06)
+        isKeyframeInRange(k, rangeStart, rangeEnd)
+        && (
+            Math.abs(k.time - currentTime) <= 0.06
+            || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - currentTime) <= 0.06)
+        )
     );
     if (!kf) return "";
     const atPost = Math.abs(currentTime - kf.time) <= 0.06 ? 1 : 0;
@@ -147,18 +165,12 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
     const rangeEnd = rangeStart + safeDur;
     const toPct = (t: number) => clamp(((t - rangeStart) / safeDur) * 100, 0, 100);
 
-    const getEarliestTime = (kf: VideoKeyframe) =>
-        kf.easing === 'snap' && kf.pre?.time !== undefined ? Math.min(kf.time, kf.pre.time) : kf.time;
+    const visibleKeyframes = keyframes.filter((kf) => isKeyframeInRange(kf, rangeStart, rangeEnd));
 
-    const focusedKf = isPlaying ? undefined : keyframes.find((kf) =>
+    const focusedKf = isPlaying ? undefined : visibleKeyframes.find((kf) =>
         Math.abs(kf.time - currentTime) <= 0.06
         || (kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(kf.pre.time - currentTime) <= 0.06)
     );
-
-    const visibleKeyframes = keyframes.filter((kf) => {
-        const earliest = getEarliestTime(kf);
-        return (earliest >= rangeStart && earliest <= rangeEnd) || (kf.time >= rangeStart && kf.time <= rangeEnd);
-    });
 
     return (
         <>
@@ -185,7 +197,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                                 kf={kf}
                                 variant="pre"
                                 pct={prePct}
-                                displayTime={preTime - rangeStart}
+                                displayTime={Math.max(0, preTime - rangeStart)}
                                 isAtPlayhead={Math.abs(currentTime - preTime) <= 0.06}
                                 size={size}
                                 zIndex={zIndex + 1}
@@ -197,7 +209,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                                 kf={kf}
                                 variant="post"
                                 pct={postPct}
-                                displayTime={kf.time - rangeStart}
+                                displayTime={Math.max(0, kf.time - rangeStart)}
                                 isAtPlayhead={Math.abs(currentTime - kf.time) <= 0.06}
                                 size={size}
                                 zIndex={zIndex + 1}
@@ -209,7 +221,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                     );
                 }
 
-                const earliest = getEarliestTime(kf);
+                const earliest = getKeyframeEarliestTime(kf);
                 const splitPre = kf.easing === 'snap' && kf.pre?.time !== undefined;
                 return (
                     <TimelineKeyframeDiamond
@@ -218,7 +230,7 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                         variant="split"
                         dimmed={isDimmed}
                         pct={toPct(earliest)}
-                        displayTime={earliest - rangeStart}
+                        displayTime={Math.max(0, earliest - rangeStart)}
                         isAtPlayhead={isFocused}
                         size={size}
                         zIndex={isFocused ? zIndex + 1 : zIndex}
@@ -238,7 +250,8 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
     && prev.size === next.size
     && prev.zIndex === next.zIndex
     && prev.onJump === next.onJump
-    && getFocusedKeyframeKey(prev.keyframes, prev.currentTime, Boolean(prev.isPlaying)) === getFocusedKeyframeKey(next.keyframes, next.currentTime, Boolean(next.isPlaying))
+    && getFocusedKeyframeKey(prev.keyframes, prev.rangeStart, prev.rangeDuration, prev.currentTime, Boolean(prev.isPlaying))
+        === getFocusedKeyframeKey(next.keyframes, next.rangeStart, next.rangeDuration, next.currentTime, Boolean(next.isPlaying))
 );
 
 TimelineKeyframeTrack.displayName = "TimelineKeyframeTrack";

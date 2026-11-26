@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
-import type { VideoDraft } from "../../../types/news";
+import type { VideoDraft } from "@/types/news";
 import type { AmbientCropRect, AmbientVisibilityState } from "./useSmoothFramingLoop";
 
 const ctxCache = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
@@ -43,8 +43,8 @@ interface UseAmbientCanvasPainterOptions {
 }
 
 /**
- * Manages the 6 GPU-accelerated 384×180 4:5 ambient blur `<canvas>` elements with cached 2D contexts
- * and Hierarchical Temporal Rate Shading (`1/1` near, `1/2` mid, `1/3` far) plus instant `0% Energy` bypass.
+ * Manages the 3–6 GPU-accelerated 384×180 4:5 ambient blur `<canvas>` elements with cached 2D contexts
+ * and Hierarchical Temporal Rate Shading (`1/1` near, `1/2` mid, `1/4` far) plus instant `0% Energy` bypass.
  */
 export const useAmbientCanvasPainter = ({
     draft,

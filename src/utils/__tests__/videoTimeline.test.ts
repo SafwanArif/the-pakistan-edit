@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultVideoDraft, getTopBoxOffsetY, has45LetterboxFraming, switchVideoAspectRatio, type VideoDraft, type VideoKeyframe } from "../../types/news";
+import { createDefaultDraft, createDefaultVideoDraft, getTopBoxOffsetY, has45LetterboxFraming, switchVideoAspectRatio, type VideoDraft, type VideoKeyframe } from "@/types/news";
 import {
     autoPadToMonetisationThreshold,
     calculatePsychologyPacedScenes,
@@ -7,20 +7,21 @@ import {
     evaluateSceneTransition,
     getActiveSceneAtTime,
     getHookTransitionFade,
-    getTransitionAudioGain,
     getSceneBoundaries,
     getSceneRoleLabel,
     getTimelineStructure,
-    interpolateKeyframe,
     isSharedReHookScene,
+    resolveAudioBoundaryModes,
+    resolveSceneFade,
+    setSceneClipStartOffset,
+} from "../sceneTimeline";
+import {
+    interpolateKeyframe,
     mediaTimeToTimelineTime,
     parseTimeInput,
     formatTimecode,
     formatPreciseTimecode,
-    resolveAudioBoundaryModes,
     resolveKeyframeSpan,
-    resolveSceneFade,
-    setSceneClipStartOffset,
     snapTimeToSourceFrame,
     nudgeTimeToFrame,
     timelineTimeToMediaTime,
@@ -28,34 +29,32 @@ import {
 } from "../videoTimeline";
 import {
     buildSrtContent,
+    buildTimelineSrtContent,
     findSubtitleAtMediaTime,
     getActiveSubtitleTimelineTimes,
     getMediaSubtitleTimelineTime,
+    projectSubtitlesToTimeline,
 } from "../subtitleTimeline";
 import {
     CIRCLE_PATH_R3,
-    buildDotStarMorphPath,
     buildLogoEmblemPath,
     evaluateEmblemCue,
-    evaluateSingleCueSpin,
     getCueTotalDuration,
     getLogoEmblemState,
-    getStarAnimState,
     getStarDotTransform,
 } from "../starMorphMath";
-import { getKeyframeTelemetryTint, resolveKeyframeJumpStop } from "../../app/admin/utils/keyframeTelemetry";
-import { resolveStudioShortcutSeek } from "../../app/admin/hooks/useStudioShortcuts";
-import { DraftResolver, VideoDraftResolver } from "../../app/admin/utils/dataAccessors";
-import { consumeNdjsonStream } from "../../app/admin/utils/ndjsonStream";
-import { createDefaultDraft } from "../../types/news";
-import { parseScrubPillInput } from "../../app/admin/components/ScrubPillSlider";
-import { resolveSceneSubtitleSeekTime } from "../../app/admin/components/TimelineStoryboard";
-import { normalizeHydratedVideoDraft } from "../../app/admin/hooks/useVideoDraftState";
-import { sanitize, getAnchorKeyword } from "../../app/admin/utils/textUtils";
-import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildTopOffsetYExpr } from "../../lib/server/ffmpegFilters";
-import { buildSceneFilterStages } from "../../lib/server/ffmpegSceneGraph";
-import { clampMediaTarget, shouldUseStandbyDeck } from "../../components/templates/VideoCard/dualDeckHelpers";
-import { classifyFrameTimestamps, computeExportVbvCeiling, createByteLimitTransform, parseVideoFrameRate, parseWhisperProgressLine } from "../../lib/server/videoMedia";
+import { getKeyframeTelemetryTint, resolveKeyframeJumpStop } from "@/app/admin/utils/keyframeTelemetry";
+import { resolveStudioShortcutSeek } from "@/app/admin/hooks/useStudioShortcuts";
+import { DraftResolver, VideoDraftResolver } from "@/app/admin/utils/dataAccessors";
+import { consumeNdjsonStream } from "@/app/admin/utils/ndjsonStream";
+import { parseScrubPillInput } from "@/app/admin/components/ScrubPillSlider";
+import { resolveSceneSubtitleSeekTime } from "@/app/admin/components/TimelineStoryboard";
+import { normalizeHydratedVideoDraft } from "@/app/admin/hooks/useVideoDraftState";
+import { sanitize, getAnchorKeyword } from "@/app/admin/utils/textUtils";
+import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildTopOffsetYExpr } from "@/lib/server/ffmpegFilters";
+import { buildSceneFilterStages } from "@/lib/server/ffmpegSceneGraph";
+import { clampMediaTarget, shouldUseStandbyDeck } from "@/components/templates/VideoCard/dualDeckHelpers";
+import { classifyFrameTimestamps, computeExportVbvCeiling, createByteLimitTransform, parseVideoFrameRate, parseWhisperProgressLine, withExportSlot } from "@/lib/server/videoMedia";
 
 const makeDraft = (overrides: Partial<VideoDraft> = {}): VideoDraft => ({
     ...createDefaultVideoDraft(),
@@ -592,32 +591,32 @@ describe("Portion D Stage 2 regressions (Bugs #10, #12, #26)", () => {
 });
 
 describe("starMorphMath", () => {
-    it("morphs cleanly between circular dot (m=0) and scaled 5-point star (m=1) with zero stale scratch state", () => {
-        expect(buildDotStarMorphPath(0)).toBe(CIRCLE_PATH_R3);
-        expect(buildDotStarMorphPath(-1)).toBe(CIRCLE_PATH_R3);
+    it("morphs cleanly between circular dot (mix=0) and scaled 5-point star (mix=1) with zero stale scratch state", () => {
+        expect(buildLogoEmblemPath("dot", "star", 0)).toBe(CIRCLE_PATH_R3);
+        expect(buildLogoEmblemPath("dot", "star", -1)).toBe(CIRCLE_PATH_R3);
 
-        const starDefault = buildDotStarMorphPath(1, 100);
+        const starDefault = buildLogoEmblemPath("dot", "star", 1, 100);
         const cubicCount = (starDefault.match(/ C /g) || []).length;
         expect(cubicCount).toBe(10);
         expect(starDefault.startsWith("M 0.000 -4.450")).toBe(true);
         expect(starDefault.endsWith(" Z")).toBe(true);
 
-        const starScaled = buildDotStarMorphPath(1, 150);
+        const starScaled = buildLogoEmblemPath("dot", "star", 1, 150);
         expect(starScaled.startsWith("M 0.000 -6.675")).toBe(true);
-        expect(buildDotStarMorphPath(1, 100)).toBe(starDefault);
+        expect(buildLogoEmblemPath("dot", "star", 1, 100)).toBe(starDefault);
     });
 
     it("evaluates spin angles and morph envelope across all spin modes", () => {
-        expect(evaluateSingleCueSpin(0, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 0, angleDeg: 0 });
-        expect(evaluateSingleCueSpin(1.65, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 0, angleDeg: 0 });
+        expect(evaluateEmblemCue(0, 0.5, 0.65, "flag-tilt", "star-only", "drift")).toMatchObject({ expandFactor: 0, angleDeg: 0 });
+        expect(evaluateEmblemCue(1.65, 0.5, 0.65, "flag-tilt", "star-only", "drift")).toMatchObject({ expandFactor: 0, angleDeg: 0 });
 
-        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "flag-tilt")).toEqual({ morph: 1, angleDeg: 126 });
-        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "cw-1x")).toEqual({ morph: 1, angleDeg: 144 });
-        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "cw-2x")).toEqual({ morph: 1, angleDeg: 288 });
-        expect(evaluateSingleCueSpin(0.5, 0.5, 0.65, "ccw")).toEqual({ morph: 1, angleDeg: -126 });
+        expect(evaluateEmblemCue(0.5, 0.5, 0.65, "flag-tilt", "star-only", "drift")).toMatchObject({ expandFactor: 1, angleDeg: 126 });
+        expect(evaluateEmblemCue(0.5, 0.5, 0.65, "cw-1x", "star-only", "drift")).toMatchObject({ expandFactor: 1, angleDeg: 144 });
+        expect(evaluateEmblemCue(0.5, 0.5, 0.65, "cw-2x", "star-only", "drift")).toMatchObject({ expandFactor: 1, angleDeg: 288 });
+        expect(evaluateEmblemCue(0.5, 0.5, 0.65, "ccw", "star-only", "drift")).toMatchObject({ expandFactor: 1, angleDeg: -126 });
 
-        const midHold = evaluateSingleCueSpin(0.5 + 0.65 * 0.5, 0.5, 0.65, "flag-tilt");
-        expect(midHold.morph).toBe(1);
+        const midHold = evaluateEmblemCue(0.5 + 0.65 * 0.5, 0.5, 0.65, "flag-tilt", "star-only", "drift");
+        expect(midHold.expandFactor).toBe(1);
         expect(midHold.angleDeg).toBeCloseTo(135, 5);
     });
 
@@ -630,11 +629,13 @@ describe("starMorphMath", () => {
             morphDuration: 0.5,
             holdDuration: 0.65,
             spinMode: "cw-1x" as const,
+            sequence: "star-only" as const,
+            holdFeel: "drift" as const,
         };
-        expect(getStarAnimState(0.5, cfg)).toEqual({ morph: 1, angleDeg: 144 });
-        expect(getStarAnimState(5.0, cfg)).toEqual({ morph: 0, angleDeg: 0 });
-        expect(getStarAnimState(10.5, cfg)).toEqual({ morph: 1, angleDeg: 144 });
-        expect(getStarAnimState(12.0, cfg)).toEqual({ morph: 0, angleDeg: 0 });
+        expect(getLogoEmblemState(0.5, cfg)).toMatchObject({ expandFactor: 1, angleDeg: 144 });
+        expect(getLogoEmblemState(5.0, cfg)).toMatchObject({ expandFactor: 0, angleDeg: 0 });
+        expect(getLogoEmblemState(10.5, cfg)).toMatchObject({ expandFactor: 1, angleDeg: 144 });
+        expect(getLogoEmblemState(12.0, cfg)).toMatchObject({ expandFactor: 0, angleDeg: 0 });
     });
 
     it("lifts the star upward as it expands so its bottom stays anchored on the y=42 baseline", () => {
@@ -1034,8 +1035,8 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
 
         // Preview audio gain matches: mid-scene returns 1, symmetric internal peak dips to 0.25 (-12dB), outer fade-in dips to 0.0
         expect(getHookTransitionFade(draft, 15)).toBe(0);
-        expect(getTransitionAudioGain(draft, 15, 0)).toBe(1);
-        expect(getTransitionAudioGain(draft, 4.0, 1)).toBeCloseTo(0.25, 5);
+        expect(evaluateSceneTransition(draft, 15).audioGain).toBe(1);
+        expect(evaluateSceneTransition(draft, 4.0).audioGain).toBeCloseTo(0.25, 5);
 
         const outerFadeInDraft = makeDraft({
             scenes: [
@@ -1044,10 +1045,10 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
             ],
         });
         expect(getHookTransitionFade(outerFadeInDraft, 0)).toBeCloseTo(1, 5);
-        expect(getTransitionAudioGain(outerFadeInDraft, 0, 1)).toBeCloseTo(0, 5);
+        expect(evaluateSceneTransition(outerFadeInDraft, 0).audioGain).toBeCloseTo(0, 5);
         // One-sided internal fade (Hook out ON, Story in OFF) uses declick -> steady 1.0 audio gain
         expect(resolveAudioBoundaryModes(outerFadeInDraft.scenes, 0, false).outAudioMode).toBe("declick");
-        expect(getTransitionAudioGain(outerFadeInDraft, 3.98, 0.8)).toBe(1);
+        expect(evaluateSceneTransition(outerFadeInDraft, 3.98).audioGain).toBe(1);
     });
 
     it("clamps Hook/Re-Hook/Story clipStartOffset cleanly and auto-adapts Story duration to avoid silent tail-looping", () => {
@@ -1109,5 +1110,207 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
         expect(unityFilters.some((f) => f === "volume=1.000")).toBe(false);
         const scaledFilters = buildAudioFadeFilters(0.5, 10, 0.18, 0.12, "breath", "full");
         expect(scaledFilters[0]).toBe("volume=0.500");
+    });
+});
+
+describe("Code Hygiene & Edge-Case Audit Regressions", () => {
+    it("serializes withExportSlot properly when a queued waiter aborts mid-queue", async () => {
+        let releaseFirst!: () => void;
+        let running = 0;
+        let maxConcurrent = 0;
+
+        const first = withExportSlot(async () => {
+            running += 1;
+            maxConcurrent = Math.max(maxConcurrent, running);
+            await new Promise<void>((r) => { releaseFirst = r; });
+            running -= 1;
+            return "first";
+        });
+
+        const ac = new AbortController();
+        const secondAborted = withExportSlot(async () => "second", ac.signal);
+        const third = withExportSlot(async () => {
+            running += 1;
+            maxConcurrent = Math.max(maxConcurrent, running);
+            await new Promise<void>((r) => setTimeout(r, 10));
+            running -= 1;
+            return "third";
+        });
+
+        ac.abort();
+        await expect(secondAborted).rejects.toThrow(/aborted/i);
+        expect(running).toBe(1);
+        releaseFirst();
+        await expect(first).resolves.toBe("first");
+        await expect(third).resolves.toBe("third");
+        expect(maxConcurrent).toBe(1);
+    });
+
+    it("rejects malformed/negative time inputs, supports HH:MM:SS, and guards non-finite timecodes", () => {
+        expect(parseTimeInput(":")).toBeNull();
+        expect(parseTimeInput(":30")).toBeNull();
+        expect(parseTimeInput("1:")).toBeNull();
+        expect(parseTimeInput("1:-30")).toBeNull();
+        expect(parseTimeInput("-5")).toBeNull();
+        expect(parseTimeInput("01:02:03.5")).toBe(3723.5);
+
+        expect(formatTimecode(Number.POSITIVE_INFINITY)).toBe("00:00.0");
+        expect(formatTimecode(Number.NEGATIVE_INFINITY)).toBe("00:00.0");
+        expect(formatPreciseTimecode(Number.POSITIVE_INFINITY)).toBe("00:00.0000");
+        expect(formatPreciseTimecode(-1)).toBe("00:00.0000");
+    });
+
+    it("nudges VFR intermediate timestamps strictly to adjacent frames and sanitizes NaN / zero delta", () => {
+        const vfr = {
+            mediaUrl: "clip.mp4",
+            fps: 30,
+            nominalFps: 30,
+            startTime: 0,
+            duration: 1,
+            frameCount: 4,
+            cfr: false,
+            keyframes: [0],
+            pts: [0, 0.04, 0.09, 0.14],
+        };
+        expect(nudgeTimeToFrame(0.039, 1, 30, vfr)).toBeCloseTo(0.04, 6);
+        expect(nudgeTimeToFrame(0.039, -1, 30, vfr)).toBeCloseTo(0, 6);
+        expect(nudgeTimeToFrame(0.039, 0, 30, vfr)).toBeCloseTo(0.04, 6);
+        expect(nudgeTimeToFrame(Number.NaN, 1, 30, vfr)).toBeCloseTo(0.04, 6);
+        expect(nudgeTimeToFrame(Number.NaN, 0, 30)).toBe(0);
+    });
+
+    it("returns storyIdx = -1 on 1-scene and [Hook, Re-Hook] timelines without mutating Hook as Story", () => {
+        const oneScene = [{ id: "scene-1", title: "H", duration: 4, clipStartOffset: 10 }];
+        expect(getTimelineStructure(oneScene).storyIdx).toBe(-1);
+        expect(getTimelineStructure(oneScene).storyOffset).toBe(0);
+        expect(getSceneRoleLabel(oneScene, 0)).toBe("01. HOOK");
+        expect(resolveSceneFade(oneScene, 0).inEnabled).toBe(false);
+
+        const twoHookRehook = [
+            { id: "scene-1", title: "H", duration: 4 },
+            { id: "rehook-1", title: "R", duration: 4 },
+        ];
+        expect(getTimelineStructure(twoHookRehook).storyIdx).toBe(-1);
+        expect(getSceneRoleLabel(twoHookRehook, 1)).toBe("02. RE-HOOK");
+    });
+
+    it("tints parked SNAP POST gold and SNAP PRE blue in keyframeTelemetry", () => {
+        const kfs: VideoKeyframe[] = [
+            { id: "s1", time: 5, zoom: 120, posX: 50, easing: "snap", pre: { time: 4, zoom: 100, posX: 50 } },
+            { id: "s2", time: 10, zoom: 140, posX: 60, easing: "smooth" },
+        ];
+        expect(getKeyframeTelemetryTint(kfs, 5, "post", true, true).color).toBe("var(--ui-accent)");
+        expect(getKeyframeTelemetryTint(kfs, 5, "pre", true, true).color).toBe("var(--ui-pre)");
+    });
+
+    it("handles options.scenes, unsorted subtitle arrays, looped tails, and hidden-CC SRT export", () => {
+        const unsorted = [
+            { id: "b", start: 5, end: 7, text: "Second" },
+            { id: "a", start: 1, end: 3, text: "First" },
+        ];
+        expect(findSubtitleAtMediaTime(unsorted, 2)?.id).toBe("a");
+        expect(findSubtitleAtMediaTime(unsorted, 6)?.id).toBe("b");
+
+        const loopedDraft = makeDraft({
+            videoDuration: 10,
+            showSubtitles: false,
+            subtitles: [{ id: "s1", start: 2, end: 4, text: "Loop line" }],
+            scenes: [
+                { id: "scene-1", title: "H", duration: 4 },
+                { id: "scene-2", title: "Story", duration: 18 },
+            ],
+        });
+        expect(buildTimelineSrtContent(loopedDraft)).toContain("Loop line");
+
+        const shownLooped = { ...loopedDraft, showSubtitles: true };
+        const times = getActiveSubtitleTimelineTimes(shownLooped);
+        expect(times.length).toBeGreaterThanOrEqual(2);
+
+        const customScenes = [{ id: "scene-1", title: "H", duration: 4, clipStartOffset: 2 }];
+        const projected = projectSubtitlesToTimeline(
+            { ...shownLooped, scenes: [{ id: "scene-1", title: "H", duration: 4, clipStartOffset: 0 }] },
+            { scenes: customScenes }
+        );
+        expect(projected[0]?.start).toBeCloseTo(0, 4);
+    });
+
+    it("guards evaluateEmblemCue against NaN and non-positive morph durations", () => {
+        expect(evaluateEmblemCue(Number.NaN, 0.45, 0.5, "ccw")).toEqual({
+            shapeA: "dot",
+            shapeB: "dot",
+            mix: 0,
+            expandFactor: 0,
+            angleDeg: 0,
+        });
+        expect(evaluateEmblemCue(0.2, 0, 0.5, "ccw")).toEqual({
+            shapeA: "dot",
+            shapeB: "dot",
+            mix: 0,
+            expandFactor: 0,
+            angleDeg: 0,
+        });
+    });
+
+    it("applies static 4:5 punch-in zoom >100% and avoids double-scaling dynamic 4:5 punch-in", () => {
+        const staticPunch = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 150,
+            defaultFramingByRatio: { "4:5": { zoom: 150, posX: 50, posY: 100 } },
+            keyframes: [],
+        });
+        const staticStage = buildSceneFilterStages({
+            index: 0,
+            scenes: staticPunch.scenes,
+            draft: staticPunch,
+            start: 0,
+            duration: 4,
+            width: 1080,
+            height: 1350,
+            targetFps: 30,
+            is45: true,
+            isImage: false,
+            srcWidth: 1920,
+            srcHeight: 1080,
+            srcHasAudio: true,
+            mediaIdx: 0,
+            overlayIdx: 1,
+            customLoopVideoSource: null,
+            customLoopAudioSource: null,
+            loopTrim: "",
+            aLoopTrim: "",
+        });
+        expect(staticStage.filters.some((f) => f.includes("scale=1620:2026:force_original_aspect_ratio=increase"))).toBe(true);
+
+        const dynamicPunch = makeDraft({
+            aspectRatio: "4:5",
+            zoom: 100,
+            defaultFramingByRatio: { "4:5": { zoom: 100, posX: 50, posY: 100 } },
+            keyframes: [
+                { id: "k0", time: 0, zoom: 100, posX: 50, easing: "smooth" },
+                { id: "k1", time: 4, zoom: 150, posX: 50, easing: "smooth" },
+            ],
+        });
+        const dynStage = buildSceneFilterStages({
+            index: 0,
+            scenes: dynamicPunch.scenes,
+            draft: dynamicPunch,
+            start: 0,
+            duration: 4,
+            width: 1080,
+            height: 1350,
+            targetFps: 30,
+            is45: true,
+            isImage: false,
+            srcWidth: 1920,
+            srcHeight: 1080,
+            srcHasAudio: true,
+            mediaIdx: 0,
+            overlayIdx: 1,
+            customLoopVideoSource: null,
+            customLoopAudioSource: null,
+            loopTrim: "",
+            aLoopTrim: "",
+        });
+        expect(dynStage.filters.some((f) => f.includes("scale=w='ceil(1080*") && !f.includes("scale=1080:1350"))).toBe(true);
     });
 });

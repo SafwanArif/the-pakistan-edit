@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import fs from "fs";
-import os from "os";
 import path from "path";
-import type { VideoDraft } from "../../../../types/news";
-import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "../../../../types/news";
-import { VIDEO_FORMAT_CONFIGS } from "../../../../config/omnichannel";
-import { assertDiskHeadroom, CACHE_DIR, computeExportVbvCeiling, createFileWebStream, fileExists, probeMediaFile, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "../../../../lib/server/videoMedia";
-import { buildAssSubtitles, escapeFfmpegFilterPath } from "../../../../lib/server/ffmpegFilters";
-import { buildSceneFilterStages, isAnimatedSceneOverlay } from "../../../../lib/server/ffmpegSceneGraph";
+import type { VideoDraft } from "@/types/news";
+import { getSceneBoundaries, getTimelineStructure, wrapMediaTime } from "@/types/news";
+import { VIDEO_FORMAT_CONFIGS } from "@/config/omnichannel";
+import { assertDiskHeadroom, CACHE_DIR, computeExportVbvCeiling, createFileWebStream, fileExists, getWorkerThreadCount, probeMediaFile, resolveCachedVideoPath, spawnExec, sweepStaleExportFiles, withExportSlot } from "@/lib/server/videoMedia";
+import { buildAssSubtitles, escapeFfmpegFilterPath } from "@/lib/server/ffmpegFilters";
+import { buildSceneFilterStages, isAnimatedSceneOverlay } from "@/lib/server/ffmpegSceneGraph";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +54,15 @@ export async function POST(request: Request) {
         if (typeof draftRaw !== "string") {
             return NextResponse.json({ error: "Missing draft payload" }, { status: 400 });
         }
-        const draft = JSON.parse(draftRaw) as VideoDraft;
+        let draft: VideoDraft;
+        try {
+            draft = JSON.parse(draftRaw) as VideoDraft;
+        } catch {
+            return NextResponse.json({ error: "Invalid draft JSON payload" }, { status: 400 });
+        }
+        if (!draft || typeof draft !== "object") {
+            return NextResponse.json({ error: "Invalid draft payload" }, { status: 400 });
+        }
         const format = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
         if (!format) {
             return NextResponse.json({ error: "Unsupported video aspect ratio" }, { status: 400 });
@@ -94,6 +101,8 @@ export async function POST(request: Request) {
             const dur = Math.max(1, Math.round(rawDur * targetFps)) / targetFps;
             return { ...s, duration: dur };
         });
+        const exportDraft: VideoDraft = { ...draft, scenes: quantizedScenes };
+        const exportAudioVol = draft.isMuted ? 0 : Math.min(1, Math.max(0, draft.volume ?? 1));
         const bounds = getSceneBoundaries(quantizedScenes);
         const { hasReHook, storyIdx: setupIdx, storyOffset: setupOffset } = getTimelineStructure(quantizedScenes);
 
@@ -104,8 +113,8 @@ export async function POST(request: Request) {
 
         const saveTempBlob = async (blob: Blob, ext: string): Promise<string> => {
             const p = path.join(CACHE_DIR, `exp-${uid}-${tempFiles.length}${ext}`);
-            await fs.promises.writeFile(p, Buffer.from(await blob.arrayBuffer()));
             tempFiles.push(p);
+            await fs.promises.writeFile(p, Buffer.from(await blob.arrayBuffer()));
             return p;
         };
         const overlayPathByHash = new Map<string, string>();
@@ -115,8 +124,8 @@ export async function POST(request: Request) {
             const existing = overlayPathByHash.get(hash);
             if (existing) return existing;
             const p = path.join(CACHE_DIR, `exp-${uid}-${tempFiles.length}.png`);
-            await fs.promises.writeFile(p, buf);
             tempFiles.push(p);
+            await fs.promises.writeFile(p, buf);
             overlayPathByHash.set(hash, p);
             return p;
         };
@@ -133,7 +142,7 @@ export async function POST(request: Request) {
 
             const customMediaBlob = formData.get(`sceneMedia_${i}`);
             const cachedSceneVideo = await resolveCachedVideoPath(s.mediaUrl);
-            const isImage = s.mediaType === "image";
+            const isImage = s.mediaType === "image" && customMediaBlob instanceof Blob;
 
             let srcPath = masterPath;
             let srcInfo = masterInfo;
@@ -168,7 +177,7 @@ export async function POST(request: Request) {
             } else {
                 const rawStart = i === 0
                     ? (s.clipStartOffset ?? 0)
-                    : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath ? wrapMediaTime(draft, b.start, srcInfo.duration) : (s.clipStartOffset ?? 0)));
+                    : (hasReHook && i === 1 ? (s.clipStartOffset ?? 0) : (srcPath === masterPath ? wrapMediaTime(exportDraft, b.start, srcInfo.duration) : (s.clipStartOffset ?? 0)));
                 const needsLoop = rawStart + dur > srcInfo.duration - 0.1;
                 if (needsLoop) {
                     const loopStart = i === 0
@@ -183,7 +192,7 @@ export async function POST(request: Request) {
                         filters.push(`[vp1_${i}]trim=start=${rawStart.toFixed(3)}:duration=${firstPassDur.toFixed(3)},setpts=PTS-STARTPTS[vt1_${i}]`);
                         filters.push(`[vp2_${i}]trim=start=${loopStart.toFixed(3)}:duration=${remDur.toFixed(3)},setpts=PTS-STARTPTS[vt2_${i}]`);
                         filters.push(`[vt1_${i}][vt2_${i}]concat=n=2:v=1:a=0[${customLoopVideoSource}]`);
-                        if (srcInfo.hasAudio) {
+                        if (srcInfo.hasAudio && exportAudioVol > 0) {
                             customLoopAudioSource = `a_loop_src_${i}`;
                             filters.push(`[${mediaIdx}:a]asplit=2[ap1_${i}][ap2_${i}]`);
                             filters.push(`[ap1_${i}]atrim=start=${rawStart.toFixed(3)}:duration=${firstPassDur.toFixed(3)},asetpts=PTS-STARTPTS[at1_${i}]`);
@@ -200,7 +209,7 @@ export async function POST(request: Request) {
             }
 
             const ovIdx = inputIdx++;
-            if (isAnimatedSceneOverlay(draft, quantizedScenes, i)) {
+            if (isAnimatedSceneOverlay(exportDraft, quantizedScenes, i)) {
                 args.push("-framerate", String(targetFps), "-loop", "1", "-t", dur.toFixed(3), "-i", ovPath);
             } else {
                 // Single-frame PNG input paired with overlay eof_action=repeat (decodes & Lanczos-scales 1x instead of N*fps times)
@@ -210,7 +219,7 @@ export async function POST(request: Request) {
             const stage = buildSceneFilterStages({
                 index: i,
                 scenes: quantizedScenes,
-                draft,
+                draft: exportDraft,
                 start: b.start,
                 duration: dur,
                 width: W,
@@ -247,15 +256,15 @@ export async function POST(request: Request) {
         }
 
         const segCount = concatInputs.length;
-        const assContent = buildAssSubtitles(draft, quantizedScenes, bounds, W, H, is45, is916, masterInfo.duration);
-        const shouldLoudnorm = draft.normalizeAudio !== false && !draft.isMuted && (draft.volume ?? 1) > 0;
+        const assContent = buildAssSubtitles(exportDraft, quantizedScenes, bounds, W, H, is45, is916, masterInfo.duration);
+        const shouldLoudnorm = draft.normalizeAudio !== false && exportAudioVol > 0;
         let finalVideoMap = "[vout]";
         let finalAudioMap = "[aout]";
 
         if (assContent) {
             const assPath = path.join(CACHE_DIR, `subs-${uid}.ass`);
-            await fs.promises.writeFile(assPath, assContent, "utf8");
             tempFiles.push(assPath);
+            await fs.promises.writeFile(assPath, assContent, "utf8");
             const fontsDir = path.join(process.cwd(), "tools", "fonts");
             const fontsDirArg = (await fileExists(fontsDir)) ? `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'` : "";
             filters.push(`${concatInputs.join("")}concat=n=${segCount}:v=1:a=1[v_cat][a_cat]`);
@@ -273,13 +282,13 @@ export async function POST(request: Request) {
         }
 
         const filterScriptPath = path.join(CACHE_DIR, `filter-${uid}.txt`);
-        await fs.promises.writeFile(filterScriptPath, filters.join(";\n"), "utf8");
         tempFiles.push(filterScriptPath);
+        await fs.promises.writeFile(filterScriptPath, filters.join(";\n"), "utf8");
 
         const outPath = path.join(CACHE_DIR, `export-${uid}.mp4`);
         tempFiles.push(outPath);
 
-        const renderThreads = String(Math.max(2, os.cpus().length - 2));
+        const renderThreads = getWorkerThreadCount();
         const vbvCeiling = computeExportVbvCeiling(draft.sourceMediaInfo?.videoBitrate ?? masterInfo.videoBitrate);
         await withExportSlot(() => spawnExec("ffmpeg", [
             "-y", "-hide_banner", "-loglevel", "error",

@@ -1,4 +1,4 @@
-import { clamp, getDefaultVideoFraming, interpolateKeyframe, isSharedReHookScene, resolveAudioBoundaryModes, resolveSceneFade, type TimelineScene, type VideoDraft } from "../../types/news";
+import { clamp, getDefaultVideoFraming, interpolateKeyframe, isSharedReHookScene, resolveAudioBoundaryModes, resolveSceneFade, type TimelineScene, type VideoDraft } from "@/types/news";
 import { build45BoxHExpr, build45ScaleExpr, buildAudioFadeFilters, buildPosXNormExpr, buildTopOffsetYExpr, buildZoomFactorExpr } from "./ffmpegFilters";
 
 interface SceneFilterContext {
@@ -116,9 +116,13 @@ export function buildSceneFilterStages(ctx: SceneFilterContext): { filters: stri
             }
         } else {
             const boxH = Math.min(H, snapEven(boxHInfo.minH));
+            const staticFraming = interpolateKeyframe(draft.keyframes, start + dur * 0.5, getDefaultVideoFraming(draft, draft.aspectRatio));
+            const staticZFactor = Math.max(1.0, (staticFraming.zoom ?? 0) / 100);
             const fgBox = zoomExpr
-                ? `scale=${W}:${boxH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y=0,scale=w='ceil(${W}*${zoomExpr}/2)*2':h='ceil(${boxH}*${zoomExpr}/2)*2':eval=frame:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y='(ih-${boxH})/2'${kenBurns45(boxH)}`
-                : `scale=${W}:${boxH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y=0${kenBurns45(boxH)}`;
+                ? `scale=w='ceil(${W}*${zoomExpr}/2)*2':h='ceil(${boxH}*${zoomExpr}/2)*2':eval=frame:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y='(ih-${boxH})/2'${kenBurns45(boxH)}`
+                : staticZFactor > 1.005
+                    ? `scale=${snapEven(W * staticZFactor)}:${snapEven(boxH * staticZFactor)}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y='(ih-${boxH})/2'${kenBurns45(boxH)}`
+                    : `scale=${W}:${boxH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${boxH}:x='(iw-${W})*${posXExpr}':y=0${kenBurns45(boxH)}`;
             if (boxH < H - 2) {
                 const fgOverlayY = topYInfo.isConstant ? String(staticTopY) : `'${topYInfo.expr}'`;
                 if (draft.enableAmbientBlur === false) {

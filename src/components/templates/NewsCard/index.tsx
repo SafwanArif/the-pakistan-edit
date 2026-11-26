@@ -1,13 +1,12 @@
 "use client";
 
 import React from "react";
-import { Draft } from "../../../types/news";
-import { Platform } from "../../../config/omnichannel";
-import { useNewsCardState } from "../../../app/admin/hooks/useNewsCardState";
+import { Draft } from "@/types/news";
+import { OMNI_CONFIG, Platform } from "@/config/omnichannel";
+import { useNewsCardState } from "@/app/admin/hooks/useNewsCardState";
 import { AssetLayer } from "./AssetLayer";
 import { HighlightedText } from "./HighlightedText";
 import { TPEVectorLogo } from "../TPEVectorLogo";
-import { OMNI_CONFIG } from "../../../config/omnichannel";
 
 interface NewsCardProps {
     draft: Draft;
@@ -119,7 +118,7 @@ export const NewsCard: React.FC<NewsCardProps> = React.memo(({ draft, step = 1, 
                 <div className="tpe-metadata-cluster tpe-flex-row">
                     {sourceText && (
                         <span className="tpe-meta-item">
-                            <span className="tpe-meta-label">{sourcePrefix}</span> {sourceText}
+                            <span className="tpe-meta-label">{sourcePrefix}</span> <HighlightedText text={sourceText} />
                         </span>
                     )}
                     {type === 'bulletin' && photoText && (

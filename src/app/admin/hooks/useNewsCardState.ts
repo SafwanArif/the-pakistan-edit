@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Draft } from '../../../types/news';
+import { Draft } from '@/types/news';
 import { getEffectiveSlideAsset } from '../utils/dataAccessors';
 
 /**
@@ -25,14 +25,14 @@ export const useNewsCardState = (draft: Draft, step: number) => {
         } else if (step === 2) {
             heading = "";
             content = draft.summary || "";
-            sourcePrefix = draft.sourcePrefix || "";
+            sourcePrefix = draft.sourcePrefix || "SOURCE:";
             sourceText = draft.sourceName || "";
         } else {
             const index = step - 3;
             const extra = draft.extraSlides?.[index];
             heading = extra?.heading || draft.category;
             content = extra?.content || "";
-            sourcePrefix = extra?.sourcePrefix || "";
+            sourcePrefix = extra?.sourcePrefix || "SOURCE:";
             sourceText = extra?.sourceName || "";
         }
 
@@ -41,7 +41,7 @@ export const useNewsCardState = (draft: Draft, step: number) => {
             content,
             sourcePrefix,
             sourceText,
-            photoPrefix: asset.creditPrefix || "",
+            photoPrefix: asset.creditPrefix || "PHOTO:",
             photoText: asset.imageCredit || "",
             asset,
             type: step === 1 ? 'bulletin' as const : 'narrative' as const

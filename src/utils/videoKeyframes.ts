@@ -1,5 +1,7 @@
 import type { VideoDraft, VideoFraming, VideoKeyframe } from "../types/news";
-import { clamp, interpolateKeyframe, snapTimeToSourceFrame } from "./videoTimeline";
+import { generateShortId } from "./idUtils";
+import { clamp } from "./sceneTimeline";
+import { interpolateKeyframe, snapTimeToSourceFrame } from "./videoTimeline";
 
 /**
  * Finds the parked keyframe at `time` (within `tolerance` seconds) and auto-infers whether
@@ -47,7 +49,7 @@ export const upsertKeyframe = (
     const roundedTime = snapTimeToSourceFrame(opts.activeDisplayTime, sourceFps, draft.sourceFrameIndex);
     const nextPosY = opts.isLetterboxActive ? opts.activeFraming.posY : undefined;
 
-    const targetIndex = opts.existingIndex >= 0
+    const targetIndex = opts.existingIndex >= 0 && opts.existingIndex < keyframes.length
         ? opts.existingIndex
         : keyframes.findIndex((k) => Math.abs(k.time - roundedTime) < 0.001);
 
@@ -60,7 +62,7 @@ export const upsertKeyframe = (
     }
 
     const base = { zoom: opts.activeFraming.zoom, posX: opts.activeFraming.posX, posY: nextPosY };
-    const id = `kf-${crypto.randomUUID().slice(0, 8)}`;
+    const id = `kf-${generateShortId()}`;
     keyframes.push(
         kind === "snap"
             ? { id, time: roundedTime, ...base, easing: "snap", pre: { ...base } }
@@ -108,6 +110,16 @@ export const updateKeyframeTime = (
         : clamped;
     keyframes[opts.existingIndex] = { ...curr, time: postClamped };
     keyframes.sort((a, b) => a.time - b.time);
+    for (let i = 0; i < keyframes.length; i++) {
+        const k = keyframes[i]!;
+        if (k.easing === "snap" && k.pre?.time !== undefined) {
+            const minPre = i > 0 ? keyframes[i - 1]!.time : 0;
+            const boundedPre = clamp(k.pre.time, Math.min(minPre, k.time), k.time);
+            if (boundedPre !== k.pre.time) {
+                keyframes[i] = { ...k, pre: { ...k.pre, time: boundedPre } };
+            }
+        }
+    }
     return { keyframes, seekTime: postClamped };
 };
 

@@ -65,6 +65,7 @@ export const useEditorialSelection = () => {
 
         document.addEventListener('selectionchange', schedule);
         document.addEventListener('mouseup', schedule);
+        document.addEventListener('focusout', schedule);
         const vv = window.visualViewport;
         const scheduleIfSelected = () => {
             if (hasSelectionRef.current) schedule();
@@ -75,15 +76,11 @@ export const useEditorialSelection = () => {
             if (rafId !== null) cancelAnimationFrame(rafId);
             document.removeEventListener('selectionchange', schedule);
             document.removeEventListener('mouseup', schedule);
+            document.removeEventListener('focusout', schedule);
             vv?.removeEventListener('resize', scheduleIfSelected);
             vv?.removeEventListener('scroll', scheduleIfSelected);
         };
     }, [checkSelection]);
 
-    const clearSelection = useCallback(() => {
-        hasSelectionRef.current = false;
-        setSelection(null);
-    }, []);
-
-    return { selection, clearSelection };
+    return { selection };
 };

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
-import { SOCIAL_ICONS } from "../../../config/editorial";
+import { SOCIAL_ICONS } from "@/config/editorial";
 import { insertTextAtCursor, wrapSelectionWithSyntax } from "../utils/domUtils";
 import { EditorialPopover } from "./EditorialPopover";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -8,6 +8,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 const isPrimaryPointer = (e: React.PointerEvent): boolean => e.pointerType !== "mouse" || e.button === 0;
 
 const LazyEmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
+type EmojiPickerProps = ComponentProps<typeof LazyEmojiPicker>;
 
 const SOURCE_PREFIX_OPTIONS = ["SOURCE:", "VIA:", "REPORT:", "DATA:"] as const;
 const IMAGE_CREDIT_OPTIONS = ["PHOTO:", "STILL:", "VIA:", "SOURCE:"] as const;
@@ -72,8 +73,8 @@ export const EmojiToolbar = React.memo<{ fieldId: string, value: string, onUpdat
                         insertTextAtCursor(fieldId, value, emojiData.emoji, onUpdate);
                         setOpen(false);
                     }}
-                    theme={"dark" as never}
-                    emojiStyle={"apple" as never}
+                    theme={"dark" as EmojiPickerProps["theme"]}
+                    emojiStyle={"apple" as EmojiPickerProps["emojiStyle"]}
                     searchPlaceHolder="Search emojis..."
                     lazyLoadEmojis={true}
                     skinTonesDisabled={true}

@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import fs from "fs";
-import os from "os";
 import path from "path";
-import type { SubtitleSegment } from "../../../../types/news";
-import { CACHE_DIR, fileExists, parseWhisperProgressLine, probeMediaFile, resolveCachedVideoPath, spawnExec, withExportSlot } from "../../../../lib/server/videoMedia";
+import type { SubtitleSegment } from "@/types/news";
+import { CACHE_DIR, createNdjsonResponse, fileExists, getWorkerThreadCount, parseWhisperProgressLine, probeMediaFile, resolveCachedVideoPath, spawnExec, withExportSlot } from "@/lib/server/videoMedia";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const WHISPER_DIR = path.join(process.cwd(), "tools", "whisper");
-let cachedWhisperSetup: { bin: string; model: string; modelLabel: string; kind: "cpp" | "cli" } | null = null;
+let cachedWhisperSetup: { bin: string; model: string; modelLabel: string } | null = null;
 
-const findWhisperSetup = async (): Promise<{ bin: string; model: string; modelLabel: string; kind: "cpp" | "cli" } | null> => {
-    if (cachedWhisperSetup && await fileExists(cachedWhisperSetup.bin) && await fileExists(cachedWhisperSetup.model)) {
-        return cachedWhisperSetup;
+const findWhisperSetup = async (): Promise<{ bin: string; model: string; modelLabel: string } | null> => {
+    if (cachedWhisperSetup) {
+        if (await fileExists(cachedWhisperSetup.bin) && await fileExists(cachedWhisperSetup.model)) {
+            return cachedWhisperSetup;
+        }
+        cachedWhisperSetup = null;
     }
     for (const exe of ["whisper-cli.exe", "main.exe", "whisper-cli", "main"]) {
         const binPath = path.join(WHISPER_DIR, exe);
@@ -24,7 +26,7 @@ const findWhisperSetup = async (): Promise<{ bin: string; model: string; modelLa
             const modPath = path.join(WHISPER_DIR, mod);
             if (await fileExists(modPath)) {
                 const modelLabel = mod.replace(/^ggml-/, "").replace(/\.bin$/, "").toUpperCase();
-                cachedWhisperSetup = { bin: binPath, model: modPath, modelLabel, kind: "cpp" };
+                cachedWhisperSetup = { bin: binPath, model: modPath, modelLabel };
                 return cachedWhisperSetup;
             }
         }
@@ -52,7 +54,10 @@ const runTranscriptionPipeline = async (
 
     try {
         onProgress?.("PROBING AUDIO TRACK...", 5);
-        const { durationSec } = await probeMediaFile(videoPath, { signal, timeoutMs: 15_000 });
+        const { durationSec, hasAudio } = await probeMediaFile(videoPath, { signal, timeoutMs: 15_000 });
+        if (!hasAudio) {
+            throw new Error("This video has no audio track to transcribe.");
+        }
 
         onProgress?.("EXTRACTING 16KHZ MONO AUDIO...", 10);
         let lastExtractPct = -1;
@@ -91,7 +96,7 @@ const runTranscriptionPipeline = async (
             }
         };
 
-        const whisperThreads = String(Math.max(2, os.cpus().length - 2));
+        const whisperThreads = getWorkerThreadCount();
         await withExportSlot(() => spawnExec(whisper.bin, [
             "-m", whisper.model,
             "-f", wavPath,
@@ -133,8 +138,13 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json() as { videoUrl?: string };
-        const videoPath = await resolveCachedVideoPath(body.videoUrl);
+        let body: { videoUrl?: string } | null;
+        try {
+            body = (await request.json()) as { videoUrl?: string } | null;
+        } catch {
+            return NextResponse.json({ error: "Invalid JSON request body." }, { status: 400 });
+        }
+        const videoPath = await resolveCachedVideoPath(body?.videoUrl);
         if (!videoPath) {
             return NextResponse.json({ error: "Transcribe requires an ingested studio video on disk." }, { status: 400 });
         }
@@ -148,30 +158,21 @@ export async function POST(request: Request) {
 
         const wantsStream = request.headers.get("accept")?.includes("application/x-ndjson");
         if (wantsStream) {
-            const enc = new TextEncoder();
-            const stream = new ReadableStream<Uint8Array>({
-                async start(controller) {
-                    const send = (obj: Record<string, unknown>) => {
-                        try { controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`)); } catch {}
-                    };
-                    try {
-                        const segments = await runTranscriptionPipeline(
-                            videoPath,
-                            whisper,
-                            (stage, percent) => send({ stage, percent }),
-                            request.signal
-                        );
-                        send({ stage: "SUBTITLES READY", percent: 100, segments });
-                    } catch (err) {
-                        const msg = err instanceof Error ? err.message : "Transcription failed";
-                        console.error("VIDEO_TRANSCRIBE_ERROR:", msg);
-                        send({ error: msg });
-                    } finally {
-                        try { controller.close(); } catch {}
-                    }
-                },
+            return createNdjsonResponse(request.signal, async (send, streamSignal) => {
+                try {
+                    const segments = await runTranscriptionPipeline(
+                        videoPath,
+                        whisper,
+                        (stage, percent) => send({ stage, percent }),
+                        streamSignal
+                    );
+                    send({ stage: "SUBTITLES READY", percent: 100, segments });
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : "Transcription failed";
+                    console.error("VIDEO_TRANSCRIBE_ERROR:", msg);
+                    send({ error: msg });
+                }
             });
-            return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
         }
 
         const segments = await runTranscriptionPipeline(videoPath, whisper, undefined, request.signal);

@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming, has45LetterboxFraming } from "../../../types/news";
-import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
+import { VideoDraft, SUBTITLE_FONT_OPTIONS, getActiveSceneAtTime, getTotalVideoDuration, getHookTransitionFade, wrapMediaTime, getDefaultSubtitleFontSize, getTopBoxOffsetY, findSubtitleAtMediaTime, interpolateKeyframe, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming, has45LetterboxFraming } from "@/types/news";
+import { VIDEO_FORMAT_CONFIGS } from "@/config/omnichannel";
 import { TPEVectorLogo, type LogoMotionConfig } from "../TPEVectorLogo";
 import { HighlightedText } from "../NewsCard/HighlightedText";
 import { PlayIcon } from "../../icons/TPEIcons";
@@ -12,9 +12,9 @@ import { AmbientBlurStack } from "./AmbientBlurStack";
 import { useVideoElementSync } from "./useVideoElementSync";
 import { useSmoothFramingLoop } from "./useSmoothFramingLoop";
 import { shouldUseStandbyDeck } from "./dualDeckHelpers";
-import { useMediaQuery } from "../../../app/admin/hooks/useMediaQuery";
-import { classifyPlaybackProfile, extractKeyframeTimesFromFrameIndex } from "../../../app/admin/utils/clientMediaInspector";
-import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
+import { useMediaQuery } from "@/app/admin/hooks/useMediaQuery";
+import { classifyPlaybackProfile, extractKeyframeTimesFromFrameIndex } from "@/app/admin/utils/clientMediaInspector";
+import type { LivePlaybackClock } from "@/app/admin/utils/livePlaybackClock";
 
 const SCRIM_STYLES: Record<'top' | 'center' | 'bottom', React.CSSProperties> = {
     center: { position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(5,5,5,0.72) 0%, rgba(5,5,5,0.36) 52%, transparent 82%)', pointerEvents: 'none', zIndex: 9 },

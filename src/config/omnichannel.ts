@@ -1,12 +1,12 @@
 export type Platform = "instagram" | "tiktok" | "square";
 export type VideoAspectRatio = '9:16' | '4:5' | '16:9';
 
-export interface PlatformDimension {
+interface PlatformDimension {
     readonly width: number;
     readonly height: number;
 }
 
-export interface VideoFormatConfig extends PlatformDimension {
+interface VideoFormatConfig extends PlatformDimension {
     readonly label: string;
 }
 

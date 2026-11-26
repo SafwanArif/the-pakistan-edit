@@ -1,33 +1,19 @@
 "use client";
 
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { nudgeTimeToFrame } from "../../../types/news";
+import { nudgeTimeToFrame, type SourceFrameIndex } from "@/types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { ScrubPillSlider } from "./ScrubPillSlider";
-import { KeyDiamondGlyph, SnapCap, KeyframeTimeChip } from "./FramingToolbarPrimitives";
+import { CONTAIN_ZOOM_OPTIONS, KeyDiamondGlyph, KeyframeTimeChip, PAN_SNAP_OPTIONS, POS_Y_SNAP_OPTIONS, SnapCap } from "./FramingToolbarPrimitives";
 
 const SNAP_MODE_OPTIONS = [
     { label: 'SNAP', val: 1, title: 'Instant angle snap with independent PRE & POST states' },
     { label: 'GLIDE', val: 0, title: 'Smooth continuous camera glide through keyframe' },
 ];
-const CONTAIN_ZOOM_OPTIONS = [
-    { label: 'CONTAIN', val: 0, title: 'Snap to 0% (4:5 Contain)' },
-    { label: 'FILL', val: 100, title: 'Snap to 100% (Full-Bleed Fill)' },
-];
-const PAN_SNAP_OPTIONS = [
-    { label: 'LEFT', val: 0, title: 'Snap Pan Left (0%)' },
-    { label: 'CTR', val: 50, title: 'Snap Pan Center (50%)' },
-    { label: 'RIGHT', val: 100, title: 'Snap Pan Right (100%)' },
-];
-const POS_Y_SNAP_OPTIONS = [
-    { label: 'TOP', val: 100, title: 'Snap to Top edge (100%)' },
-    { label: 'CTR', val: 50, title: 'Snap to Vertical Center (50%)' },
-    { label: 'BTM', val: 0, title: 'Snap to Bottom edge (0%)' },
-];
 
-export interface KeyframeEditorCapsuleProps {
+interface KeyframeEditorCapsuleProps {
     sourceFps: number;
-    sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
+    sourceFrameIndex?: SourceFrameIndex;
     isParked: boolean;
     kfCount: number;
     isTopBox45: boolean;

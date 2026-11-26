@@ -1,4 +1,5 @@
 import React from "react";
+import { DEFAULT_OUTRO_CTA } from "@/types/news";
 import { TPEVectorLogo, type LogoMotionConfig } from "../TPEVectorLogo";
 import { HighlightedText } from "../NewsCard/HighlightedText";
 
@@ -62,7 +63,7 @@ export const VideoOutroCard: React.FC<VideoOutroCardProps> = React.memo(({ outro
         </div>
         <div style={DIVIDER_STYLE} />
         <div style={{ ...CTA_BASE_STYLE, fontSize: is916 ? '42px' : '32px' }}>
-            <HighlightedText text={outroCta || "FOLLOW FOR VERIFIED STRATEGIC INTELLIGENCE"} />
+            <HighlightedText text={outroCta || DEFAULT_OUTRO_CTA} />
         </div>
         <div style={HANDLE_STYLE}>
             @THEPAKISTANEDIT

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFade, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming } from "../../../types/news";
-import { PowerIcon } from "../../../components/icons/TPEIcons";
+import { FadePresetMode, TimelineScene, VideoDraft, resolveSceneFade, isSharedReHookScene, getVideoHeadingPreset, getDefaultVideoFraming, timelineTimeToMediaTime } from "@/types/news";
+import { PowerIcon } from "@/components/icons/TPEIcons";
 import { detectFaceInHookWindow, getCachedFaceScan } from "../utils/autoTrackSubject";
 
 interface FadePresetControlProps {
@@ -120,7 +120,7 @@ interface SceneChecklistPopoverProps {
     onUpdateScene: (patch: Partial<TimelineScene>) => void;
 }
 
-export interface SceneCheckItem {
+interface SceneCheckItem {
     ok: boolean;
     label: string;
     fix?: () => void;
@@ -152,8 +152,8 @@ export function getSceneCheckItems(
         const hasMotionOrCut = hasAnchorReHook || (draft.keyframes || []).some(k => k.time <= 5) || getDefaultVideoFraming(draft, draft.aspectRatio).zoom !== (draft.aspectRatio === '4:5' ? 0 : 100);
         const faceDone = typeof options?.faceDetected === 'boolean';
         const hasOpenLoop = /\?|:|—|"|'|%|£|\$|\d|\b(why|how|never|only|first|secret|truth|actually|would|could|unless|before)\b/i.test(titleStr);
-        const titleLead = titleStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
-        const subLead = subStr.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).slice(0, 3).join(' ');
+        const titleLead = titleStr.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).slice(0, 3).join(' ');
+        const subLead = subStr.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).slice(0, 3).join(' ');
         const nonRedundant = Boolean(titleLead && subLead && titleLead !== subLead);
         const resolvedHookFade = resolveSceneFade(draft.scenes || [], 0);
         const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > hookStart && s.start <= hookStart + 0.65);
@@ -180,9 +180,9 @@ export function getSceneCheckItems(
         const isAnchored = scene.shareHookText !== false;
         const hook0 = draft.scenes?.[0];
         const hook1Offset = hook0?.clipStartOffset ?? 0;
-        const hasVisualShift = Boolean(scene.mediaUrl) || (scene.clipStartOffset !== undefined && scene.clipStartOffset !== hook1Offset);
+        const rehookMediaStart = timelineTimeToMediaTime(draft, hook0?.duration ?? 0);
+        const hasVisualShift = Boolean(scene.mediaUrl) || rehookMediaStart !== hook1Offset;
         const resolved = resolveSceneFade(draft.scenes || [], 1);
-        const rehookMediaStart = scene.clipStartOffset ?? (hook1Offset + (hook0?.duration ?? 0));
         const instantSpeech = hasSubs && draft.subtitles!.some(s => s.end > rehookMediaStart && s.start <= rehookMediaStart + 0.65);
 
         return [

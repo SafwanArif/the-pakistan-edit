@@ -7,7 +7,7 @@ import {
     type StarSpinMode,
 } from "../types/news";
 
-export type EmblemShape = "dot" | "star" | "crescent";
+type EmblemShape = "dot" | "star" | "crescent";
 
 export interface LogoMotionConfig {
     enableLogo?: boolean;
@@ -22,7 +22,7 @@ export interface LogoMotionConfig {
     previewNonce?: number;
 }
 
-export interface EmblemCueState {
+interface EmblemCueState {
     shapeA: EmblemShape;
     shapeB: EmblemShape;
     mix: number;
@@ -31,7 +31,7 @@ export interface EmblemCueState {
 }
 
 export const easeOutQuart = (t: number): number => 1 - Math.pow(1 - t, 4);
-export const easeInOutCubic = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const easeInOutCubic = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 export const clamp01 = (v: number): number => clamp(v, 0, 1);
 
 export const CIRCLE_PATH_R3 = "M 0 -3 A 3 3 0 1 1 0 3 A 3 3 0 1 1 0 -3 Z";
@@ -160,11 +160,13 @@ export const buildLogoEmblemPath = (
     mix: number,
     scalePct = 100
 ): string => {
+    if (!Number.isFinite(mix)) return CIRCLE_PATH_R3;
     const t = clamp01(mix);
     if ((shapeA === "dot" && t <= 0.001) || (shapeB === "dot" && t >= 0.999) || (shapeA === "dot" && shapeB === "dot")) {
         return CIRCLE_PATH_R3;
     }
-    const scaleMul = clamp(scalePct, 50, 200) / 100;
+    const safeScale = Number.isFinite(scalePct) ? scalePct : 100;
+    const scaleMul = clamp(safeScale, 50, 200) / 100;
     const sA = shapeA === "dot" ? 1 : scaleMul;
     const sB = shapeB === "dot" ? 1 : scaleMul;
     const bufA = getShapeBuffer(shapeA);
@@ -188,23 +190,20 @@ export const buildLogoEmblemPath = (
     return `${d} Z`;
 };
 
-/** Morphs the R=3 circular dot (m=0) into a sharp 5-point Pakistan Flag star (m=1). */
-export const buildDotStarMorphPath = (morph: number, scalePct = 100): string =>
-    buildLogoEmblemPath("dot", "star", morph, scalePct);
-
 /**
  * Returns the SVG transform for the P. dot/star/crescent, lifting its center upward as it expands
  * so its lowest point stays anchored on the y=42 baseline and never pushes down into PAKISTAN EDIT.
  */
 export const getStarDotTransform = (expandFactor: number, angleDeg: number, scalePct = 100): string => {
-    const m = clamp01(expandFactor);
-    const scaleMul = clamp(scalePct, 50, 200) / 100;
+    const m = Number.isFinite(expandFactor) ? clamp01(expandFactor) : 0;
+    const safeAngle = Number.isFinite(angleDeg) ? angleDeg : 0;
+    const scaleMul = clamp(Number.isFinite(scalePct) ? scalePct : 100, 50, 200) / 100;
     const currentOuterR = DOT_RADIUS + (STAR_OUTER_RADIUS * scaleMul - DOT_RADIUS) * m;
     const liftY = Math.max(0, currentOuterR - DOT_RADIUS);
     const base = liftY > 0.001
         ? `translate(${DOT_BASE_X} ${(DOT_BASE_Y - liftY).toFixed(3)})`
         : `translate(${DOT_BASE_X} ${DOT_BASE_Y})`;
-    return Math.abs(angleDeg) > 0.01 ? `${base} rotate(${angleDeg.toFixed(2)})` : base;
+    return Math.abs(safeAngle) > 0.01 ? `${base} rotate(${safeAngle.toFixed(2)})` : base;
 };
 
 /** Returns the total duration in seconds of a single emblem cue for the chosen sequence mode. */
@@ -232,7 +231,17 @@ export const evaluateEmblemCue = (
     holdFeel: StarHoldFeel = "drift"
 ): EmblemCueState => {
     const total = getCueTotalDuration(morphDur, holdDur, sequence);
-    if (localElapsed <= 0 || localElapsed >= total) return REST_CUE_STATE;
+    if (
+        !Number.isFinite(localElapsed) ||
+        !Number.isFinite(morphDur) ||
+        !Number.isFinite(holdDur) ||
+        morphDur <= 0 ||
+        holdDur < 0 ||
+        localElapsed <= 0 ||
+        localElapsed >= total
+    ) {
+        return REST_CUE_STATE;
+    }
 
     const dir = spinMode === "ccw" ? -1 : 1;
     const driftDeg = holdFeel === "still" ? 0 : (spinMode === "cw-2x" ? 24 : 18);
@@ -309,20 +318,9 @@ export const evaluateEmblemCue = (
     return { shapeA: "star", shapeB: "dot", mix: e, expandFactor: 1 - e, angleDeg: a2 + (a3 - a2) * e };
 };
 
-/** Legacy wrapper evaluating a single star-only spin cycle. */
-export const evaluateSingleCueSpin = (
-    localElapsed: number,
-    morphDur: number,
-    holdDur: number,
-    spinMode: StarSpinMode
-): { morph: number; angleDeg: number } => {
-    const st = evaluateEmblemCue(localElapsed, morphDur, holdDur, spinMode, "star-only", "drift");
-    return { morph: st.expandFactor, angleDeg: st.angleDeg };
-};
-
 /** Resolves the active emblem cue state across all scheduled cues for the current playback time. */
 export const getLogoEmblemState = (elapsed: number, cfg?: LogoMotionConfig): EmblemCueState => {
-    if (cfg?.enableLogo === false) return REST_CUE_STATE;
+    if (!Number.isFinite(elapsed) || cfg?.enableLogo === false) return REST_CUE_STATE;
     const cues = cfg?.starCues ?? DEFAULT_STAR_CUES;
     if (!cues.length) return REST_CUE_STATE;
     const morphDur = clamp(cfg?.morphDuration ?? 0.45, 0.15, 2.0);
@@ -339,10 +337,4 @@ export const getLogoEmblemState = (elapsed: number, cfg?: LogoMotionConfig): Emb
         }
     }
     return REST_CUE_STATE;
-};
-
-/** Legacy wrapper returning star morph (0..1) and rotation angle for the current elapsed playback time. */
-export const getStarAnimState = (elapsed: number, cfg?: LogoMotionConfig): { morph: number; angleDeg: number } => {
-    const st = getLogoEmblemState(elapsed, { ...cfg, sequence: cfg?.sequence ?? "star-only" });
-    return { morph: st.expandFactor, angleDeg: st.angleDeg };
 };

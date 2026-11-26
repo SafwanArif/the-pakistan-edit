@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo } from "react";
-import { Draft, PostMode } from "../../../types/news";
-import { EDITORIAL_STEPS } from "../../../config/editorial";
+import React, { useMemo, useState } from "react";
+import { Draft, PostMode } from "@/types/news";
+import { EDITORIAL_STEPS } from "@/config/editorial";
 import { useAssetManager } from "../hooks/useAssetManager";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { DraftResolver } from "../utils/dataAccessors";
@@ -17,6 +17,7 @@ interface DraftFormProps {
     step: number;
     setStep: (s: number) => void;
     onReset?: () => void;
+    isExporting?: boolean;
     mode: PostMode;
     onModeChange: (mode: PostMode) => void;
 }
@@ -24,9 +25,9 @@ interface DraftFormProps {
 /**
  * Schema-driven form ribbon for Carousel slide editing and batch export.
  */
-export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, mode, onModeChange }) => {
+export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange, onSubmit, step, setStep, onReset, isExporting = false, mode, onModeChange }) => {
     const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
-    const [focusedField, setFocusedField] = React.useState<string | null>(null);
+    const [focusedField, setFocusedField] = useState<string | null>(null);
     const headerRowRef = useClickOutside(() => setFocusedField(null), '[data-editorial-popover="true"]', focusedField !== null);
     
     // 1. Resolve Schema for current step
@@ -35,7 +36,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
         if (step >= 3) {
             const index = step - 3;
             return {
-                ...EDITORIAL_STEPS[2],
+                step,
                 label: index === 0 ? "Missing Context" : `Deep Angle ${index + 1}`,
                 fields: [`extra-heading-${index}`, `extra-content-${index}`],
                 required: [`extra-content-${index}`]
@@ -45,6 +46,8 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
     }, [step]);
 
     if (!config) return null;
+
+    const activeFocusedField = focusedField && config.fields.includes(focusedField) ? focusedField : null;
 
     // 2. Declarative Validation
     const canProceed = config.required.every(f => {
@@ -57,7 +60,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
 
     return (
         <div className="tpe-flex-col tpe-draft-form-container">
-            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={focusedField || undefined}>
+            <div ref={headerRowRef} className="tpe-header-row" data-focused-field={activeFocusedField || undefined}>
                 <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} />
 
                 {/* 2. STEP ID (CLEANED FOR MOBILE) */}
@@ -73,8 +76,8 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
                 <div className="tpe-header-main">
                     <div className="tpe-header-tools">
                         {config.fields.map((f, i) => {
-                            const isFocused = focusedField === f;
-                            const hasOtherFocused = focusedField && focusedField !== f;
+                            const isFocused = activeFocusedField === f;
+                            const hasOtherFocused = Boolean(activeFocusedField && activeFocusedField !== f);
                             
                             return (
                                 <React.Fragment key={f}>
@@ -96,7 +99,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
                                             onFocus={() => setFocusedField(f)}
                                         />
                                     </div>
-                                    {i === 0 && config.fields.length > 1 && !focusedField && <span className="tpe-separator-pipe">|</span>}
+                                    {i === 0 && config.fields.length > 1 && !activeFocusedField && <span className="tpe-separator-pipe">|</span>}
                                 </React.Fragment>
                             );
                         })}
@@ -116,15 +119,20 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({ draft, onChange
                 {/* NAVIGATION */}
                 <div className="tpe-nav-cluster">
                     {step > 1 && (
-                        <button type="button" onClick={() => setStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">BACK</button>
+                        <button type="button" onClick={() => { setFocusedField(null); setStep(step - 1); }} className="tpe-nav-btn tpe-btn-gold">BACK</button>
                     )}
                     <button 
                         type="button"
-                        onClick={() => canProceed && (isLastStep ? onSubmit(draft) : setStep(step + 1))} 
-                        disabled={!canProceed || resolving} 
+                        onClick={() => {
+                            if (!canProceed) return;
+                            setFocusedField(null);
+                            if (isLastStep) onSubmit(draft);
+                            else setStep(step + 1);
+                        }}
+                        disabled={!canProceed || resolving || (isLastStep && isExporting)}
                         className={`tpe-nav-btn ${isLastStep ? "tpe-btn-primary" : "tpe-btn-gold"}`}
                     >
-                        {resolving ? "..." : (isLastStep ? "EXPORT" : "NEXT")}
+                        {resolving ? "..." : (isLastStep ? (isExporting ? "EXPORTING..." : "EXPORT") : "NEXT")}
                     </button>
                 </div>
             </div>

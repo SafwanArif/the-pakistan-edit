@@ -7,9 +7,9 @@ import {
     getTotalVideoDuration,
     getDefaultVideoFraming,
     mediaTimeToTimelineTime,
-} from "../../../types/news";
-import { interpolateKeyframeInto } from "../../../utils/videoTimeline";
-import type { LivePlaybackClock } from "../../../app/admin/utils/livePlaybackClock";
+} from "@/types/news";
+import { interpolateKeyframeInto } from "@/utils/videoTimeline";
+import type { LivePlaybackClock } from "@/app/admin/utils/livePlaybackClock";
 
 export interface AmbientCropRect {
     xFrac: number;

@@ -1,6 +1,6 @@
-import type { PlaybackSyncProfile, SourceFrameIndex, SourceMediaInfo } from "../../../types/news";
+import type { PlaybackSyncProfile, SourceFrameIndex, SourceMediaInfo } from "@/types/news";
 
-export interface ClientMediaInspectionResult {
+interface ClientMediaInspectionResult {
     mediaInfo: SourceMediaInfo;
     durationSec?: number;
     keyframeTimes: number[];

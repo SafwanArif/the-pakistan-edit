@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeHydratedVideoDraft, probeVideoMetadata, resetClipBoundFields } from "../useVideoDraftState";
-import { createDefaultVideoDraft, getDefaultVideoFraming, getVideoHeadingPreset } from "../../../../types/news";
-import { GET as healthGet } from "../../../api/health/route";
-import { POST as ingestPost } from "../../../api/video/ingest/route";
+import { createDefaultVideoDraft, getDefaultVideoFraming, getVideoHeadingPreset } from "@/types/news";
+import { GET as healthGet } from "@/app/api/health/route";
+import { POST as ingestPost } from "@/app/api/video/ingest/route";
 
 describe("video aspect ratio presets", () => {
     afterEach(() => vi.unstubAllGlobals());

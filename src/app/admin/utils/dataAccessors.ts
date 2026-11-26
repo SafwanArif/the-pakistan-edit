@@ -1,15 +1,15 @@
-import { Draft, SlideAsset, VideoDraft, getActiveSceneAtTime, isSharedReHookScene } from "../../../types/news";
+import { Draft, SlideAsset, VideoDraft, getActiveSceneAtTime, isSharedReHookScene } from "@/types/news";
 
-export type CoreField = 'headline' | 'category' | 'summary' | 'image' | 'imageCredit' | 'sourceName' | 'sourcePrefix' | 'creditPrefix';
-export type ExtraSlideField = 'heading' | 'content' | 'source' | 'sourcePrefix';
-export type SlideAssetField = keyof SlideAsset;
+type CoreField = 'headline' | 'category' | 'summary' | 'image' | 'imageCredit' | 'sourceName' | 'sourcePrefix' | 'creditPrefix';
+type ExtraSlideField = 'heading' | 'content' | 'source' | 'sourcePrefix';
+type SlideAssetField = keyof SlideAsset;
 
 const CORE_FIELDS = new Set<string>(['headline', 'category', 'summary', 'image', 'imageCredit', 'sourceName', 'sourcePrefix', 'creditPrefix']);
 const EXTRA_SLIDE_PATH_RE = /^extra-([a-zA-Z]+)-(\d+)$/;
 const SLIDE_ASSET_PATH_RE = /^slide-(\d+)-([a-zA-Z_]+)$/;
 const VIDEO_PREFIX_RE = /^video-/;
 
-export type DraftPath = 
+type DraftPath = 
     | CoreField 
     | `extra-${ExtraSlideField}-${number}` 
     | `slide-${number}-${SlideAssetField}` 
@@ -53,7 +53,7 @@ export const DraftResolver = {
             return (draft.slideAssets?.[slideNum]?.[field] as string | number | undefined) ?? "";
         }
 
-        return ((draft as unknown as Record<string, unknown>)[path as string] as string | number | undefined) ?? "";
+        return "";
     },
 
     set: (path: DraftPath, value: string | number, draft: Draft): Draft => {
@@ -97,7 +97,7 @@ export const DraftResolver = {
             };
         }
 
-        return { ...draft, [path]: value } as Draft;
+        return draft;
     },
 
     /** Atomically patches multiple asset/framing fields for a single Carousel slide in one immutable update. */
@@ -169,8 +169,11 @@ export const VideoDraftResolver = {
         if (cleanPath === 'creditName') {
             return (scene && scene.creditName) ? scene.creditName : (draft.creditName ?? "");
         }
+        if (cleanPath === 'outroCta') {
+            return draft.outroCta ?? "";
+        }
 
-        return ((draft as unknown as Record<string, unknown>)[cleanPath] as string) ?? "";
+        return "";
     },
 
     set: (path: string, value: string, draft: VideoDraft, currentTime: number = 0): VideoDraft => {
@@ -212,7 +215,8 @@ export const VideoDraftResolver = {
             }
             return { ...draft, creditName: value };
         }
+        if (cleanPath === 'outroCta') return { ...draft, outroCta: value };
 
-        return { ...draft, [cleanPath]: value } as VideoDraft;
+        return draft;
     }
 };

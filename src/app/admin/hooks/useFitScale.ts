@@ -10,7 +10,7 @@ export function useFitScale(targetWidth: number, targetHeight: number) {
 
     useLayoutEffect(() => {
         const el = containerRef.current;
-        if (!el) return;
+        if (!el || targetWidth <= 0 || targetHeight <= 0) return;
 
         const applyDimensions = (width: number, height: number) => {
             if (width <= 0 || height <= 0) return;

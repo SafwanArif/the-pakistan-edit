@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useMemo, useDeferredValue } from "react";
-import { Draft } from "../../../types/news";
-import { NewsCard } from "../../../components/templates/NewsCard/index";
-import { OMNI_CONFIG, Platform } from "../../../config/omnichannel";
-import { TikTokIcon, InstagramIcon, XIcon } from "../../../components/icons/TPEIcons";
+import { Draft } from "@/types/news";
+import { NewsCard } from "@/components/templates/NewsCard/index";
+import { OMNI_CONFIG, Platform } from "@/config/omnichannel";
+import { TikTokIcon, InstagramIcon, XIcon } from "@/components/icons/TPEIcons";
 import { useContainerScale } from "../hooks/useContainerScale";
 
 const PLATFORM_CONFIGS: { id: Platform; label: string; w: number; h: number }[] = (

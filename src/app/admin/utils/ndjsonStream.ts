@@ -17,6 +17,7 @@ export async function consumeNdjsonStream<T>(
         onEvent(JSON.parse(trimmed) as T);
     };
 
+    let completed = false;
     try {
         while (true) {
             const { value, done } = await reader.read();
@@ -28,7 +29,11 @@ export async function consumeNdjsonStream<T>(
         }
         buffer += decoder.decode();
         if (buffer.trim()) emitLine(buffer);
+        completed = true;
     } finally {
+        if (!completed) {
+            await reader.cancel().catch(() => { /* stream already cancelled */ });
+        }
         reader.releaseLock();
     }
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { PostMode, getTotalVideoDuration, getActiveSceneAtTime } from "../../../types/news";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { PostMode, getTotalVideoDuration, getActiveSceneAtTime } from "@/types/news";
 import { useVideoDraftState } from "../hooks/useVideoDraftState";
 import { VideoDraftForm } from "./VideoDraftForm";
 import { StudioVideoMonitor } from "./StudioVideoMonitor";
@@ -82,9 +82,12 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
         exportAbortRef.current?.abort();
         const controller = new AbortController();
         exportAbortRef.current = controller;
+        const onStatus = (msg: string | null) => {
+            if (!controller.signal.aborted) setExporting(msg);
+        };
         try {
             const { runVideoOverlayExport } = await import("../utils/videoExportEngine");
-            await runVideoOverlayExport(videoDraftRef.current, setExporting, controller.signal);
+            await runVideoOverlayExport(videoDraftRef.current, onStatus, controller.signal);
         } catch (e) {
             console.error("ADMIN_VIDEO_OVERLAY_EXPORT_INTERCEPT:", e);
         } finally {
@@ -96,9 +99,12 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
         exportAbortRef.current?.abort();
         const controller = new AbortController();
         exportAbortRef.current = controller;
+        const onStatus = (msg: string | null) => {
+            if (!controller.signal.aborted) setExporting(msg);
+        };
         try {
             const { runVideoMP4Export } = await import("../utils/videoExportEngine");
-            await runVideoMP4Export(videoDraftRef.current, setExporting, controller.signal);
+            await runVideoMP4Export(videoDraftRef.current, onStatus, controller.signal);
         } catch (e) {
             console.error("ADMIN_VIDEO_MP4_EXPORT_INTERCEPT:", e);
         } finally {
@@ -141,7 +147,6 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         onClearVideo={clearVideo}
                         onReset={resetVideoDraft}
                         onUploadVideo={ingestVideoBlob}
-                        isOptimisingVideo={isOptimisingVideo}
                         isExporting={!!exporting}
                         mode={mode}
                         onModeChange={onModeChange}

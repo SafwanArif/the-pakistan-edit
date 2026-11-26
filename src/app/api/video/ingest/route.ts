@@ -4,10 +4,12 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { CACHE_DIR, SAFE_MEDIA_ID_RE, classifyFrameTimestamps, createFileWebStream, probeMediaFile, spawnExec } from "../../../../lib/server/videoMedia";
-import type { SourceFrameIndex, SourceMediaInfo } from "../../../../types/news";
+import { assertDiskHeadroom, CACHE_DIR, classifyFrameTimestamps, createFileWebStream, createNdjsonResponse, probeMediaFile, SAFE_MEDIA_ID_RE, spawnExec } from "@/lib/server/videoMedia";
+import type { SourceFrameIndex, SourceMediaInfo } from "@/types/news";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const MAX_CACHED_VIDEOS = 8;
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -61,7 +63,8 @@ const probeSourceFrameIndex = async (
             keyframes,
             pts: cfr ? [] : frameTimes,
         };
-    } catch {
+    } catch (err) {
+        if (signal?.aborted) throw err;
         return null;
     }
 };
@@ -105,6 +108,10 @@ const runLosslessVideoIngest = async (
         "-progress", "pipe:1",
         ...(stripEditList && !copyAudio ? ["-ignore_editlist", "1"] : []),
         "-i", inputPath,
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+        "-sn",
+        "-dn",
         "-c:v", "copy",
         ...(copyAudio ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ar", "48000"]),
         "-movflags", "+faststart",
@@ -137,7 +144,12 @@ const runLosslessVideoIngest = async (
     });
     onStage?.("INDEXING SOURCE FRAMES...");
     const frameIndex = await probeSourceFrameIndex(outputPath, "", fps, mediaInfo.exactFps, signal);
-    return { fps, duration: durationSec, frameIndex, mediaInfo };
+    return {
+        fps,
+        duration: durationSec,
+        frameIndex,
+        mediaInfo: { ...mediaInfo, moovBeforeMdat: true, container: "mp4" },
+    };
 };
 
 /** Keeps `.next/cache/tpe-videos` bounded to the newest clips and removes legacy/temp files. */
@@ -244,6 +256,7 @@ export async function POST(request: Request) {
         }
 
         await fs.promises.mkdir(CACHE_DIR, { recursive: true });
+        await assertDiskHeadroom();
         const uid = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
         const rawName = file instanceof File ? file.name : "upload.mp4";
         const extMatch = /\.(mp4|mov|webm|mkv|m4v)$/i.exec(rawName);
@@ -255,7 +268,7 @@ export async function POST(request: Request) {
 
         if (typeof file.stream === "function") {
             const nodeReadable = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]);
-            await pipeline(nodeReadable, fs.createWriteStream(rawPath));
+            await pipeline(nodeReadable, fs.createWriteStream(rawPath), { signal: request.signal });
         } else {
             await fs.promises.writeFile(rawPath, Buffer.from(await file.arrayBuffer()));
         }
@@ -266,38 +279,30 @@ export async function POST(request: Request) {
         if (wantsStream) {
             const streamRawPath = rawPath;
             rawPath = null;
-            const enc = new TextEncoder();
-            const stream = new ReadableStream<Uint8Array>({
-                async start(controller) {
-                    const send = (obj: Record<string, unknown>) => {
-                        try { controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`)); } catch {}
-                    };
-                    try {
-                        send({ stage: "SAVING RAW STREAM TO STUDIO CACHE..." });
-                        const metadata = await runLosslessVideoIngest(streamRawPath, outPath!, file.size, stripEditList, (stage) => send({ stage }), request.signal);
-                        void pruneCacheDir(mediaName);
-                        const mediaUrl = `/api/video/ingest?id=${encodeURIComponent(mediaName)}`;
-                        const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
-                        send({
-                            stage: "SYNCING MONITOR METADATA...",
-                            url: mediaUrl,
-                            fps: metadata.fps,
-                            duration: metadata.duration,
-                            frameIndexUrl: frameIndexUrl || "",
-                            mediaInfo: metadata.mediaInfo,
-                        });
-                    } catch (err) {
-                        if (outPath) await fs.promises.unlink(outPath).catch(() => {});
-                        const msg = err instanceof Error ? err.message : "Video ingest failed";
-                        console.error("VIDEO_INGEST_ERROR:", msg);
-                        send({ error: msg });
-                    } finally {
-                        await fs.promises.unlink(streamRawPath).catch(() => {});
-                        try { controller.close(); } catch {}
-                    }
-                },
+            return createNdjsonResponse(request.signal, async (send, streamSignal) => {
+                try {
+                    send({ stage: "SAVING RAW STREAM TO STUDIO CACHE..." });
+                    const metadata = await runLosslessVideoIngest(streamRawPath, outPath!, file.size, stripEditList, (stage) => send({ stage }), streamSignal);
+                    void pruneCacheDir(mediaName);
+                    const mediaUrl = `/api/video/ingest?id=${encodeURIComponent(mediaName)}`;
+                    const frameIndexUrl = await persistFrameIndexSidecar(mediaName, mediaUrl, metadata.frameIndex);
+                    send({
+                        stage: "SYNCING MONITOR METADATA...",
+                        url: mediaUrl,
+                        fps: metadata.fps,
+                        duration: metadata.duration,
+                        frameIndexUrl: frameIndexUrl || "",
+                        mediaInfo: metadata.mediaInfo,
+                    });
+                } catch (err) {
+                    if (outPath) await fs.promises.unlink(outPath).catch(() => {});
+                    const msg = err instanceof Error ? err.message : "Video ingest failed";
+                    console.error("VIDEO_INGEST_ERROR:", msg);
+                    send({ error: msg });
+                } finally {
+                    await fs.promises.unlink(streamRawPath).catch(() => {});
+                }
             });
-            return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
         }
 
         const metadata = await runLosslessVideoIngest(rawPath, outPath, file.size, stripEditList, undefined, request.signal);

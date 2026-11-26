@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { formatTimecode, parseTimeInput } from "../../../types/news";
+import { formatTimecode, parseTimeInput } from "@/types/news";
 
 const HOOK_NUDGES = [
     { label: '-1s', delta: -1, title: 'Nudge -1s' },

@@ -3,7 +3,7 @@ import { useEditorialSelection } from "../hooks/useEditorialSelection";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { DraftResolver, VideoDraftResolver } from "../utils/dataAccessors";
 import { FormatButton } from "./EditorialTools";
-import { Draft, VideoDraft, PostMode } from "../../../types/news";
+import { Draft, VideoDraft, PostMode } from "@/types/news";
 
 const BOLD_EFFECT_STYLE: React.CSSProperties = { fontWeight: 800 };
 const ITALIC_EFFECT_STYLE: React.CSSProperties = { fontStyle: 'italic' };
@@ -21,7 +21,7 @@ interface SelectionPopoverProps {
 
 /**
  * 2027 Institutional Standard: SelectionPopover
- * Detached UI element isolated from 120fps playback ticks via React.memo + discrete activeSceneTime.
+ * Detached UI element isolated from 120Hz playback ticks via React.memo + discrete activeSceneTime.
  */
 export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     postMode,

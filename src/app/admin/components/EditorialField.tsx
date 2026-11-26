@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from "react";
-import { Draft } from "../../../types/news";
+import { Draft } from "@/types/news";
 import { DraftResolver } from "../utils/dataAccessors";
 import { EmojiToolbar } from "./EditorialTools";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useId, useLayoutEffect, useRef } from "react";
-import { clamp, DEFAULT_STAR_CUES } from "../../types/news";
+import { clamp, DEFAULT_STAR_CUES } from "@/types/news";
 import {
     CIRCLE_PATH_R3,
     REST_CUE_STATE,
@@ -13,7 +13,7 @@ import {
     getLogoEmblemState,
     getStarDotTransform,
     type LogoMotionConfig,
-} from "../../utils/starMorphMath";
+} from "@/utils/starMorphMath";
 
 export type { LogoMotionConfig };
 
@@ -42,16 +42,21 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
     const startTimeRef = useRef(wordmarkStartTime);
     const motionConfigRef = useRef(motionConfig);
     const isPreviewingRef = useRef(false);
+    const animateWordmarkRef = useRef(animateWordmark);
+    const dotCacheRef = useRef({ path: "", transform: "", atRest: false });
     const rect1Ref = useRef<SVGRectElement>(null);
     const rect2Ref = useRef<SVGRectElement>(null);
     const text1Ref = useRef<SVGTextElement>(null);
     const text2Ref = useRef<SVGTextElement>(null);
     const dotPathRef = useRef<SVGPathElement>(null);
 
+    const wordmarkClipOn = animateWordmark && (motionConfig?.enableWordmark !== false);
+
     useLayoutEffect(() => {
         startTimeRef.current = wordmarkStartTime;
         motionConfigRef.current = motionConfig;
-    }, [wordmarkStartTime, motionConfig]);
+        animateWordmarkRef.current = animateWordmark;
+    }, [wordmarkStartTime, motionConfig, animateWordmark]);
 
     useLayoutEffect(() => {
         const previewNonce = motionConfig?.previewNonce ?? 0;
@@ -70,12 +75,21 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         const originMs = performance.now();
         let rafId = 0;
 
+        const restoreDotAfterPreview = () => {
+            isPreviewingRef.current = false;
+            dotCacheRef.current = { path: "", transform: "", atRest: false };
+            const curCfg = motionConfigRef.current;
+            const pausedTime = !animateWordmarkRef.current ? startTimeRef.current : 0;
+            const st = pausedTime > 0 ? getLogoEmblemState(pausedTime, curCfg) : REST_CUE_STATE;
+            const scaleNow = curCfg?.starScale ?? 100;
+            dotEl.setAttribute("d", buildLogoEmblemPath(st.shapeA, st.shapeB, st.mix, scaleNow));
+            dotEl.setAttribute("transform", getStarDotTransform(st.expandFactor, st.angleDeg, scaleNow));
+        };
+
         const tickPreview = (now: number) => {
             const localElapsed = (now - originMs) / 1000;
             if (localElapsed >= total) {
-                dotEl.setAttribute("d", CIRCLE_PATH_R3);
-                dotEl.setAttribute("transform", "translate(32 39)");
-                isPreviewingRef.current = false;
+                restoreDotAfterPreview();
                 return;
             }
             const st = evaluateEmblemCue(localElapsed, morphDur, holdDur, spinMode, sequence, holdFeel);
@@ -87,26 +101,22 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         rafId = requestAnimationFrame(tickPreview);
         return () => {
             cancelAnimationFrame(rafId);
-            isPreviewingRef.current = false;
-            dotEl.setAttribute("d", CIRCLE_PATH_R3);
-            dotEl.setAttribute("transform", "translate(32 39)");
+            restoreDotAfterPreview();
         };
     }, [motionConfig?.previewNonce, motionConfig?.enableLogo]);
 
     useLayoutEffect(() => {
-        const r1 = rect1Ref.current;
-        const r2 = rect2Ref.current;
-        const t1 = text1Ref.current;
-        const t2 = text2Ref.current;
         const dotEl = dotPathRef.current;
-        let lastDotPath = "";
-        let lastDotTransform = "";
-        let dotAtRest = false;
+        dotCacheRef.current = { path: "", transform: "", atRest: false };
         let wordmarkSettled = false;
 
         const applyProgress = (elapsed: number, forceRest = false) => {
             const cfg = motionConfigRef.current;
             if (showWordmark) {
+                const r1 = rect1Ref.current;
+                const r2 = rect2Ref.current;
+                const t1 = text1Ref.current;
+                const t2 = text2Ref.current;
                 const wordmarkOn = cfg?.enableWordmark !== false;
                 if (forceRest || !animateWordmark || !wordmarkOn || elapsed >= 0.62) {
                     if (!wordmarkSettled) {
@@ -127,32 +137,33 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
                 }
             }
             if (dotEl && !isPreviewingRef.current) {
+                const cache = dotCacheRef.current;
                 const st = forceRest || elapsed <= 0
                     ? REST_CUE_STATE
                     : getLogoEmblemState(elapsed, cfg);
                 if (st === REST_CUE_STATE) {
-                    if (dotAtRest) return;
-                    dotAtRest = true;
-                    if (lastDotPath !== CIRCLE_PATH_R3) {
-                        lastDotPath = CIRCLE_PATH_R3;
+                    if (cache.atRest) return;
+                    cache.atRest = true;
+                    if (cache.path !== CIRCLE_PATH_R3) {
+                        cache.path = CIRCLE_PATH_R3;
                         dotEl.setAttribute("d", CIRCLE_PATH_R3);
                     }
-                    if (lastDotTransform !== "translate(32 39)") {
-                        lastDotTransform = "translate(32 39)";
+                    if (cache.transform !== "translate(32 39)") {
+                        cache.transform = "translate(32 39)";
                         dotEl.setAttribute("transform", "translate(32 39)");
                     }
                     return;
                 }
-                dotAtRest = false;
+                cache.atRest = false;
                 const starScale = cfg?.starScale ?? 100;
                 const nextD = buildLogoEmblemPath(st.shapeA, st.shapeB, st.mix, starScale);
                 const nextTransform = getStarDotTransform(st.expandFactor, st.angleDeg, starScale);
-                if (nextD !== lastDotPath) {
-                    lastDotPath = nextD;
+                if (nextD !== cache.path) {
+                    cache.path = nextD;
                     dotEl.setAttribute("d", nextD);
                 }
-                if (nextTransform !== lastDotTransform) {
-                    lastDotTransform = nextTransform;
+                if (nextTransform !== cache.transform) {
+                    cache.transform = nextTransform;
                     dotEl.setAttribute("transform", nextTransform);
                 }
             }
@@ -200,7 +211,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
 
         rafId = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(rafId);
-    }, [animateWordmark, showWordmark, externalDriveRef]);
+    }, [animateWordmark, showWordmark, wordmarkClipOn, externalDriveRef]);
 
     useLayoutEffect(() => {
         if (animateWordmark || isPreviewingRef.current) return;
@@ -210,7 +221,7 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         const cfg = motionConfigRef.current;
         const st = t > 0
             ? getLogoEmblemState(t, cfg)
-            : { shapeA: "dot" as const, shapeB: "dot" as const, mix: 0, expandFactor: 0, angleDeg: 0 };
+            : REST_CUE_STATE;
         const starScale = cfg?.starScale ?? 100;
         dotEl.setAttribute("d", buildLogoEmblemPath(st.shapeA, st.shapeB, st.mix, starScale));
         dotEl.setAttribute("transform", getStarDotTransform(st.expandFactor, st.angleDeg, starScale));
@@ -226,8 +237,6 @@ export const TPEVectorLogo: React.FC<TPEVectorLogoProps> = React.memo(({
         motionConfig?.sequence,
         motionConfig?.holdFeel,
     ]);
-
-    const wordmarkClipOn = animateWordmark && (motionConfig?.enableWordmark !== false);
 
     const width = showWordmark ? 72 : 29;
     const height = showWordmark ? 85 : 36;

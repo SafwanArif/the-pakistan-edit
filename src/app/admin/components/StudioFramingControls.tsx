@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { DEFAULT_STAR_CUES, getVideoHeadingPreset, has45LetterboxFraming, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "../../../types/news";
-import { ChevronLeftIcon, ChevronRightIcon, VolumeIcon, VolumeMuteIcon } from "../../../components/icons/TPEIcons";
+import { getVideoHeadingPreset, has45LetterboxFraming, type SourceFrameIndex, type VideoAspectRatio, type VideoDraft, type VideoFraming } from "@/types/news";
+import { ChevronLeftIcon, ChevronRightIcon, VolumeIcon, VolumeMuteIcon } from "@/components/icons/TPEIcons";
 import { useClickOutside } from "../hooks/useClickOutside";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { ScrubPillSlider } from "./ScrubPillSlider";
-import { SnapCap } from "./FramingToolbarPrimitives";
+import { CONTAIN_ZOOM_OPTIONS, PAN_SNAP_OPTIONS, POS_Y_SNAP_OPTIONS, SnapCap } from "./FramingToolbarPrimitives";
 import { SubtitleEditorTray } from "./SubtitleEditorTray";
 import { MotionControlDeck } from "./MotionControlDeck";
 import { KeyframeEditorCapsule } from "./KeyframeEditorCapsule";
@@ -15,21 +15,6 @@ const HEADLINE_PRESETS = [
     { id: 'top' as const, label: 'UPPER THIRD', title: 'Upper Third: Safely positioned below the branding masthead; leaves center footage clear' },
     { id: 'center' as const, label: 'OPTICAL CENTER', title: 'Optical Center: Centered at primary eye level for maximum FYP retention hook' },
     { id: 'bottom' as const, label: 'LOWER THIRD', title: 'Lower Third: Broadcast lower third; positioned safely above native TikTok caption UI' }
-];
-
-const CONTAIN_ZOOM_OPTIONS = [
-    { label: 'CONTAIN', val: 0, title: 'Contain: preserve the full 4:5 frame' },
-    { label: 'FILL', val: 100, title: 'Fill: cover the 4:5 frame edge to edge' },
-];
-const PAN_SNAP_OPTIONS = [
-    { label: 'LEFT', val: 0, title: 'Snap Pan Left' },
-    { label: 'CTR', val: 50, title: 'Snap Pan Center' },
-    { label: 'RIGHT', val: 100, title: 'Snap Pan Right' },
-];
-const POS_Y_SNAP_OPTIONS = [
-    { label: 'TOP', val: 100, title: 'Snap to Top edge' },
-    { label: 'CTR', val: 50, title: 'Snap to Vertical Center' },
-    { label: 'BTM', val: 0, title: 'Snap to Bottom edge' },
 ];
 
 type ActiveToolTab = 'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume';
@@ -51,7 +36,7 @@ interface ToolTabItem {
 interface StudioFramingControlsProps {
     draft: VideoDraft;
     sourceFps: number;
-    sourceFrameIndex?: import("../../../types/news").SourceFrameIndex;
+    sourceFrameIndex?: SourceFrameIndex;
     isPlaying?: boolean;
     liveClock?: LivePlaybackClock;
     isCurrentlyMuted: boolean;
@@ -441,11 +426,8 @@ export const StudioFramingControls: React.FC<StudioFramingControlsProps> = React
     if (prev.activeToolTab !== next.activeToolTab) return false;
     if (next.activeToolTab === null) {
         return prev.aspectRatio === next.aspectRatio
-            && getVideoHeadingPreset(prev.draft, prev.aspectRatio) === getVideoHeadingPreset(next.draft, next.aspectRatio)
-            && prev.draft.enableMotion === next.draft.enableMotion
             && (prev.draft.keyframes?.length ?? 0) === (next.draft.keyframes?.length ?? 0)
             && (prev.draft.subtitles?.length ?? 0) === (next.draft.subtitles?.length ?? 0)
-            && (prev.draft.starCues ?? DEFAULT_STAR_CUES).length === (next.draft.starCues ?? DEFAULT_STAR_CUES).length
             && prev.activeSubtitleCount === next.activeSubtitleCount;
     }
     if (next.activeToolTab === 'layout') {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     VideoDraft,
     SUBTITLE_FONT_OPTIONS,
@@ -12,7 +12,7 @@ import {
     getTimelineStructure,
     switchVideoAspectRatio,
     clamp,
-} from "../../../types/news";
+} from "@/types/news";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 type MasterChecklistTab = "seo" | "rewards" | "psychology";
@@ -169,13 +169,17 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
             id: "fade-pacing",
             category: "psychology",
             label: "Micro / Editorial Fade Pacing",
-            detail: `01 out ${hookFades.outDur.toFixed(2)}s • 02 in ${rehookFades.inDur.toFixed(2)}s`,
+            detail: rehook
+                ? `01 out ${hookFades.outDur.toFixed(2)}s • 02 in ${rehookFades.inDur.toFixed(2)}s`
+                : `01 out ${hookFades.outDur.toFixed(2)}s`,
             passed: Boolean(hook && hookFades.outDur > 0 && (!rehook || rehookFades.inDur > 0)),
             fixLabel: "Auto Fade",
             onFix: (d) => ({
                 ...d,
                 scenes: d.scenes.map((s, idx) =>
-                    idx === 0 ? { ...s, fadeOut: true, fadeOutPreset: "auto" } : idx === 1 ? { ...s, fadeIn: true, fadeInPreset: "auto" } : s
+                    idx === 0
+                        ? { ...s, fadeOut: true, fadeOutPreset: "auto" }
+                        : (hasReHook && idx === 1 ? { ...s, fadeIn: true, fadeInPreset: "auto" } : s)
                 ),
             }),
         },
@@ -249,7 +253,7 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         const maxTop = Math.max(12, window.innerHeight - height - 12);
         el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
         el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
-    }, []);
+    }, [activeTab, tabItems.length]);
 
     return (
         <div
@@ -363,7 +367,8 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
     variant,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const checklistRef = useClickOutside(() => setIsOpen(false), undefined, isOpen);
+    const handleClose = useCallback(() => setIsOpen(false), []);
+    const checklistRef = useClickOutside(handleClose, undefined, isOpen);
     const items = useMemo(() => getMasterChecklistItems(draft), [draft]);
     const passed = items.filter((item) => item.passed).length;
     const isMobile = variant === "mobile";
@@ -391,7 +396,7 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
                     draft={draft}
                     items={items}
                     onChange={onChange}
-                    onClose={() => setIsOpen(false)}
+                    onClose={handleClose}
                 />
             )}
         </div>

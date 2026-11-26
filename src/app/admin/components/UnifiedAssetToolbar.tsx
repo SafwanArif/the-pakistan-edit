@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { Draft } from "../../../types/news";
-import { DraftResolver } from "../utils/dataAccessors";
+import { Draft } from "@/types/news";
+import { revokeBlobUrl } from "@/utils/idUtils";
+import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { useClickOutside } from "../hooks/useClickOutside";
-import { UploadIcon, LinkIcon, CloseIcon } from "../../../components/icons/TPEIcons";
+import { UploadIcon, LinkIcon, CloseIcon } from "@/components/icons/TPEIcons";
 import { ImageCreditToolbar, SourcePrefixToolbar } from "./EditorialTools";
 
 interface UnifiedAssetToolbarProps {
@@ -28,24 +29,35 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
     
     const containerRef = useClickOutside(() => setIsExpanded(false), '[data-editorial-popover="true"]', isExpanded);
 
+    const effectiveAsset = getEffectiveSlideAsset(step, draft);
     const hasOverride = !!draft.slideAssets?.[step]?.image || (step === 1 && !!draft.image);
-    const hasEffectiveImage = hasOverride || !!draft.image;
+    const hasEffectiveImage = Boolean(effectiveAsset.image);
     const creditFieldId = `slide-${step}-imageCredit`;
     const creditPrefixFieldId = `slide-${step}-creditPrefix`;
     const sourceFieldId = step === 2 ? 'sourceName' : `extra-source-${step - 3}`;
     const sourcePrefixFieldId = step === 2 ? 'sourcePrefix' : `extra-sourcePrefix-${step - 3}`;
-    const imageCredit = String(DraftResolver.get(creditFieldId, draft) ?? '');
-    const creditPrefix = String(DraftResolver.get(creditPrefixFieldId, draft) || "PHOTO:");
+    const imageCredit = effectiveAsset.imageCredit ?? '';
+    const creditPrefix = effectiveAsset.creditPrefix || "PHOTO:";
     const sourceName = String(DraftResolver.get(sourceFieldId, draft) ?? '');
     const sourcePrefix = String(DraftResolver.get(sourcePrefixFieldId, draft) || "SOURCE:");
 
     const handleLinkSubmit = () => {
         const clean = urlInput.trim();
         if (clean) {
-            if (clean.startsWith('http') && onLink) {
+            if (/^https?:\/\//i.test(clean) && onLink) {
                 onLink(clean);
             } else {
-                onChange(DraftResolver.set(`slide-${step}-image`, clean, draft));
+                const prevUrl = DraftResolver.get(`slide-${step}-image`, draft);
+                if (typeof prevUrl === 'string') revokeBlobUrl(prevUrl);
+                onChange(DraftResolver.patchSlide(step, {
+                    image: clean,
+                    imageWidth: 0,
+                    imageHeight: 0,
+                    imageZoom: 100,
+                    snapMode: 'height',
+                    imagePosX: 50,
+                    imagePosY: 50,
+                }, draft));
             }
             setUrlInput("");
             setShowLinkInput(false);
@@ -62,7 +74,7 @@ export const UnifiedAssetToolbar = React.memo<UnifiedAssetToolbarProps>(({
                 className="tpe-asset-btn"
                 data-active={hasOverride}
             >
-                <UploadIcon fill={hasOverride ? "var(--ui-accent)" : "currentColor"} />
+                <UploadIcon stroke={hasOverride ? "var(--ui-accent)" : "currentColor"} />
             </button>
 
             <div className={`${isExpanded ? 'tpe-asset-tray-expanded' : 'tpe-hidden'} tpe-flex-col`} style={{ gap: '10px' }}>

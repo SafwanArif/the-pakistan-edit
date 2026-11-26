@@ -15,11 +15,11 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string, en
         if (!enabled) return;
 
         const listener = (event: PointerEvent) => {
-            const target = event.target as HTMLElement | null;
-            if (!ref.current || ref.current.contains(target)) {
+            const target = event.target;
+            if (!ref.current || (target instanceof Node && ref.current.contains(target))) {
                 return;
             }
-            if (ignoreSelector && target?.closest(ignoreSelector)) {
+            if (ignoreSelector && target instanceof Element && target.closest(ignoreSelector)) {
                 return;
             }
             handlerRef.current();

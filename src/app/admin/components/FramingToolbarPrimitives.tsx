@@ -1,7 +1,22 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatPreciseTimecode, parseTimeInput } from "../../../types/news";
+import { formatPreciseTimecode, parseTimeInput } from "@/types/news";
+
+export const CONTAIN_ZOOM_OPTIONS = [
+    { label: 'CONTAIN', val: 0, title: 'Contain: preserve the full 4:5 frame (0%)' },
+    { label: 'FILL', val: 100, title: 'Fill: cover the 4:5 frame edge to edge (100%)' },
+];
+export const PAN_SNAP_OPTIONS = [
+    { label: 'LEFT', val: 0, title: 'Snap Pan Left (0%)' },
+    { label: 'CTR', val: 50, title: 'Snap Pan Center (50%)' },
+    { label: 'RIGHT', val: 100, title: 'Snap Pan Right (100%)' },
+];
+export const POS_Y_SNAP_OPTIONS = [
+    { label: 'TOP', val: 100, title: 'Snap to Top edge (100%)' },
+    { label: 'CTR', val: 50, title: 'Snap to Vertical Center (50%)' },
+    { label: 'BTM', val: 0, title: 'Snap to Bottom edge (0%)' },
+];
 
 const DIAMOND_BASE_STYLE: React.CSSProperties = {
     display: 'inline-block',

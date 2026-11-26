@@ -59,3 +59,13 @@ export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxO
     onUpdate(prefix + syntaxOpen + selection + syntaxClose + suffix);
     restoreInputSelection(el, start + syntaxOpen.length, end + syntaxOpen.length);
 };
+
+/** Safely releases pointer capture without throwing when capture was already lost by the browser. */
+export const safeReleasePointerCapture = (el: Element | null, pointerId: number): void => {
+    if (!el) return;
+    try {
+        if (el.hasPointerCapture(pointerId)) {
+            el.releasePointerCapture(pointerId);
+        }
+    } catch { /* capture already released */ }
+};

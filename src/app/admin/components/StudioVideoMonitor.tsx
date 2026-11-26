@@ -2,12 +2,12 @@
 
 import React, { useMemo, useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import Image from "next/image";
-import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getDefaultVideoFraming } from "../../../types/news";
-import { findParkedKeyframe, toggleKeyframeEasing, updateKeyframeFraming, updateKeyframeTime, upsertKeyframe } from "../../../utils/videoKeyframes";
+import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getDefaultVideoFraming } from "@/types/news";
+import { findParkedKeyframe, toggleKeyframeEasing, updateKeyframeFraming, updateKeyframeTime, upsertKeyframe } from "@/utils/videoKeyframes";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
-import { VideoCard } from "../../../components/templates/VideoCard/index";
-import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
-import { PlayIcon, PauseIcon } from "../../../components/icons/TPEIcons";
+import { VideoCard } from "@/components/templates/VideoCard/index";
+import { VIDEO_FORMAT_CONFIGS } from "@/config/omnichannel";
+import { PlayIcon, PauseIcon } from "@/components/icons/TPEIcons";
 import { useFitScale } from "../hooks/useFitScale";
 import { useStudioShortcuts } from "../hooks/useStudioShortcuts";
 import { StudioFramingControls } from "./StudioFramingControls";
@@ -246,7 +246,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         seek(target.time);
     }, []);
 
-    const handleCloseToolTab = React.useCallback(() => setActiveToolTab(null), []);
+    const handleCloseToolTab = useCallback(() => setActiveToolTab(null), []);
 
     const handleJumpToTime = useCallback((t: number, side?: 'pre' | 'post') => {
         if (side) setKfEditSide(side);

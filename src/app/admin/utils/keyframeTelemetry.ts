@@ -1,4 +1,4 @@
-import { clamp, type VideoKeyframe } from "../../../types/news";
+import { clamp, type VideoKeyframe } from "@/types/news";
 
 interface TelemetryTint {
     color: string;
@@ -41,8 +41,8 @@ export function getKeyframeTelemetryTint(
     const isParkedSnap = typeof parkedIndexOrSnap === "boolean"
         ? parkedIndexOrSnap
         : parkedIndexOrSnap >= 0 && keyframes[parkedIndexOrSnap]?.easing === "snap";
-    if (isParkedSnap && editSide === "pre") {
-        return PRE_TINT;
+    if (isParkedSnap) {
+        return editSide === "pre" ? PRE_TINT : ACCENT_TINT;
     }
 
     const first = sorted[0]!;
@@ -56,7 +56,7 @@ export function getKeyframeTelemetryTint(
     for (let i = 0; i < sorted.length - 1; i++) {
         const prev = sorted[i]!;
         const next = sorted[i + 1]!;
-        if (time >= prev.time && time <= next.time) {
+        if (time >= prev.time && time < next.time) {
             if (next.easing === "snap") {
                 if (next.pre?.time !== undefined && time >= next.pre.time) {
                     return PRE_TINT;
@@ -75,7 +75,7 @@ export function getKeyframeTelemetryTint(
     return ACCENT_TINT;
 }
 
-export interface KeyframeJumpStop {
+interface KeyframeJumpStop {
     time: number;
     side: "pre" | "post";
 }

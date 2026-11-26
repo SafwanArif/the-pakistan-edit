@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Draft, clamp } from "../../../types/news";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Draft, clamp } from "@/types/news";
 import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
 import { useClickOutside } from "../hooks/useClickOutside";
@@ -25,9 +25,9 @@ interface FocalToolkitProps {
 export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({ 
     activeDraft, updateDraft, currentStep, setStep, undo, redo, canUndo, canRedo
 }) => {
-    const [isExpanded, setIsExpanded] = React.useState(false);
-    const hudRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded);
+    const [isExpanded, setIsExpanded] = useState(false);
     const asset = useMemo(() => getEffectiveSlideAsset(currentStep, activeDraft), [currentStep, activeDraft]);
+    const hudRef = useClickOutside(() => setIsExpanded(false), undefined, isExpanded && Boolean(asset.image));
 
     const stateRef = useRef({ activeDraft, currentStep, updateDraft });
     useEffect(() => {
@@ -51,10 +51,20 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
     const handleRemoveAngle = (e: React.MouseEvent) => {
         e.preventDefault();
         const index = currentStep - 3;
-        if (index < 0 || !activeDraft.extraSlides) return;
+        if (currentStep <= 3 || index < 0 || !activeDraft.extraSlides) return;
         const slides = [...activeDraft.extraSlides];
         slides.splice(index, 1);
-        updateDraft({ ...activeDraft, extraSlides: slides });
+        let nextSlideAssets = activeDraft.slideAssets;
+        if (activeDraft.slideAssets) {
+            const rebuilt: NonNullable<Draft["slideAssets"]> = {};
+            for (const [key, val] of Object.entries(activeDraft.slideAssets)) {
+                const num = Number(key);
+                if (num === currentStep) continue;
+                rebuilt[num > currentStep ? num - 1 : num] = val;
+            }
+            nextSlideAssets = rebuilt;
+        }
+        updateDraft({ ...activeDraft, extraSlides: slides, slideAssets: nextSlideAssets });
         setStep(currentStep - 1);
     };
 
@@ -134,7 +144,7 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
                 </button>
             </div>
 
-            {isExpanded && (
+            {isExpanded && asset.image && (
                 <div className="tpe-flex-col tpe-glass-panel tpe-hud-container" style={{ pointerEvents: 'auto' }}>
                     <div className="tpe-hud-grid">
                         {[

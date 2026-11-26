@@ -46,10 +46,12 @@ export const useMediaQuery = (query: string): boolean => {
         };
     }, [query]);
 
-    const getSnapshot = useCallback(
-        () => getOrCreateEntry(query)?.mql.matches ?? false,
-        [query]
-    );
+    const getSnapshot = useCallback(() => {
+        const existing = mediaQueryStore.get(query);
+        if (existing) return existing.mql.matches;
+        if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+        return window.matchMedia(query).matches;
+    }, [query]);
 
     return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 };

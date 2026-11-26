@@ -9,9 +9,10 @@ import {
     StarHoldFeel,
     DEFAULT_STAR_CUES,
     formatTimecode,
-} from "../../../types/news";
+} from "@/types/news";
+import { generateShortId } from "@/utils/idUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
-import { ChevronLeftIcon, ChevronRightIcon } from "../../../components/icons/TPEIcons";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons/TPEIcons";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { SnapCap } from "./FramingToolbarPrimitives";
 
@@ -80,21 +81,33 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
         [isLogoOpen, isPlaying, sortedCues, activeDisplayTime]
     );
 
+    const activeDisplayTimeRef = useRef(activeDisplayTime);
+    useEffect(() => {
+        activeDisplayTimeRef.current = activeDisplayTime;
+    }, [activeDisplayTime]);
+
     useEffect(() => {
         if (!isPlaying || !isLogoOpen || !logoOn || !liveClock) return;
         let lastStr = "";
-        const sync = (t: number) => {
+        const setBtnText = (label: string) => {
             const btn = addCueBtnRef.current;
             if (!btn) return;
+            if (btn.firstChild) btn.firstChild.nodeValue = label;
+            else btn.textContent = label;
+        };
+        const sync = (t: number) => {
             const label = `+ ★ AT ${formatTimecode(t)}`;
             if (label !== lastStr) {
                 lastStr = label;
-                if (btn.firstChild) btn.firstChild.nodeValue = label;
-                else btn.textContent = label;
+                setBtnText(label);
             }
         };
         sync(liveClock.getTime());
-        return liveClock.subscribe((frame) => sync(frame.time));
+        const unsub = liveClock.subscribe((frame) => sync(frame.time));
+        return () => {
+            unsub();
+            setBtnText(`+ ★ AT ${formatTimecode(activeDisplayTimeRef.current)}`);
+        };
     }, [isPlaying, isLogoOpen, logoOn, liveClock]);
 
     const hasHookCue = useMemo(
@@ -124,7 +137,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
             return;
         }
         const nextCue: StarSpinCue = {
-            id: `star-${crypto.randomUUID().slice(0, 8)}`,
+            id: `star-${generateShortId()}`,
             time: rounded,
         };
         const nextCues = [...rawCues, nextCue].sort((a, b) => a.time - b.time);
@@ -286,7 +299,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                         STAR CUES:
                     </span>
                     {sortedCues.map((cue) => {
-                        const isNear = Math.abs(cue.time - activeDisplayTime) <= 0.08;
+                        const isNear = !isPlaying && Math.abs(cue.time - activeDisplayTime) <= 0.08;
                         return (
                             <div
                                 key={cue.id}
@@ -365,6 +378,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                     value={morphMs}
                     min={200}
                     max={1500}
+                    step={50}
                     unit="ms"
                     width="110px"
                     height="20px"
@@ -377,6 +391,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                     value={holdMs}
                     min={0}
                     max={2500}
+                    step={50}
                     unit="ms"
                     width="106px"
                     height="20px"

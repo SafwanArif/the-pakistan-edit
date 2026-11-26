@@ -1,4 +1,4 @@
-export interface LivePlaybackFrame {
+interface LivePlaybackFrame {
     time: number;
     zoom?: number;
     posX?: number;
@@ -6,7 +6,7 @@ export interface LivePlaybackFrame {
     isLetterbox?: boolean;
 }
 
-export type LivePlaybackListener = (frame: Readonly<LivePlaybackFrame>) => void;
+type LivePlaybackListener = (frame: Readonly<LivePlaybackFrame>) => void;
 
 export interface LivePlaybackClock {
     emit: (time: number, zoom?: number, posX?: number, posY?: number, isLetterbox?: boolean) => void;

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import type { Draft, PostMode } from "../../../types/news";
+import { useState, useCallback, useEffect, useRef } from "react";
+import type { Draft, PostMode } from "@/types/news";
 import { useEditorialState } from "../hooks/useEditorialState";
 import { DraftForm } from "./DraftForm";
 import { OmniPreviewGrid } from "./OmniPreviewGrid";
@@ -20,6 +20,7 @@ interface CarouselStudioProps {
  */
 export default function CarouselStudio({ mode, onModeChange }: CarouselStudioProps) {
     const [exporting, setExporting] = useState<string | null>(null);
+    const isExportingRef = useRef(false);
     const {
         isMounted,
         currentStep,
@@ -33,18 +34,29 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
         canRedo,
     } = useEditorialState();
 
+    const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
+    const safeStep = Math.min(Math.max(1, currentStep), totalSteps);
+
+    useEffect(() => {
+        if (isMounted && currentStep > totalSteps) {
+            void setCurrentStep(totalSteps);
+        }
+    }, [isMounted, currentStep, totalSteps, setCurrentStep]);
+
     const handleExportBatch = useCallback(async (draft: Draft) => {
+        if (isExportingRef.current) return;
+        isExportingRef.current = true;
         try {
             const { runExportEngine } = await import("../utils/exportEngine");
             await runExportEngine(draft, setExporting);
         } catch (e) {
             console.error("ADMIN_DASHBOARD_EXPORT_INTERCEPT:", e);
+        } finally {
+            isExportingRef.current = false;
         }
     }, []);
 
     if (!isMounted) return null;
-
-    const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
 
     return (
         <>
@@ -54,9 +66,10 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
                         draft={activeDraft}
                         onChange={updateDraft}
                         onSubmit={handleExportBatch}
-                        step={currentStep}
+                        step={safeStep}
                         setStep={setCurrentStep}
                         onReset={resetState}
+                        isExporting={Boolean(exporting)}
                         mode={mode}
                         onModeChange={onModeChange}
                     />
@@ -67,8 +80,8 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
             <div className="tpe-progress-container">
                 {Array.from({ length: totalSteps }).map((_, i) => {
                     const stepNum = i + 1;
-                    const isActive = currentStep === stepNum;
-                    const segmentColor = (currentStep >= stepNum)
+                    const isActive = safeStep === stepNum;
+                    const segmentColor = (safeStep >= stepNum)
                         ? (stepNum === 1 ? 'var(--ui-indicator)' : (stepNum === 2 ? 'var(--ui-accent)' : 'var(--ui-text)'))
                         : 'transparent';
 
@@ -102,11 +115,11 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
             )}
 
             <main className="sandbox-grid">
-                <OmniPreviewGrid draft={activeDraft} currentStep={currentStep} />
+                <OmniPreviewGrid draft={activeDraft} currentStep={safeStep} />
                 <FocalToolkit
                     activeDraft={activeDraft}
                     updateDraft={updateDraft}
-                    currentStep={currentStep}
+                    currentStep={safeStep}
                     setStep={setCurrentStep}
                     undo={undo}
                     redo={redo}

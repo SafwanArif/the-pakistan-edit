@@ -1,26 +1,9 @@
 import JSZip from "jszip";
-import { VideoDraft, VideoAspectRatio, getSceneBoundaries, getVideoHeadingPreset, isSharedReHookScene, downloadBlob } from "../../../types/news";
-import { VIDEO_FORMAT_CONFIGS } from "../../../config/omnichannel";
-import React from "react";
-import { VideoCard } from "../../../components/templates/VideoCard/index";
+import { VideoDraft, VideoAspectRatio, getSceneBoundaries, getVideoHeadingPreset, isSharedReHookScene, downloadBlob } from "@/types/news";
+import { VIDEO_FORMAT_CONFIGS } from "@/config/omnichannel";
+import { VideoCard } from "@/components/templates/VideoCard/index";
 import { sanitize, getAnchorKeyword } from "./textUtils";
-import { createDomCaptureSession } from "./exportEngine";
-
-let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
-
-const setExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
-    if (statusClearTimer !== null) {
-        clearTimeout(statusClearTimer);
-        statusClearTimer = null;
-    }
-    onStatus(msg);
-    if (autoClearMs && msg !== null) {
-        statusClearTimer = setTimeout(() => {
-            statusClearTimer = null;
-            onStatus(null);
-        }, autoClearMs);
-    }
-};
+import { createDomCaptureSession, setExportStatus } from "./exportEngine";
 
 const isAbortError = (err: unknown): boolean =>
     (err instanceof DOMException && err.name === "AbortError")
@@ -95,6 +78,7 @@ export const runVideoMP4Export = async (
     const headingPreset = getVideoHeadingPreset(draft, draft.aspectRatio);
 
     try {
+        setExportStatus(onStatus, "Preparing broadcast MP4 export...");
         if (!draft.videoUrl?.includes('/api/video/ingest')) {
             throw new Error(
                 draft.videoUrl?.startsWith('blob:')
@@ -147,7 +131,7 @@ export const runVideoMP4Export = async (
                 ]);
                 let ovBlob = overlayCache.get(cacheKey);
                 if (!ovBlob) {
-                    onStatus(`Rendering overlay ${i + 1}/${scenes.length}...`);
+                    setExportStatus(onStatus, `Rendering overlay ${i + 1}/${scenes.length}...`);
                     ovBlob = await captureOverlay(
                         { ...draft, headline: textScene.title, subtitle: textScene.subtitle, sourceName: resolvedSource, creditName: resolvedCredit },
                         sceneBounds[i]!.start
@@ -165,7 +149,7 @@ export const runVideoMP4Export = async (
 
             if (draft.enableOutro) {
                 if (signal?.aborted) return;
-                onStatus("Rendering branded outro card...");
+                setExportStatus(onStatus, "Rendering branded outro card...");
                 const outroBlob = await captureOverlay({ ...draft, scenes: [], enableOutro: true }, outroStart);
                 formData.append("outroOverlay", outroBlob, "outro.png");
             }
@@ -174,7 +158,7 @@ export const runVideoMP4Export = async (
         }
 
         if (signal?.aborted) return;
-        onStatus("Rendering crisp H.264 + 48kHz AAC MP4 via FFmpeg...");
+        setExportStatus(onStatus, "Rendering crisp H.264 + 48kHz AAC MP4 via FFmpeg...");
         const response = await fetch("/api/video/export", { method: "POST", body: formData, signal });
         if (!response.ok) {
             const errPayload = await response.json().catch(() => ({})) as { error?: string };

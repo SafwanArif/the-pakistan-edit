@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { CloseIcon } from "../../../components/icons/TPEIcons";
+import { DEFAULT_OUTRO_CTA } from "@/types/news";
+import { CloseIcon } from "@/components/icons/TPEIcons";
 
 const OUTRO_COLOR = "var(--ui-outro)";
 const outroHeaderRowStyle: React.CSSProperties = { justifyContent: 'space-between', alignItems: 'center' };
@@ -131,7 +132,7 @@ export const TimelineOutroCard: React.FC<TimelineOutroCardProps> = React.memo(({
             title="Click to jump to Outro"
         >
             <div style={outroCtaTextStyle}>
-                {outroCta || "FOLLOW @THEPAKISTANEDIT FOR VERIFIED INTELLIGENCE"}
+                {outroCta || DEFAULT_OUTRO_CTA}
             </div>
             {isOutroActive && <div style={outroEditHintStyle}>✎ EDITING IN TOP BAR</div>}
         </div>

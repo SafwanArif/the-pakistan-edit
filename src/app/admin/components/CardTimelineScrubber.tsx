@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
+import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
+import { safeReleasePointerCapture } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
-import { MOBILE_SCRUB_THROTTLE_MS } from "../../../components/templates/VideoCard/avSyncHelpers";
+import { MOBILE_SCRUB_THROTTLE_MS } from "@/components/templates/VideoCard/avSyncHelpers";
 
 const cardScrubberShellStyle: React.CSSProperties = {
     position: "relative",
@@ -228,11 +229,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 onPointerUp={(e) => {
                     if (!isDraggingRef.current) return;
                     isDraggingRef.current = false;
-                    try {
-                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                            e.currentTarget.releasePointerCapture(e.pointerId);
-                        }
-                    } catch {}
+                    safeReleasePointerCapture(e.currentTarget, e.pointerId);
                     const finalTime = computeTimeAtClientX(e.clientX) ?? latestDragTimeRef.current ?? currentTime;
                     finishDrag(finalTime);
                 }}

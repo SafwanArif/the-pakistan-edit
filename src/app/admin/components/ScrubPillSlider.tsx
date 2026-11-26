@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { clamp } from "../../../types/news";
+import { clamp } from "@/types/news";
+import { safeReleasePointerCapture } from "../utils/domUtils";
 
 interface ScrubPillSliderProps {
     label: string;
     value: number;
     min: number;
     max: number;
+    step?: number;
     unit?: string;
     accentColor?: string;
     width?: string;
@@ -31,6 +33,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     value,
     min,
     max,
+    step = 1,
     unit = "%",
     accentColor = "var(--ui-accent)",
     width = "96px",
@@ -41,7 +44,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     const [isEditing, setIsEditing] = useState(false);
     const [draftText, setDraftText] = useState("");
     const [isDragging, setIsDragging] = useState(false);
-    const dragRef = useRef<{ startX: number; startVal: number; moved: boolean } | null>(null);
+    const dragRef = useRef<{ startX: number; startVal: number; moved: boolean; lastShift: boolean } | null>(null);
 
     const span = Math.max(1, max - min);
     const pct = Math.max(0, Math.min(100, ((value - min) / span) * 100));
@@ -102,9 +105,10 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
             className="tpe-scrubber"
             title={title || `${label}: drag horizontally to scrub (Shift for fine control) or click to type`}
             onPointerDown={(e) => {
+                if (e.pointerType === "mouse" && e.button !== 0) return;
                 e.stopPropagation();
                 e.currentTarget.setPointerCapture(e.pointerId);
-                dragRef.current = { startX: e.clientX, startVal: value, moved: false };
+                dragRef.current = { startX: e.clientX, startVal: value, moved: false, lastShift: e.shiftKey };
                 setIsDragging(true);
             }}
             onPointerMove={(e) => {
@@ -113,6 +117,12 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 const dx = e.clientX - state.startX;
                 if (!state.moved && Math.abs(dx) > 3) state.moved = true;
                 if (!state.moved) return;
+                if (e.shiftKey !== state.lastShift) {
+                    state.startX = e.clientX;
+                    state.startVal = value;
+                    state.lastShift = e.shiftKey;
+                    return;
+                }
                 const speed = e.shiftKey ? 0.25 : 1;
                 const next = Math.round(clamp(state.startVal + (dx / 120) * span * speed, min, max));
                 if (next !== Math.round(value)) onChange(next);
@@ -121,9 +131,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 const state = dragRef.current;
                 dragRef.current = null;
                 setIsDragging(false);
-                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                }
+                safeReleasePointerCapture(e.currentTarget, e.pointerId);
                 if (state && !state.moved) {
                     setDraftText(String(Math.round(value)));
                     setIsEditing(true);
@@ -139,13 +147,13 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 setIsDragging(false);
             }}
             onKeyDown={(e) => {
-                const step = e.shiftKey ? 5 : 1;
+                const keyStep = e.shiftKey ? step * 5 : step;
                 if (e.key === "ArrowRight" || e.key === "ArrowUp") {
                     e.preventDefault();
-                    onChange(clamp(Math.round(value) + step, min, max));
+                    onChange(clamp(Math.round(value) + keyStep, min, max));
                 } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
                     e.preventDefault();
-                    onChange(clamp(Math.round(value) - step, min, max));
+                    onChange(clamp(Math.round(value) - keyStep, min, max));
                 } else if (e.key === "Home") {
                     e.preventDefault();
                     onChange(min);

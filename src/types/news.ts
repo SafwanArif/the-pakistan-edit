@@ -1,4 +1,4 @@
-import { createDefaultTimelineScenes } from "../utils/videoTimeline";
+import { createDefaultTimelineScenes } from "../utils/sceneTimeline";
 import type { VideoAspectRatio } from "../config/omnichannel";
 export type { VideoAspectRatio } from "../config/omnichannel";
 
@@ -171,6 +171,7 @@ export interface StarSpinCue {
 }
 
 export const DEFAULT_STAR_CUES: readonly StarSpinCue[] = [{ id: 'star-0', time: 0 }];
+export const DEFAULT_OUTRO_CTA = "FOLLOW @THEPAKISTANEDIT FOR VERIFIED INSTITUTIONAL INTELLIGENCE";
 
 export interface VideoDraft {
     videoUrl: string;
@@ -329,6 +330,7 @@ export const SUBTITLE_FONT_OPTIONS = {
     'geist': { label: 'Geist', cssFamily: 'var(--font-geist-sans), sans-serif', assName: 'Geist' },
 } as const satisfies Record<SubtitleFontId, { label: string; cssFamily: string; assName: string }>;
 
+export * from "../utils/sceneTimeline";
 export * from "../utils/videoTimeline";
 export * from "../utils/subtitleTimeline";
 export * from "../utils/starMorphMath";
@@ -379,7 +381,7 @@ export const createDefaultVideoDraft = (): VideoDraft => {
         normalizeAudio: true,
         enableOutro: true,
         outroDuration: 5,
-        outroCta: "FOLLOW @THEPAKISTANEDIT FOR VERIFIED INSTITUTIONAL INTELLIGENCE",
+        outroCta: DEFAULT_OUTRO_CTA,
         enableAmbientBlur: true,
         enableLogo: true,
         starCues: [{ id: 'star-0', time: 0 }],

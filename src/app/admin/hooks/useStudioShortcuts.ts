@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { clamp } from "../../../types/news";
+import { clamp } from "@/types/news";
 
-export interface StudioShortcutContext {
+interface StudioShortcutContext {
     togglePlay: () => void;
     seekTo: (time: number) => void;
     onToggleToolTab: (tab: "keyframes" | "subtitles" | "motion") => void;
@@ -33,7 +33,7 @@ export const resolveStudioShortcutSeek = (
     return null;
 };
 
-/** Attaches global NLE studio keyboard shortcuts once (zero listener churn during 120fps playback). */
+/** Attaches global NLE studio keyboard shortcuts once (zero listener churn during 120Hz playback). */
 export const useStudioShortcuts = (ctx: StudioShortcutContext) => {
     const ctxRef = useRef(ctx);
     useEffect(() => {

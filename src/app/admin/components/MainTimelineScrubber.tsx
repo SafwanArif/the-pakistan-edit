@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { VideoKeyframe, formatTimecode, clamp } from "../../../types/news";
+import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
+import { safeReleasePointerCapture } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 interface SceneMarker {
@@ -288,11 +289,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             if (finished) return;
             finished = true;
             cleanup();
-            try {
-                if (handleEl.hasPointerCapture(activePointerId)) {
-                    handleEl.releasePointerCapture(activePointerId);
-                }
-            } catch {}
+            safeReleasePointerCapture(handleEl, activePointerId);
             setDragTarget(null);
             hideHoverDom();
             if (onHookDragEnd) {
@@ -384,11 +381,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 onPointerUp={(e) => {
                     if (!isDraggingRef.current) return;
                     isDraggingRef.current = false;
-                    try {
-                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                            e.currentTarget.releasePointerCapture(e.pointerId);
-                        }
-                    } catch {}
+                    safeReleasePointerCapture(e.currentTarget, e.pointerId);
                     setIsDragging(false);
                     const next = timeAtClientX(e.clientX);
                     dragRectRef.current = null;

@@ -1,15 +1,54 @@
 import { spawn } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
-import type { SourceMediaInfo } from "../../types/news";
+import type { SourceMediaInfo } from "@/types/news";
 
 export const CACHE_DIR = path.join(process.cwd(), ".next", "cache", "tpe-videos");
 export const SAFE_MEDIA_ID_RE = /^media-[a-zA-Z0-9_-]+\.mp4$/;
 const STALE_EXPORT_TEMP_RE = /^(exp|subs|filter|export|audio|raw)-/;
 let lastSweepAt = 0;
 
+/** Returns a safe multi-core worker thread count leaving 2 threads free for UI & OS responsiveness. */
+export const getWorkerThreadCount = (): string => String(Math.max(2, os.cpus().length - 2));
+
+/** Creates a cancellation-safe NDJSON streaming Response that propagates both `request.signal` and `ReadableStream.cancel()`. */
+export const createNdjsonResponse = (
+    requestSignal: AbortSignal | undefined,
+    run: (send: (payload: Record<string, unknown>) => void, signal: AbortSignal) => Promise<void>
+): Response => {
+    const enc = new TextEncoder();
+    const abortController = new AbortController();
+    const onRequestAbort = () => abortController.abort();
+    if (requestSignal) {
+        if (requestSignal.aborted) abortController.abort();
+        else requestSignal.addEventListener("abort", onRequestAbort, { once: true });
+    }
+    const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+            const send = (payload: Record<string, unknown>) => {
+                if (abortController.signal.aborted) return;
+                try {
+                    controller.enqueue(enc.encode(`${JSON.stringify(payload)}\n`));
+                } catch { /* stream already closed by client */ }
+            };
+            try {
+                await run(send, abortController.signal);
+            } finally {
+                requestSignal?.removeEventListener("abort", onRequestAbort);
+                try { controller.close(); } catch { /* stream already closed */ }
+            }
+        },
+        cancel() {
+            abortController.abort();
+            requestSignal?.removeEventListener("abort", onRequestAbort);
+        },
+    });
+    return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
+};
+
 /** Parses an `ffprobe` fractional rate string (e.g. `30000/1001`) into a positive number or null. */
-export const parseProbeRatio = (rate?: string): number | null => {
+const parseProbeRatio = (rate?: string): number | null => {
     if (!rate) return null;
     const [numStr, denStr] = rate.split("/");
     const num = Number(numStr);
@@ -84,9 +123,9 @@ export const sweepStaleExportFiles = async (ttlMs = 2 * 60 * 60 * 1000): Promise
             try {
                 const st = await fs.promises.stat(full);
                 if (now - st.mtimeMs > ttlMs) await fs.promises.unlink(full);
-            } catch {}
+            } catch { /* file already removed or locked */ }
         }));
-    } catch {}
+    } catch { /* cache directory not yet initialized */ }
 };
 
 let exportQueueTail: Promise<void> = Promise.resolve();
@@ -97,6 +136,7 @@ export const withExportSlot = async <T>(task: () => Promise<T>, signal?: AbortSi
     const prev = exportQueueTail;
     let release!: () => void;
     exportQueueTail = new Promise<void>((resolve) => { release = resolve; });
+    let acquired = false;
     try {
         await new Promise<void>((resolve, reject) => {
             if (signal?.aborted) { reject(new Error("Export aborted while queued")); return; }
@@ -107,9 +147,12 @@ export const withExportSlot = async <T>(task: () => Promise<T>, signal?: AbortSi
                 resolve();
             });
         });
+        acquired = true;
         return await task();
     } finally {
-        release();
+        // Only release the tail slot after `prev` finishes so an aborted queued waiter never overlaps with the running task
+        if (acquired) release();
+        else void prev.then(release, release);
     }
 };
 
@@ -178,11 +221,14 @@ export const spawnExec = (
             if (settled) return;
             settled = true;
             cleanup();
-            try { child.kill("SIGTERM"); } catch {}
+            try { child.kill("SIGTERM"); } catch { /* process already exited */ }
             const forceKill = setTimeout(() => {
-                try { if (child.exitCode === null && !child.killed) child.kill("SIGKILL"); } catch {}
+                try {
+                    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+                } catch { /* process already exited */ }
             }, 3000);
             forceKill.unref();
+            child.once("exit", () => clearTimeout(forceKill));
             reject(new Error(reason));
         };
 
@@ -262,10 +308,12 @@ export const createFileWebStream = (
 ): ReadableStream<Uint8Array> => {
     let nodeStream: fs.ReadStream | null = null;
     let closed = false;
+    let unlinked = false;
 
     const cleanupFile = () => {
-        if (options.unlinkOnClose) {
-            void fs.promises.unlink(filePath).catch(() => {});
+        if (options.unlinkOnClose && !unlinked) {
+            unlinked = true;
+            void fs.promises.unlink(filePath).catch(() => { /* already removed */ });
         }
     };
 
@@ -274,6 +322,9 @@ export const createFileWebStream = (
             nodeStream = options.start !== undefined && options.end !== undefined
                 ? fs.createReadStream(filePath, { start: options.start, end: options.end, highWaterMark: 256 * 1024 })
                 : fs.createReadStream(filePath, { highWaterMark: 256 * 1024 });
+
+            // Unlink strictly after the OS file descriptor closes (prevents Windows EBUSY/EPERM temp file leaks)
+            nodeStream.once("close", cleanupFile);
 
             nodeStream.on("data", (chunk: Buffer | string) => {
                 if (closed) return;
@@ -286,22 +337,19 @@ export const createFileWebStream = (
                 } catch {
                     closed = true;
                     nodeStream?.destroy();
-                    cleanupFile();
                 }
             });
 
             nodeStream.once("end", () => {
                 if (closed) return;
                 closed = true;
-                try { controller.close(); } catch {}
-                cleanupFile();
+                try { controller.close(); } catch { /* stream already closed */ }
             });
 
             nodeStream.once("error", (err) => {
                 if (closed) return;
                 closed = true;
-                try { controller.error(err); } catch {}
-                cleanupFile();
+                try { controller.error(err); } catch { /* stream already errored */ }
             });
         },
         pull() {
@@ -309,14 +357,17 @@ export const createFileWebStream = (
         },
         cancel() {
             closed = true;
-            nodeStream?.destroy();
-            nodeStream = null;
-            cleanupFile();
+            if (nodeStream) {
+                nodeStream.destroy();
+                nodeStream = null;
+            } else {
+                cleanupFile();
+            }
         },
     });
 };
 
-export interface ProbedMediaFile {
+interface ProbedMediaFile {
     durationSec: number;
     startTime: number;
     hasAudio: boolean;
@@ -342,6 +393,7 @@ export const probeMediaFile = async (
         height: 1080,
         exactFps: 30,
         nominalFps: 30,
+        hasAudio: false,
         isHdr: false,
         fileSize: options.fileSize && options.fileSize > 0 ? options.fileSize : undefined,
     };
@@ -401,6 +453,7 @@ export const probeMediaFile = async (
             nominalFps,
             videoCodec: videoStream?.codec_name,
             audioCodec: audioStream?.codec_name,
+            hasAudio,
             videoBitrate,
             audioBitrate,
             pixFmt: videoStream?.pix_fmt,
@@ -416,7 +469,8 @@ export const probeMediaFile = async (
             : (!audioStream || (audioStream.codec_name === "aac" && (audioStream.initial_padding ?? 0) <= 2048));
 
         return { durationSec, startTime, hasAudio, copyAudio, mediaInfo };
-    } catch {
+    } catch (err) {
+        if (options.signal?.aborted) throw err;
         return { durationSec: 0, startTime: 0, hasAudio: false, copyAudio: false, mediaInfo: fallbackMedia };
     }
 };

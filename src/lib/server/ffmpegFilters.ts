@@ -8,8 +8,8 @@ import {
     resolveKeyframeSpan,
     getDefaultSubtitleFontSize,
     getDefaultVideoFraming,
-} from "../../types/news";
-import { projectSubtitlesToTimeline } from "../../utils/subtitleTimeline";
+} from "@/types/news";
+import { projectSubtitlesToTimeline } from "@/utils/subtitleTimeline";
 
 const formatAssTime = (sec: number): string => {
     const clamped = Math.max(0, sec);
@@ -275,8 +275,6 @@ export const buildAssSubtitles = (
         "",
     ].join("\n");
 };
-
-export type { AudioBoundaryFadeMode };
 
 /**
  * Builds FFmpeg audio fade filters:

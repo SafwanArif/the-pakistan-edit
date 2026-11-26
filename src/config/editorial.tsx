@@ -1,14 +1,14 @@
 import type { CSSProperties, ReactElement } from "react";
 import Image from "next/image";
 
-export interface SocialIconConfig {
+interface SocialIconConfig {
     readonly label: string;
     readonly icon: string;
     readonly color: string;
     readonly logo: ReactElement;
 }
 
-export interface EditorialStepConfig {
+interface EditorialStepConfig {
     readonly step: number;
     readonly label: string;
     readonly fields: readonly string[];

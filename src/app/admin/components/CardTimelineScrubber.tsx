@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
 import { isPrimaryPointer, safeReleasePointerCapture, safeSetPointerCapture, stopEventPropagation } from "../utils/domUtils";
@@ -68,16 +68,18 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         }
     }, [safeDuration, durLabel]);
 
-    const latestRef = useRef({ safeLocalTime, currentTime, onScrubEnd });
-    useLayoutEffect(() => {
-        latestRef.current = { safeLocalTime, currentTime, onScrubEnd };
+    const onUnmountScrubEnd = useEffectEvent(() => {
+        onScrubEnd?.(latestDragTimeRef.current ?? currentTime);
+    });
+    const onPlaybackStop = useEffectEvent(() => {
+        if (!isDraggingRef.current) paintDom(safeLocalTime);
     });
 
     useEffect(() => () => {
         if (isDraggingRef.current) {
             isDraggingRef.current = false;
             activePointerIdRef.current = null;
-            latestRef.current.onScrubEnd?.(latestDragTimeRef.current ?? latestRef.current.currentTime);
+            onUnmountScrubEnd();
         }
     }, []);
 
@@ -89,7 +91,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         const unsubscribe = liveClock.subscribe((frame) => paintDom(frame.time - safeStart, lastState));
         return () => {
             unsubscribe();
-            if (!isDraggingRef.current) paintDom(latestRef.current.safeLocalTime);
+            onPlaybackStop();
         };
     }, [isSceneActive, isPlaying, isDragging, liveClock, safeStart, safeDuration, paintDom]);
 

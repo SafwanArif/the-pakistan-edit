@@ -9,9 +9,9 @@ interface ExportOverlayProps {
     onCancel?: () => void;
 }
 
-/** Full-viewport modal overlay displaying live export progress, cancel, and dismissible error feedback. */
+/** Full-viewport native top-layer `<dialog>` displaying live export progress, cancel, and dismissible error feedback. */
 export const ExportOverlay: React.FC<ExportOverlayProps> = React.memo(({ status, onClose, onCancel }) => {
-    const overlayRef = useRef<HTMLDivElement>(null);
+    const dialogRef = useRef<HTMLDialogElement>(null);
     const isError = /\b(error|failed|fault|timeout)\b/i.test(status);
     const isComplete = !isError && /\b(complete|success|exported)\b/i.test(status);
     const state = isError ? "error" : isComplete ? "complete" : "active";
@@ -22,22 +22,21 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = React.memo(({ status,
             : null;
 
     useEffect(() => {
-        const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        overlayRef.current?.focus();
-        return () => { if (prev && document.contains(prev)) prev.focus(); };
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+        if (!dialog.open) dialog.showModal();
+        return () => { if (dialog.open) dialog.close(); };
     }, []);
 
     return (
-        <div
-            ref={overlayRef}
-            tabIndex={-1}
-            role="dialog"
-            aria-modal="true"
+        <dialog
+            ref={dialogRef}
             aria-label="Export progress"
             className="tpe-export-overlay"
             data-state={state}
-            onKeyDown={(e) => {
-                if (e.key === "Escape" && isError && onClose) { e.preventDefault(); e.stopPropagation(); onClose(); }
+            onCancel={(e) => {
+                e.preventDefault();
+                if (isError && onClose) onClose();
             }}
         >
             <div className="tpe-export-overlay-inner">
@@ -56,7 +55,7 @@ export const ExportOverlay: React.FC<ExportOverlayProps> = React.memo(({ status,
                     </button>
                 )}
             </div>
-        </div>
+        </dialog>
     );
 });
 ExportOverlay.displayName = "ExportOverlay";

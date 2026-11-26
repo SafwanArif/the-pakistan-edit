@@ -83,7 +83,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     const rawCues = draft.starCues ?? DEFAULT_STAR_CUES;
     const isLogoOpen = activeAsset === 'logo';
     const sortedCues = useMemo(
-        () => (isLogoOpen ? [...rawCues].sort((a, b) => a.time - b.time) : rawCues),
+        () => (isLogoOpen ? rawCues.toSorted((a, b) => a.time - b.time) : rawCues),
         [isLogoOpen, rawCues]
     );
 
@@ -184,7 +184,7 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
             id: `star-${generateShortId()}`,
             time: rounded,
         };
-        const nextCues = [...rawCues, nextCue].sort((a, b) => a.time - b.time);
+        const nextCues = [...rawCues, nextCue].toSorted((a, b) => a.time - b.time);
         onUpdateDraft({ ...draft, starCues: nextCues });
     };
 

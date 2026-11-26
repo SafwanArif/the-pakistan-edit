@@ -256,13 +256,11 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
             el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
             el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
         };
+        const ac = new AbortController();
         updatePosition();
-        window.addEventListener("resize", updatePosition);
-        window.addEventListener("scroll", updatePosition, { capture: true, passive: true });
-        return () => {
-            window.removeEventListener("resize", updatePosition);
-            window.removeEventListener("scroll", updatePosition, true);
-        };
+        window.addEventListener("resize", updatePosition, { signal: ac.signal });
+        window.addEventListener("scroll", updatePosition, { capture: true, passive: true, signal: ac.signal });
+        return () => ac.abort();
     }, [activeTab, tabItems.length, anchorRef, popoverRef]);
 
     const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {

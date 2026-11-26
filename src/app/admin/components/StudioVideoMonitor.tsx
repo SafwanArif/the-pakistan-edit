@@ -117,7 +117,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = React.memo(
     const outroStart = sceneBounds.length > 0 ? sceneBounds[sceneBounds.length - 1]!.end : 0;
     const activeSubtitleTimes = useMemo(() => getActiveSubtitleTimelineTimes(draft), [draft]);
     const sortedKeyframes = useMemo(
-        () => (draft.keyframes?.length ? [...draft.keyframes].sort((a, b) => a.time - b.time) : undefined),
+        () => (draft.keyframes?.length ? draft.keyframes.toSorted((a, b) => a.time - b.time) : undefined),
         [draft.keyframes]
     );
     const sceneStarts = useMemo(() => sceneBounds.map((b) => b.start), [sceneBounds]);
@@ -308,7 +308,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = React.memo(
         const cues = d.starCues ?? DEFAULT_STAR_CUES;
         if (!cues.length) return;
         const curT = playing && clock ? clock.getTime() : t;
-        const sortedTimes = cues.map((c) => c.time).sort((a, b) => a - b);
+        const sortedTimes = cues.map((c) => c.time).toSorted((a, b) => a - b);
         const target = findAdjacentTime(sortedTimes, curT, direction);
         if (target !== undefined && Math.abs(target - curT) > 0.01) seek(target);
     }, []);

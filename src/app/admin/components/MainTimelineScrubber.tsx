@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
@@ -152,9 +152,16 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const outroPct = enableOutro && duration > 0 ? Math.min(25, (outroDuration / safeDuration) * 100) : 0;
     const sceneEndPct = 100 - outroPct;
 
-    const latestRef = useRef({ pct, currentTime, onScrubEnd });
-    useLayoutEffect(() => {
-        latestRef.current = { pct, currentTime, onScrubEnd };
+    const paintPlayhead = (nextPct: number) => {
+        if (sweepRef.current) sweepRef.current.style.transform = `scaleX(${nextPct / 100})`;
+        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+    };
+
+    const onUnmountScrubEnd = useEffectEvent(() => {
+        onScrubEnd(lastScrubTimeRef.current ?? currentTime);
+    });
+    const onPlaybackStop = useEffectEvent(() => {
+        paintPlayhead(pct);
     });
 
     useEffect(() => () => {
@@ -162,14 +169,9 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         if (isDraggingRef.current) {
             isDraggingRef.current = false;
             activePointerIdRef.current = null;
-            latestRef.current.onScrubEnd(lastScrubTimeRef.current ?? latestRef.current.currentTime);
+            onUnmountScrubEnd();
         }
     }, []);
-
-    const paintPlayhead = (nextPct: number) => {
-        if (sweepRef.current) sweepRef.current.style.transform = `scaleX(${nextPct / 100})`;
-        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
-    };
 
     // Drive master playhead needle + progress sweep at native 120Hz/144Hz via GPU transforms (0 React renders)
     useEffect(() => {
@@ -185,7 +187,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         const unsub = liveClock.subscribe((frame) => applyTime(frame.time));
         return () => {
             unsub();
-            paintPlayhead(latestRef.current.pct);
+            onPlaybackStop();
         };
     }, [isPlaying, isDragging, liveClock, safeDuration]);
 
@@ -293,11 +295,11 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             }
         };
 
+        const ac = new AbortController();
+        const { signal } = ac;
+
         const cleanup = (notifyEnd = false) => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-            window.removeEventListener("pointercancel", onCancel);
-            handleEl.removeEventListener("lostpointercapture", onLostCapture);
+            ac.abort();
             handleDragCleanupRef.current = null;
             dragTargetRef.current = null;
             if (notifyEnd && !finished) {
@@ -327,10 +329,10 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
 
         handleDragCleanupRef.current?.(false);
         handleDragCleanupRef.current = cleanup;
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
-        window.addEventListener("pointercancel", onCancel);
-        handleEl.addEventListener("lostpointercapture", onLostCapture);
+        window.addEventListener("pointermove", onMove, { signal });
+        window.addEventListener("pointerup", onUp, { signal });
+        window.addEventListener("pointercancel", onCancel, { signal });
+        handleEl.addEventListener("lostpointercapture", onLostCapture, { signal });
     };
 
     const handleItems = showHookHandles && clipDuration > 0

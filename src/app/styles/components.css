@@ -755,12 +755,22 @@
 .tpe-export-overlay {
   position: fixed;
   inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
   z-index: var(--z-modal);
   display: grid;
   place-items: center;
   background: oklch(0% 0 0 / 0.88);
   transition: var(--transition-lux);
   outline: none;
+  &:not([open]) { display: none; }
+  &::backdrop { background: transparent; }
   &[data-state="error"] { background: linear-gradient(oklch(from var(--ui-danger) l c h / 0.18), oklch(from var(--ui-danger) l c h / 0.18)), oklch(0% 0 0 / 0.88); }
 }
 .tpe-export-overlay-inner { display: grid; place-items: center; gap: 20px; text-align: center; max-inline-size: 400px; }
@@ -1033,8 +1043,8 @@
 .tpe-sub-progress-track { inline-size: 100%; block-size: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .tpe-sub-progress-fill { inline-size: 100%; block-size: 100%; background: var(--ui-accent); box-shadow: 0 0 10px oklch(from var(--ui-accent) l c h / 0.6); transform-origin: left center; transition: transform 0.25s ease-out; }
 .tpe-sub-error { font-size: 9px; color: var(--ui-danger); line-height: 1.35; padding: 5px 8px; border-radius: 6px; background: rgba(255, 60, 60, 0.08); border: 1px solid rgba(255, 60, 60, 0.25); }
-.tpe-sub-list { display: flex; flex-direction: column; gap: 4px; max-block-size: 160px; overflow-y: auto; }
-.tpe-sub-row { align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--ui-border); }
+.tpe-sub-list { display: flex; flex-direction: column; gap: 4px; max-block-size: 160px; overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.tpe-sub-row { align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--ui-border); content-visibility: auto; contain-intrinsic-size: auto 30px; }
 .tpe-sub-time-btn { font-family: monospace; font-size: 8.5px; font-weight: 800; color: var(--ui-accent); background: transparent; border: 0; cursor: pointer; padding: 0; white-space: nowrap; }
 .tpe-sub-text-input { flex: 1; min-inline-size: 0; font-size: 10px; color: var(--ui-text); background: transparent; border: 0; }
 .tpe-sub-del-btn { inline-size: 16px; block-size: 16px; font-size: 9px; padding: 0; }

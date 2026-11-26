@@ -174,6 +174,9 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
         [activeMediaInfo, isCompactOrTouch, videoSrc]
     );
     const useDecoupledAudioLock = !isImage && !overlayOnly && Boolean(videoSrc) && playbackProfile === 'decoupled-audio-lock';
+    // Break Chromium's HTTP cache Range-request serialization lock when two elements stream the same `/api/video/ingest` URL
+    const companionAudioSrc = videoSrc.startsWith('/api/video/ingest') ? `${videoSrc}&track=audio` : videoSrc;
+    const standbyVideoSrc = videoSrc.startsWith('/api/video/ingest') ? `${videoSrc}&deck=standby` : videoSrc;
     const keyframeTimes = useMemo(
         () => (isMasterMedia ? (draft.sourceKeyframeTimes ?? extractKeyframeTimesFromFrameIndex(draft.sourceFrameIndex)) : undefined),
         [isMasterMedia, draft.sourceKeyframeTimes, draft.sourceFrameIndex]
@@ -396,7 +399,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                     {useDecoupledAudioLock && (
                                         <audio
                                             ref={companionAudioRef}
-                                            src={videoSrc}
+                                            src={companionAudioSrc}
                                             preload="auto"
                                             crossOrigin="anonymous"
                                             muted={effectiveMuted}
@@ -408,7 +411,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                                     {useStandbyDeck && (
                                         <video
                                             ref={standbyVideoRef}
-                                            src={videoSrc}
+                                            src={standbyVideoSrc}
                                             width={dimensions.width}
                                             height={dimensions.height}
                                             aria-hidden="true"

@@ -129,6 +129,8 @@ export const useVideoElementSync = ({
         companionAudioRef,
         isCompanionFallback,
         isDecoupledActive,
+        isAudioUnlocking,
+        isAudioLaunchClaimed,
         pauseCompanionAudio,
         resetForNewSource,
         syncDetachedAudioRef,
@@ -323,12 +325,13 @@ export const useVideoElementSync = ({
             video.volume = targetVol;
         }
         if (audio) {
-            audio.muted = effectiveMuted;
+            // Never unmute `<audio>` while a silent gesture unlock is in-flight
+            audio.muted = isAudioUnlocking() ? true : effectiveMuted;
             audio.volume = targetVol;
         }
         const standby = getStandbyVideo();
         if (standby) standby.muted = true;
-    }, [effectiveMuted, draft.volume, isPlaying, playbackProfile, isCompanionFallback, companionAudioRef, getActiveVideo, getStandbyVideo, isDecoupledActive]);
+    }, [effectiveMuted, draft.volume, isPlaying, playbackProfile, isCompanionFallback, companionAudioRef, getActiveVideo, getStandbyVideo, isAudioUnlocking, isDecoupledActive]);
 
     const playWhenAudioPrimed = useCallback((video: HTMLVideoElement) => {
         const isMobileOrBlob = !useStandbyDeckRef.current || videoSrcRef.current.startsWith('blob:');
@@ -388,24 +391,24 @@ export const useVideoElementSync = ({
         if (!video) return;
         if (e && e.currentTarget !== video) return;
         const isMobileOrBlob = !useStandbyDeckRef.current || videoSrcRef.current.startsWith('blob:');
-        if (!(isScrubbingRef.current && isMobileOrBlob)) {
+        if (!(isScrubbingRef.current && isMobileOrBlob) && !(isPlayingRef.current && !isScrubbingRef.current)) {
             scheduleDeferredAmbientPaint(video, true);
         }
         const pending = pendingSeekRef.current;
-        if (pending && !video.seeking && !seekCleanupRef.current) {
+        if (pending && !isPlayingRef.current && !video.seeking && !seekCleanupRef.current) {
             if (isScrubbingRef.current) {
                 const nowMs = performance.now();
                 if (isMobileOrBlob && nowMs - lastMobileScrubSeekAtRef.current < MOBILE_SCRUB_THROTTLE_MS) {
                     return;
                 }
                 pendingSeekRef.current = null;
-                if (Math.abs(video.currentTime - pending.target) > 0.015) {
+                if (Math.abs(video.currentTime - pending.target) > 0.045) {
                     lastMobileScrubSeekAtRef.current = nowMs;
                     video.currentTime = pending.target;
                 }
             } else {
                 pendingSeekRef.current = null;
-                if (Math.abs(video.currentTime - pending.target) > 0.015) {
+                if (Math.abs(video.currentTime - pending.target) > 0.045) {
                     video.currentTime = pending.target;
                 }
                 if (isDecoupledActive()) {
@@ -417,10 +420,10 @@ export const useVideoElementSync = ({
 
     /** Seeks to `targetMediaTime` safely (strict pause-before-seek, coalesced behind `video.seeking`) and plays once `seeked` + `canplay` settle. */
     const seekAndSync = useCallback((video: HTMLVideoElement, targetMediaTime: number, shouldPlay: boolean) => {
-        if (video.readyState < 1) return;
+        if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
 
         const clampedTarget = clampMediaTarget(targetMediaTime, video.duration);
-        const seekTol = shouldPlay ? 0.08 : 0.015;
+        const seekTol = shouldPlay ? 0.08 : 0.045;
         const needsSeek = Math.abs(video.currentTime - clampedTarget) > seekTol;
         const decoupled = isDecoupledActive();
 
@@ -454,7 +457,7 @@ export const useVideoElementSync = ({
                 const queued = pendingSeekRef.current;
                 if (queued) {
                     pendingSeekRef.current = null;
-                    if (Math.abs(video.currentTime - queued.target) > 0.015) {
+                    if (Math.abs(video.currentTime - queued.target) > 0.045) {
                         video.currentTime = queued.target;
                         return;
                     }
@@ -472,9 +475,12 @@ export const useVideoElementSync = ({
             }
         } else {
             pendingSeekRef.current = null;
+            if (decoupled && !video.paused && !isAudioLaunchClaimed()) {
+                video.pause();
+            }
             playWhenAudioPrimed(video);
         }
-    }, [cancelPendingSeekListener, isDecoupledActive, playWhenAudioPrimed, syncCompanionAudioToTime]);
+    }, [cancelPendingSeekListener, isAudioLaunchClaimed, isDecoupledActive, playWhenAudioPrimed, syncCompanionAudioToTime]);
 
     // Seamlessly hand off audio when `playbackProfile` switches mid-playback (e.g. lazy IDB inspect or viewport resize)
     useEffect(() => {
@@ -485,8 +491,12 @@ export const useVideoElementSync = ({
         if (!video) return;
         if (isDecoupledActive()) {
             video.muted = true;
-            if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current && video.readyState >= 1) {
-                seekAndSync(video, video.currentTime, true);
+            if (video.readyState >= 1) {
+                if (isPlayingRef.current && !isScrubbingRef.current && !isOutroRef.current) {
+                    seekAndSync(video, video.currentTime, true);
+                } else {
+                    syncCompanionAudioToTime(video.currentTime, true);
+                }
             }
         } else if (prev === 'decoupled-audio-lock') {
             pauseCompanionAudio();
@@ -494,7 +504,7 @@ export const useVideoElementSync = ({
             video.muted = effectiveMutedRef.current;
             audioOutputRef.current = video;
         }
-    }, [playbackProfile, overlayOnly, getActiveVideo, isDecoupledActive, pauseCompanionAudio, seekAndSync]);
+    }, [playbackProfile, overlayOnly, getActiveVideo, isDecoupledActive, pauseCompanionAudio, seekAndSync, syncCompanionAudioToTime]);
 
     /** Swaps instantaneously to the pre-parked standby deck (0ms seek latency) or falls back to seekAndSync. */
     const transitionToMediaTime = useCallback((outgoing: HTMLVideoElement, targetMediaTime: number, nextTimelineTime: number) => {
@@ -521,7 +531,8 @@ export const useVideoElementSync = ({
             audioOutputRef.current = decoupled ? companionAudioRef.current : standby;
             if (isPlayingRef.current && !isScrubbingRef.current) {
                 if (decoupled) {
-                    seekAndSync(standby, targetMediaTime, true);
+                    syncCompanionAudioToTime(targetMediaTime, true);
+                    playWhenAudioPrimed(standby);
                 } else {
                     standby.play().catch(() => { /* ignore aborted play promise */ });
                 }
@@ -554,7 +565,7 @@ export const useVideoElementSync = ({
         }
         seekAndSync(outgoing, targetMediaTime, isPlayingRef.current);
         return false;
-    }, [cancelPendingSeekListener, cancelPreParkTimer, companionAudioRef, getStandbyVideo, isDecoupledActive, onTimeUpdate, scheduleDeferredAmbientPaint, seekAndSync]);
+    }, [cancelPendingSeekListener, cancelPreParkTimer, companionAudioRef, getStandbyVideo, isDecoupledActive, onTimeUpdate, playWhenAudioPrimed, scheduleDeferredAmbientPaint, seekAndSync, syncCompanionAudioToTime]);
 
     // Single unified playback & seek coordinator
     useEffect(() => {
@@ -600,8 +611,8 @@ export const useVideoElementSync = ({
             cancelPendingSeekListener();
             cancelPreParkTimer();
             pauseAllDecks(video, standby);
-            if (video.readyState < 1) return;
-            const vDur = video.duration || 10;
+            if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+            const vDur = video.duration;
             const clampedTarget = clampMediaTarget(wrapMediaTime(draftRef.current, currentTime, vDur), vDur);
             const useKeyframeSnap = playbackProfileRef.current !== 'standard';
             const scrubTarget = clampMediaTarget(
@@ -612,7 +623,7 @@ export const useVideoElementSync = ({
             const nowMs = performance.now();
             if (video.seeking || (isMobileOrBlob && nowMs - lastMobileScrubSeekAtRef.current < MOBILE_SCRUB_THROTTLE_MS)) {
                 pendingSeekRef.current = { target: scrubTarget, shouldPlay: false };
-            } else if (Math.abs(video.currentTime - scrubTarget) > 0.015) {
+            } else if (Math.abs(video.currentTime - scrubTarget) > 0.045) {
                 lastMobileScrubSeekAtRef.current = nowMs;
                 pendingSeekRef.current = null;
                 video.currentTime = scrubTarget;
@@ -626,14 +637,14 @@ export const useVideoElementSync = ({
             if (wasScrubbing && pendingSeekRef.current && !pendingSeekRef.current.shouldPlay) {
                 pendingSeekRef.current = null;
             }
-            if (video.readyState < 1) {
+            if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) {
                 cancelPendingSeekListener();
                 return;
             }
-            const vDur = video.duration || 10;
+            const vDur = video.duration;
             const targetMediaTime = wrapMediaTime(draftRef.current, currentTimeRef.current, vDur);
             const clampedTarget = clampMediaTarget(targetMediaTime, vDur);
-            if (Math.abs(video.currentTime - clampedTarget) > 0.015 || video.seeking) {
+            if (Math.abs(video.currentTime - clampedTarget) > 0.045 || video.seeking) {
                 seekAndSync(video, targetMediaTime, false);
             } else {
                 cancelPendingSeekListener();
@@ -648,7 +659,8 @@ export const useVideoElementSync = ({
             if (wasScrubbing && pendingSeekRef.current && !pendingSeekRef.current.shouldPlay) {
                 pendingSeekRef.current = null;
             }
-            const vDur = video.duration || 10;
+            if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+            const vDur = video.duration;
             const targetMediaTime = wrapMediaTime(draftRef.current, currentTimeRef.current, vDur);
             seekAndSync(video, targetMediaTime, true);
             preParkStandbyDeck(standby, getNextCutMediaTarget(draftRef.current, currentTimeRef.current, playbackModeRef.current === 'loop-angle'));
@@ -656,11 +668,11 @@ export const useVideoElementSync = ({
         }
 
         // action === 'explicit-play-seek'
-        if (video.readyState < 1) return;
-        const vDur = video.duration || 10;
+        if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+        const vDur = video.duration;
         const targetMediaTime = wrapMediaTime(draftRef.current, currentTime, vDur);
         const clampedTarget = clampMediaTarget(targetMediaTime, vDur);
-        if (Math.abs(video.currentTime - clampedTarget) > 0.04 || video.seeking) {
+        if (Math.abs(video.currentTime - clampedTarget) > 0.045 || video.seeking) {
             transitionToMediaTime(video, targetMediaTime, currentTime);
         }
     }, [
@@ -672,7 +684,6 @@ export const useVideoElementSync = ({
         overlayOnly,
         videoSrc,
         scenesTimingKey,
-        draft.videoDuration,
         getActiveVideo,
         getStandbyVideo,
         isDecoupledActive,
@@ -685,7 +696,7 @@ export const useVideoElementSync = ({
     ]);
 
     const syncTimelineTick = useCallback((video: HTMLVideoElement, mediaTime: number) => {
-        if (!onTimeUpdate || isOutroRef.current || video.seeking) return;
+        if (!onTimeUpdate || isOutroRef.current || video.seeking || video.paused || seekCleanupRef.current || playGateCleanupRef.current) return;
         const activeDraft = draftRef.current;
         const activeTime = currentTimeRef.current;
         const { hasReHook, hookDur, rehookDur, preStoryDur: preSetupDur, hookOffset, rehookOffset, storyOffset: setupOffset } = getTimelineStructure(activeDraft.scenes || []);
@@ -730,7 +741,7 @@ export const useVideoElementSync = ({
             const cur = getActiveVideo();
             if (!cur) return;
 
-            if (!isScrubbingRef.current && isPlayingRef.current && !cur.seeking) {
+            if (!isScrubbingRef.current && isPlayingRef.current && !cur.seeking && !cur.paused && !seekCleanupRef.current && !playGateCleanupRef.current) {
                 const masterMediaTime = applyVideoFollowerTick(cur, metadata.mediaTime);
                 syncTimelineTick(cur, masterMediaTime);
             }

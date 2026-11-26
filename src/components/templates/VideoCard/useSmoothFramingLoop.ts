@@ -79,6 +79,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
         let smoothedDrift = 0;
         let lastLiveT = latestMappedTime;
         let lastVideoEl: HTMLVideoElement | null = optsRef.current.videoRef.current;
+        let lastClockEl: HTMLMediaElement | null = optsRef.current.audioOutputRef?.current ?? optsRef.current.videoRef.current;
         let deckSwapPerfNow = -1000;
         let awaitingFirstTickAfterSwap = false;
         let swapPhaseOffset = 0;
@@ -157,6 +158,11 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
                     awaitingFirstTickAfterSwap = true;
                     swapPhaseOffset = 0;
                 }
+                if (clockEl !== lastClockEl) {
+                    lastClockEl = clockEl;
+                    lastMediaTime = clockEl?.currentTime ?? -1;
+                    smoothedDrift = 0;
+                }
                 const minReadyState = useAudioMaster ? 1 : 2;
                 if (clockEl && clockEl.readyState >= minReadyState) {
                     const mt = clockEl.currentTime;
@@ -227,7 +233,7 @@ export const useSmoothFramingLoop = (opts: SmoothFramingLoopOptions) => {
             const audioEl = o.audioOutputRef?.current ?? video;
             if (audioEl && !o.isImage && !audioEl.muted) {
                 const nextVol = clamp((o.draft.volume ?? 1) * audioGain, 0, 1);
-                if (Math.abs(audioEl.volume - nextVol) > 0.002) {
+                if (Math.abs(audioEl.volume - nextVol) > 0.015 || (nextVol === 1 && audioEl.volume < 0.999)) {
                     audioEl.volume = nextVol;
                 }
             }

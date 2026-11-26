@@ -5,6 +5,7 @@ import Image from "next/image";
 import { VideoDraft, VideoAspectRatio, DEFAULT_STAR_CUES, interpolateKeyframe, formatTimecode, parseTimeInput, switchVideoAspectRatio, setSceneClipStartOffset, getSceneBoundaries, getSceneRoleColor, getActiveSubtitleTimelineTimes, getTimelineStructure, getSceneRoleLabel, getDefaultVideoFraming } from "@/types/news";
 import { findParkedKeyframe, toggleKeyframeEasing, updateKeyframeFraming, updateKeyframeTime, upsertKeyframe } from "@/utils/videoKeyframes";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
+import type { AvSyncDiagSnapshot } from "@/components/templates/VideoCard/avSyncHelpers";
 import { VideoCard } from "@/components/templates/VideoCard/index";
 import { VIDEO_FORMAT_CONFIGS } from "@/config/omnichannel";
 import { PlayIcon, PauseIcon } from "@/components/icons/TPEIcons";
@@ -46,6 +47,8 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const [activeToolTab, setActiveToolTab] = useState<'layout' | 'keyframes' | 'subtitles' | 'motion' | 'volume' | null>(null);
     const [kfEditSide, setKfEditSide] = useState<'post' | 'pre'>('pre');
     const [starPreviewNonce, setStarPreviewNonce] = useState(0);
+    const [showAvDiag, setShowAvDiag] = useState(false);
+    const [avDiagText, setAvDiagText] = useState<string>("");
     const wasPlayingBeforeScrubRef = useRef(false);
     const timeInputRef = useRef<HTMLInputElement>(null);
     const telemetryBtnRef = useRef<HTMLButtonElement>(null);
@@ -372,6 +375,20 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
         }
     }, []);
 
+    useEffect(() => {
+        if (!showAvDiag) return;
+        const sample = () => {
+            const d = (globalThis as { __TPE_AV_DIAG__?: AvSyncDiagSnapshot }).__TPE_AV_DIAG__;
+            if (!d) { setAvDiagText("NO DIAG"); return; }
+            const tag = d.companionAudioFallback ? "FB" : d.companionAudioActive ? "LOCK" : d.profile === "keyframe-scrub" ? "KF" : "STD";
+            const sign = d.lastAudioDriftMs >= 0 ? "+" : "";
+            setAvDiagText(`${tag} ${sign}${d.lastAudioDriftMs}ms r${d.readyStateAtPlay}/${d.audioReadyStateAtPlay} s${d.audioSnaps} b${d.videoBufferingPauses}${d.lastError ? ` !${d.lastError.slice(0, 12)}` : ""}`);
+        };
+        sample();
+        const id = setInterval(sample, 250);
+        return () => clearInterval(id);
+    }, [showAvDiag]);
+
     const telemetryTint = getKeyframeTelemetryTint(sortedKeyframes, activeDisplayTime, effectiveEditSide, isCutKeyframe, true);
 
     return (
@@ -396,15 +413,17 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 </div>
 
                 <div className="tpe-flex-row tpe-monitor-status-row">
-                    <div
+                    <button
+                        type="button"
+                        onClick={() => setShowAvDiag((v) => !v)}
                         className="tpe-monitor-status-pill"
                         title={draft.sourceMediaInfo
-                            ? `Source: ${draft.sourceMediaInfo.width}×${draft.sourceMediaInfo.height} @ ${draft.sourceMediaInfo.exactFps}fps${draft.sourceMediaInfo.videoCodec ? ` · ${draft.sourceMediaInfo.videoCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.audioCodec ? `+${draft.sourceMediaInfo.audioCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.maxGopSec ? ` · ${draft.sourceMediaInfo.maxGopSec}s GOP` : ''}${draft.sourceMediaInfo.videoBitrate ? ` · ${(draft.sourceMediaInfo.videoBitrate / 1_000_000).toFixed(1)} Mbps` : ''}${draft.sourceMediaInfo.isHdr ? ' · HDR→BT.709' : ''}`
-                            : `Export canvas: ${dimensions.width}×${dimensions.height}`}
-                        style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em' }}
+                            ? `Tap for live A/V sync diag · Source: ${draft.sourceMediaInfo.width}×${draft.sourceMediaInfo.height} @ ${draft.sourceMediaInfo.exactFps}fps${draft.sourceMediaInfo.videoCodec ? ` · ${draft.sourceMediaInfo.videoCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.audioCodec ? `+${draft.sourceMediaInfo.audioCodec.toUpperCase()}` : ''}${draft.sourceMediaInfo.maxGopSec ? ` · ${draft.sourceMediaInfo.maxGopSec}s GOP` : ''}${draft.sourceMediaInfo.videoBitrate ? ` · ${(draft.sourceMediaInfo.videoBitrate / 1_000_000).toFixed(1)} Mbps` : ''}${draft.sourceMediaInfo.isHdr ? ' · HDR→BT.709' : ''}`
+                            : `Tap for live A/V sync diag · Export canvas: ${dimensions.width}×${dimensions.height}`}
+                        style={{ borderRadius: '4px', background: 'oklch(from var(--ui-accent) l c h / 0.12)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', color: 'var(--ui-accent)', fontSize: '9px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.06em', cursor: 'pointer' }}
                     >
-                        {dimensions.width}×{dimensions.height}
-                    </div>
+                        {showAvDiag ? (avDiagText || "DIAG...") : `${dimensions.width}×${dimensions.height}`}
+                    </button>
                     <div className="tpe-monitor-status-pill" style={{ borderRadius: '4px', background: 'oklch(from var(--ui-text) l c h / 0.05)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-dim)', fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                         {isTopBox45
                             ? (Math.round(activeFraming.zoom) === 0 ? '📺 CONTAIN (0%)' : Math.round(activeFraming.zoom) === 100 ? '📱 FILL (100%)' : `🔍 ZOOM ${Math.round(activeFraming.zoom)}%`)

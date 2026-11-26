@@ -110,6 +110,9 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
             lastSeekTargetSec: 0,
             lastSeekDurationMs: 0,
             readyStateAtPlay: 0,
+            audioReadyStateAtPlay: 0,
+            videoBufferingPauses: 0,
+            audioSnaps: 0,
             lastError: null,
         });
     });

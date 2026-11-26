@@ -119,6 +119,9 @@ export interface AvSyncDiagSnapshot {
     lastSeekTargetSec: number;
     lastSeekDurationMs: number;
     readyStateAtPlay: number;
+    audioReadyStateAtPlay: number;
+    videoBufferingPauses: number;
+    audioSnaps: number;
     lastError: string | null;
 }
 
@@ -130,5 +133,8 @@ export const createInitialAvSyncDiag = (): AvSyncDiagSnapshot => ({
     lastSeekTargetSec: 0,
     lastSeekDurationMs: 0,
     readyStateAtPlay: 0,
+    audioReadyStateAtPlay: 0,
+    videoBufferingPauses: 0,
+    audioSnaps: 0,
     lastError: null,
 });

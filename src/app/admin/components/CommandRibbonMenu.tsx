@@ -13,30 +13,18 @@ interface CommandRibbonMenuProps {
     disabled?: boolean;
 }
 
-const menuShellStyle: React.CSSProperties = { position: "relative", flexShrink: 0 };
-const triggerBtnStyle: React.CSSProperties = { background: "transparent", border: "none", padding: 0 };
-const menuTrayStyle: React.CSSProperties = { insetInlineStart: 0, insetInlineEnd: "auto", minWidth: "160px", gap: "6px", padding: "8px" };
-const menuOptionStyle: React.CSSProperties = { width: "100%", justifyContent: "flex-start", padding: "7px 10px" };
-const resetOptionStyle: React.CSSProperties = { ...menuOptionStyle, color: "var(--ui-text-dim)" };
-const confirmResetOptionStyle: React.CSSProperties = { ...menuOptionStyle, color: "var(--ui-danger)", borderColor: "var(--ui-danger)" };
-const separatorStyle: React.CSSProperties = { width: "100%", height: "1px", background: "var(--ui-border)", marginBlock: "2px" };
-const glossaryHeaderStyle: React.CSSProperties = { fontSize: "9px", fontWeight: 900, letterSpacing: "0.08em", color: "var(--ui-accent)", paddingInline: "10px", paddingBlockStart: "4px" };
-const glossaryRowStyle: React.CSSProperties = { justifyContent: "space-between", alignItems: "center", fontSize: "10px", paddingInline: "10px", gap: "8px" };
-const glossaryCodeStyle: React.CSSProperties = { fontFamily: "monospace", color: "var(--ui-text-dim)", fontSize: "9px", flexShrink: 0 };
-const gv = (s: React.CSSProperties): React.CSSProperties => ({ fontSize: "9px", textAlign: "end", ...s });
-
 const STUDIO_MODES: readonly { id: PostMode; label: string; title: string }[] = [
     { id: "carousel", label: "CAROUSEL MODE", title: "Switch to Carousel Mode" },
     { id: "video", label: "VIDEO MODE", title: "Switch to Video Mode" },
 ];
 
-const FX_GLOSSARY_ITEMS: readonly [token: string, label: string, style: React.CSSProperties][] = [
-    ['==text==', 'Gold Text', gv({ color: 'var(--ui-accent)', fontWeight: 800 })],
-    ['**text**', 'Bold', gv({ fontWeight: 800 })],
-    ['*text*', 'Italic', gv({ fontStyle: 'italic', color: 'var(--ui-text-dim)' })],
-    ['~~text~~', 'Green Text', gv({ color: 'var(--ui-indicator)', fontWeight: 800 })],
-    ['^^text^^', 'Black Label Box', gv({ background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, border: '1px solid var(--ui-border)' })],
-    ['&&text&&', 'White Label Box', gv({ background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800 })],
+const FX_GLOSSARY_ITEMS: readonly [token: string, label: string, fx: string][] = [
+    ['==text==', 'Gold Text', 'gold'],
+    ['**text**', 'Bold', 'bold'],
+    ['*text*', 'Italic', 'italic'],
+    ['~~text~~', 'Green Text', 'green'],
+    ['^^text^^', 'Black Label Box', 'black'],
+    ['&&text&&', 'White Label Box', 'white'],
 ];
 
 /** Brand logo trigger and dropdown menu for studio mode switching, formatting glossary, and draft reset. */
@@ -60,6 +48,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
         if (!confirmReset) { setConfirmReset(true); return; }
         setConfirmReset(false);
         setIsOpen(false);
+        triggerRef.current?.focus();
         void Promise.resolve(onReset()).catch((err) => console.error("RESET_DRAFT_ERROR:", err));
     };
 
@@ -67,7 +56,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
     const modeLabel = mode === "carousel" ? "CAROUSEL" : "VIDEO";
 
     return (
-        <div ref={menuRef} style={menuShellStyle}>
+        <div ref={menuRef} className="tpe-ribbon-menu">
             <button
                 ref={triggerRef}
                 type="button"
@@ -76,8 +65,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 title={triggerLabel}
-                className="tpe-logo-wrapper"
-                style={triggerBtnStyle}
+                className="tpe-logo-wrapper tpe-ribbon-trigger"
                 onClick={() => {
                     if (disabled) return;
                     setAnimationNonce((n) => n + 1);
@@ -89,7 +77,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
             </button>
 
             {isOpen && !disabled && (
-                <div role="menu" aria-label="Mode and draft options" className="tpe-asset-tray-expanded tpe-flex-col" style={menuTrayStyle}>
+                <div role="menu" aria-label="Mode and draft options" className="tpe-asset-tray-expanded tpe-flex-col tpe-ribbon-menu-tray">
                     {STUDIO_MODES.map((opt) => {
                         const active = mode === opt.id;
                         const stroke = active ? "#000" : "currentColor";
@@ -100,10 +88,14 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                                 role="menuitemradio"
                                 aria-checked={active}
                                 data-active={active}
-                                className="tpe-mode-btn"
-                                style={menuOptionStyle}
+                                className="tpe-mode-btn tpe-ribbon-menu-option"
                                 title={opt.title}
-                                onClick={() => { setConfirmReset(false); setIsOpen(false); if (opt.id !== mode) onModeChange(opt.id); }}
+                                onClick={() => {
+                                    setConfirmReset(false);
+                                    setIsOpen(false);
+                                    if (opt.id !== mode) onModeChange(opt.id);
+                                    else triggerRef.current?.focus();
+                                }}
                             >
                                 {opt.id === "carousel" ? <CarouselIcon width={12} height={12} stroke={stroke} /> : <VideoIcon width={12} height={12} stroke={stroke} />}
                                 <span>{opt.label}</span>
@@ -111,24 +103,24 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                         );
                     })}
 
-                    <div role="separator" style={separatorStyle} />
-                    <div style={glossaryHeaderStyle}>TEXT FORMATTING</div>
-                    {FX_GLOSSARY_ITEMS.map(([token, label, style]) => (
-                        <div key={token} className="tpe-flex-row" style={glossaryRowStyle}>
-                            <code style={glossaryCodeStyle}>{token}</code>
-                            <span style={style}>{label}</span>
+                    <div role="separator" className="tpe-ribbon-sep" />
+                    <div className="tpe-glossary-header">TEXT FORMATTING</div>
+                    {FX_GLOSSARY_ITEMS.map(([token, label, fx]) => (
+                        <div key={token} className="tpe-flex-row tpe-glossary-row">
+                            <code className="tpe-glossary-code">{token}</code>
+                            <span className="tpe-glossary-val" data-fx={fx}>{label}</span>
                         </div>
                     ))}
 
                     {onReset && (
                         <>
-                            <div role="separator" style={separatorStyle} />
+                            <div role="separator" className="tpe-ribbon-sep" />
                             <button
                                 type="button"
                                 role="menuitem"
-                                className="tpe-mode-btn"
+                                className="tpe-mode-btn tpe-ribbon-menu-reset"
+                                data-confirm={confirmReset}
                                 onClick={handleReset}
-                                style={confirmReset ? confirmResetOptionStyle : resetOptionStyle}
                                 title={confirmReset ? `Click again to confirm resetting ${mode} draft` : `Reset ${mode} draft`}
                             >
                                 {confirmReset ? `CONFIRM RESET ${modeLabel}?` : `RESET ${modeLabel} DRAFT`}

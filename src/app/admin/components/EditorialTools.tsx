@@ -15,12 +15,6 @@ const SOURCE_PREFIX_OPTIONS = ["SOURCE:", "VIA:", "REPORT:", "DATA:"] as const;
 const IMAGE_CREDIT_OPTIONS = ["PHOTO:", "STILL:", "VIA:", "SOURCE:"] as const;
 const VIDEO_CREDIT_OPTIONS = ["FOOTAGE:", "CLIP:", "VIA:", "COURTESY:"] as const;
 
-const relativeWrapStyle: React.CSSProperties = { position: "relative" };
-const customInputStyle: React.CSSProperties = { marginTop: "4px" };
-const emojiBtnBaseStyle: React.CSSProperties = { background: "transparent", border: "none", cursor: "pointer", fontSize: "18px" };
-const emojiBtnOpenStyle: React.CSSProperties = { ...emojiBtnBaseStyle, filter: "none" };
-const emojiBtnClosedStyle: React.CSSProperties = { ...emojiBtnBaseStyle, filter: "grayscale(100%) opacity(0.6)" };
-
 /** Normalizes user-entered custom prefix text, rejecting empty/colon-only strings and avoiding trailing `::`. */
 export function normalizeEditorialPrefix(raw: string): string | null {
     const cleaned = raw.toUpperCase().trim().replace(/:+$/, "").trim();
@@ -85,8 +79,8 @@ export const EmojiToolbar = React.memo<{ fieldId: string; value: string; onUpdat
         const isMobile = useMediaQuery("(max-width: 768px)");
 
         return (
-            <div style={relativeWrapStyle}>
-                <button {...triggerProps} aria-label="Insert emoji" aria-haspopup="dialog" style={open ? emojiBtnOpenStyle : emojiBtnClosedStyle}>
+            <div className="tpe-tool-wrap">
+                <button {...triggerProps} aria-label="Insert emoji" aria-haspopup="dialog" className="tpe-emoji-btn" data-open={open}>
                     🙂
                 </button>
                 {open && (
@@ -120,17 +114,27 @@ interface PrefixToolbarPublicProps {
 const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly string[]; showSocial?: boolean }>(({
     value, prefix, onPrefixChange, onUpdate, fieldId, options, showSocial,
 }) => {
-    const { open, setOpen, close, ignoreSelector, triggerProps } = usePopoverToggle();
+    const { open, close, ignoreSelector, triggerProps } = usePopoverToggle();
 
     return (
-        <div style={relativeWrapStyle}>
+        <div className="tpe-tool-wrap">
             <button {...triggerProps} aria-label={`Change prefix (${prefix})`} aria-haspopup="menu" className="tpe-prefix-toggle">
                 {prefix}
             </button>
             {open && (
                 <EditorialPopover open={open} onClose={close} direction="down" width="200px" right="auto" role="menu" ariaLabel="Prefix options" ignoreSelector={ignoreSelector}>
                     {options.map((opt) => (
-                        <button key={opt} type="button" role="menuitem" className="tpe-prefix-btn" onClick={(e) => { e.preventDefault(); if (opt !== prefix) onPrefixChange(opt); setOpen(false); }}>
+                        <button
+                            key={opt}
+                            type="button"
+                            role="menuitem"
+                            className="tpe-prefix-btn"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                if (opt !== prefix) onPrefixChange(opt);
+                                close(e.detail === 0 ? "escape" : "outside");
+                            }}
+                        >
                             {opt}
                         </button>
                     ))}
@@ -142,14 +146,13 @@ const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly 
                         autoComplete="off"
                         spellCheck={false}
                         placeholder="Custom..."
-                        className="tpe-popover-input"
-                        style={customInputStyle}
+                        className="tpe-popover-input tpe-popover-input-mt"
                         onKeyDown={(e) => {
                             if (e.key !== "Enter") return;
                             e.preventDefault();
                             const custom = normalizeEditorialPrefix(e.currentTarget.value);
                             if (custom && custom !== prefix) onPrefixChange(custom);
-                            setOpen(false);
+                            close("escape");
                         }}
                     />
                     {showSocial && fieldId && onUpdate && (
@@ -160,9 +163,12 @@ const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly 
                                     type="button"
                                     aria-label={`Insert ${soc.label} icon`}
                                     className="tpe-social-btn"
-                                    onClick={(e) => { e.preventDefault(); insertTextAtCursor(fieldId, value ?? "", soc.icon, onUpdate); setOpen(false); }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.background = soc.color; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
+                                    style={{ "--soc-bg": soc.color } as React.CSSProperties}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        insertTextAtCursor(fieldId, value ?? "", soc.icon, onUpdate);
+                                        close("outside");
+                                    }}
                                 >
                                     {soc.logo}
                                 </button>

@@ -99,6 +99,7 @@
   --z-popover: 500;
   --z-system: 1000;
   --z-overlay: 2000;
+  --z-modal: 3000;
 }
 
 @media (prefers-contrast: more) {

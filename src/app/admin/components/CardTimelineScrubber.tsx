@@ -6,18 +6,6 @@ import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers
 import { isPrimaryPointer, safeReleasePointerCapture, stopEventPropagation } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
-const shellStyle: React.CSSProperties = { position: "relative", padding: "3px 8px 4px", borderRadius: "6px", background: "rgba(0,0,0,0.28)", border: "1px solid var(--ui-border)", display: "flex", flexDirection: "column", gap: "1px" };
-const timeRowStyle: React.CSSProperties = { display: "flex", justifyContent: "flex-end", alignItems: "center", lineHeight: 1.1, pointerEvents: "none" };
-const timeTextBaseStyle: React.CSSProperties = { fontSize: "8.5px", fontFamily: "monospace", fontWeight: 800, letterSpacing: "0.02em", whiteSpace: "nowrap" };
-const timeTextActiveStyle: React.CSSProperties = { ...timeTextBaseStyle, color: "var(--ui-accent)" };
-const timeTextDimStyle: React.CSSProperties = { ...timeTextBaseStyle, color: "var(--ui-text-dim)" };
-const trackHitAreaStyle: React.CSSProperties = { position: "relative", width: "100%", height: "13px", display: "flex", alignItems: "center", cursor: "ew-resize", touchAction: "none" };
-const trackRailStyle: React.CSSProperties = { position: "relative", width: "100%", height: "5px", borderRadius: "99px", background: "rgba(255,255,255,0.09)", overflow: "hidden" };
-const fadeEdgeStyle = (side: "left" | "right", widthPct: number): React.CSSProperties => ({
-    position: "absolute", top: 0, bottom: 0, [side]: 0, width: `${widthPct}%`,
-    background: `linear-gradient(to ${side === "left" ? "right" : "left"}, rgba(168,85,247,0.45), transparent)`,
-});
-
 interface CardTimelineScrubberProps {
     sceneLabel: string;
     start: number;
@@ -138,16 +126,16 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const handleJumpKeyframe = useCallback((t: number) => onSeek(clamp(t, safeStart, maxT)), [onSeek, safeStart, maxT]);
 
     return (
-        <div onClick={stopEventPropagation} style={shellStyle}>
-            <div style={timeRowStyle}>
-                <span ref={timeLabelRef} className="tpe-tabular-nums" style={isSceneActive || isDragging ? timeTextActiveStyle : timeTextDimStyle}>
+        <div onClick={stopEventPropagation} className="tpe-card-scrubber" dir="ltr">
+            <div className="tpe-card-scrubber-time-row">
+                <span ref={timeLabelRef} className="tpe-tabular-nums tpe-card-scrubber-time" data-active={isSceneActive || isDragging}>
                     {`${formatTimecode(safeLocalTime)} / ${durLabel}s`}
                 </span>
             </div>
 
             <div
                 ref={trackRef}
-                className="tpe-scrubber"
+                className="tpe-scrubber tpe-card-scrubber-hit"
                 role="slider"
                 aria-label={`${sceneLabel} timeline scrubber`}
                 aria-orientation="horizontal"
@@ -192,19 +180,15 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 onPointerCancel={handleCancelDrag}
                 onLostPointerCapture={() => handleCancelDrag()}
                 title={`Scrub inside ${sceneLabel} (${formatTimecode(safeStart)} – ${formatTimecode(resolvedEnd)})`}
-                style={trackHitAreaStyle}
             >
-                <div style={trackRailStyle}>
-                    {fadeInPct > 0 && <div style={fadeEdgeStyle("left", fadeInPct)} />}
-                    {fadeOutPct > 0 && <div style={fadeEdgeStyle("right", fadeOutPct)} />}
+                <div className="tpe-card-scrubber-rail">
+                    {fadeInPct > 0 && <div className="tpe-card-scrubber-fade" data-side="left" style={{ inlineSize: `${fadeInPct}%` }} />}
+                    {fadeOutPct > 0 && <div className="tpe-card-scrubber-fade" data-side="right" style={{ inlineSize: `${fadeOutPct}%` }} />}
                     <div
                         ref={fillRef}
-                        style={{
-                            width: "100%", height: "100%", borderRadius: "99px", transformOrigin: "left center",
-                            transform: `scaleX(${pct / 100})`,
-                            willChange: (isSceneActive && isPlaying) || isDragging ? "transform" : undefined,
-                            background: isSceneActive ? "var(--ui-accent)" : "oklch(from var(--ui-accent) l c h / 0.45)",
-                        }}
+                        className="tpe-card-scrubber-fill"
+                        data-active={isSceneActive}
+                        style={{ transform: `scaleX(${pct / 100})`, willChange: (isSceneActive && isPlaying) || isDragging ? "transform" : undefined }}
                     />
                 </div>
                 <TimelineKeyframeTrack keyframes={keyframes} rangeStart={safeStart} rangeDuration={safeDuration} currentTime={currentTime} isPlaying={isPlaying} onJump={handleJumpKeyframe} />

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { formatPreciseTimecode, parseTimeInput } from "@/types/news";
 
 export const CONTAIN_ZOOM_OPTIONS = [
@@ -18,21 +18,8 @@ export const POS_Y_SNAP_OPTIONS = [
     { label: 'BTM', val: 0, title: 'Snap to Bottom edge (0%)' },
 ];
 
-const DIAMOND_BASE_STYLE: React.CSSProperties = {
-    display: 'inline-block',
-    width: '7px',
-    height: '7px',
-    borderRadius: '1.5px',
-    transform: 'rotate(45deg)',
-    flexShrink: 0,
-};
-const DIAMOND_STYLES: Record<'snap' | 'glide', React.CSSProperties> = {
-    snap: { ...DIAMOND_BASE_STYLE, background: 'linear-gradient(135deg, var(--ui-pre) 48%, var(--ui-accent) 52%)' },
-    glide: { ...DIAMOND_BASE_STYLE, background: 'var(--ui-accent)' },
-};
-
 export const KeyDiamondGlyph: React.FC<{ kind: 'snap' | 'glide' }> = React.memo(({ kind }) => (
-    <span aria-hidden="true" style={DIAMOND_STYLES[kind]} />
+    <span aria-hidden="true" className="tpe-key-diamond" data-kind={kind} />
 ));
 KeyDiamondGlyph.displayName = "KeyDiamondGlyph";
 
@@ -43,10 +30,10 @@ export const SnapCap: React.FC<{
     onSelect: (val: number) => void;
 }> = React.memo(({ ariaLabel, value, options, onSelect }) => (
     <div
-        className="tpe-mode-cluster"
+        className="tpe-mode-cluster tpe-snap-cap"
         role="group"
         aria-label={ariaLabel}
-        style={{ padding: '1px', display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: '1px' }}
+        style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
     >
         {options.map((opt) => {
             const active = Math.round(value) === opt.val;
@@ -55,10 +42,9 @@ export const SnapCap: React.FC<{
                     key={opt.label}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => onSelect(opt.val)}
-                    className="tpe-mode-btn"
+                    onClick={() => { if (!active) onSelect(opt.val); }}
+                    className="tpe-mode-btn tpe-snap-cap-btn"
                     data-active={active}
-                    style={{ padding: '1px 4px', fontSize: '7.5px', justifyContent: 'center' }}
                     title={opt.title}
                 >
                     {opt.label}
@@ -80,6 +66,14 @@ export const KeyframeTimeChip: React.FC<{
     onNudgeTime?: (deltaFrames: number) => void;
 }> = React.memo(({ prefix, time, active, accentColor, title, onSelect, onCommitTime, onNudgeTime }) => {
     const [editingText, setEditingText] = useState<string | null>(null);
+    const cancelEditRef = useRef(false);
+    const timeBtnRef = useRef<HTMLButtonElement>(null);
+
+    const restoreFocus = () => {
+        requestAnimationFrame(() => timeBtnRef.current?.focus());
+    };
+
+    const accentVar = { "--chip-accent": accentColor } as React.CSSProperties;
 
     if (editingText !== null && onCommitTime) {
         return (
@@ -92,57 +86,88 @@ export const KeyframeTimeChip: React.FC<{
                 autoCapitalize="off"
                 autoFocus
                 aria-label={`${prefix} timestamp`}
-                className="tpe-tabular-nums"
+                className="tpe-tabular-nums tpe-kf-chip-input"
+                style={accentVar}
                 value={editingText}
-                onFocus={(e) => e.currentTarget.select()}
+                onFocus={(e) => { cancelEditRef.current = false; e.currentTarget.select(); }}
                 onChange={(e) => setEditingText(e.target.value)}
                 onBlur={() => {
+                    if (cancelEditRef.current) {
+                        cancelEditRef.current = false;
+                        setEditingText(null);
+                        return;
+                    }
                     const parsed = parseTimeInput(editingText);
-                    if (parsed !== null) onCommitTime(parsed);
+                    if (parsed !== null && Math.abs(parsed - time) > 0.0001) onCommitTime(parsed);
                     setEditingText(null);
                 }}
                 onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur();
-                    if (e.key === 'Escape') setEditingText(null);
+                    if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                        restoreFocus();
+                    } else if (e.key === 'Escape') {
+                        cancelEditRef.current = true;
+                        setEditingText(null);
+                        restoreFocus();
+                    }
                 }}
-                style={{ width: '84px', height: '20px', textAlign: 'center', fontSize: '9px', fontFamily: 'monospace', fontWeight: 900, color: '#050505', background: accentColor, border: '1px solid #fff', borderRadius: '4px', padding: '0 4px' }}
             />
         );
     }
 
+    const formatted = formatPreciseTimecode(time);
+
     return (
-        <div
-            className="tpe-flex-row tpe-tabular-nums"
-            style={{
-                alignItems: 'center', gap: '3px', height: '20px', padding: '0 6px', borderRadius: '4px',
-                background: active ? accentColor : 'rgba(255,255,255,0.06)',
-                border: `1px solid ${active ? accentColor : 'var(--ui-border)'}`,
-                color: active ? '#050505' : 'var(--ui-text-dim)',
-                fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.05em', whiteSpace: 'nowrap',
-            }}
-        >
-            <button
-                type="button"
-                aria-pressed={active}
-                onClick={onSelect}
-                title={title}
-                style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', letterSpacing: 'inherit', cursor: onSelect ? 'pointer' : 'default' }}
-            >
-                {prefix}
-            </button>
-            <span style={{ opacity: 0.45 }}>@</span>
-            <button
-                type="button"
-                onClick={() => setEditingText(formatPreciseTimecode(time))}
-                title="Click to edit timestamp"
-                style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontFamily: 'monospace', cursor: 'text', textDecoration: 'underline dotted' }}
-            >
-                {formatPreciseTimecode(time)}
-            </button>
+        <div className="tpe-flex-row tpe-tabular-nums tpe-kf-chip" data-active={active} style={accentVar}>
+            {onSelect ? (
+                <button
+                    type="button"
+                    aria-pressed={active}
+                    onClick={onSelect}
+                    title={title}
+                    className="tpe-kf-chip-btn"
+                >
+                    {prefix}
+                </button>
+            ) : (
+                <span title={title}>{prefix}</span>
+            )}
+            <span className="tpe-kf-chip-at" aria-hidden="true">@</span>
+            {onCommitTime ? (
+                <button
+                    ref={timeBtnRef}
+                    type="button"
+                    aria-label={`Edit ${prefix} timestamp`}
+                    onClick={() => setEditingText(formatted)}
+                    title="Click to edit timestamp"
+                    className="tpe-kf-chip-time"
+                >
+                    {formatted}
+                </button>
+            ) : (
+                <span className="tpe-kf-chip-time-static">{formatted}</span>
+            )}
             {onNudgeTime && (
                 <>
-                    <button type="button" aria-label={`Nudge ${prefix} keyframe back one frame`} onClick={() => onNudgeTime(-1)} title="Nudge back one frame" style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', lineHeight: 1, cursor: 'pointer' }}>‹</button>
-                    <button type="button" aria-label={`Nudge ${prefix} keyframe forward one frame`} onClick={() => onNudgeTime(1)} title="Nudge forward one frame" style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', lineHeight: 1, cursor: 'pointer' }}>›</button>
+                    <button
+                        type="button"
+                        disabled={time <= 0.0005}
+                        aria-label={`Nudge ${prefix} keyframe back one frame`}
+                        onClick={() => onNudgeTime(-1)}
+                        title="Nudge back one frame"
+                        className="tpe-kf-chip-nudge"
+                    >
+                        ‹
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Nudge ${prefix} keyframe forward one frame`}
+                        onClick={() => onNudgeTime(1)}
+                        title="Nudge forward one frame"
+                        className="tpe-kf-chip-nudge"
+                    >
+                        ›
+                    </button>
                 </>
             )}
         </div>

@@ -9,32 +9,12 @@ type NudgeSpec = readonly [label: string, delta: number];
 const NEG_NUDGES: readonly NudgeSpec[] = [['-1s', -1], ['-.1', -0.1]];
 const POS_NUDGES: readonly NudgeSpec[] = [['+.1', 0.1], ['+1s', 1]];
 
-const nudgeBtnStyle: React.CSSProperties = { width: '22px', height: '20px', fontSize: '9px', padding: 0 };
-const headerRowStyle: React.CSSProperties = { justifyContent: 'space-between', alignItems: 'center' };
-const headerLabelStyle: React.CSSProperties = { fontSize: '9px', fontWeight: 900, color: 'var(--ui-accent)', letterSpacing: '0.08em', alignItems: 'center', gap: '4px' };
-const resetBtnStyle: React.CSSProperties = { width: '18px', height: '18px', fontSize: '11px', padding: 0, lineHeight: 1 };
-const controlsRowStyle: React.CSSProperties = { alignItems: 'center', justifyContent: 'space-between', gap: '6px', flexWrap: 'wrap' };
-const nudgeGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '2px' };
-const offsetInputStyle: React.CSSProperties = { width: '52px', textAlign: 'center', fontFamily: 'monospace', fontSize: '11px', fontWeight: 900, color: 'var(--ui-accent)', paddingInline: '3px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)' };
-const setBtnStyle: React.CSSProperties = { padding: '3px 8px', fontSize: '9px', fontWeight: 900, background: 'var(--ui-accent)', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', letterSpacing: '0.02em' };
-const hintTextStyle: React.CSSProperties = { fontSize: '9px', color: 'var(--ui-text-dim)', fontStyle: 'italic' };
-const summaryRowStyle: React.CSSProperties = { fontSize: '9px', color: 'var(--ui-text-dim)' };
-const summaryStrongStyle: React.CSSProperties = { color: 'var(--ui-text)' };
-const shellBaseStyle: React.CSSProperties = { padding: '8px 10px', borderRadius: '8px', borderWidth: '1px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '6px', minWidth: 0 };
-
-const rehookSpanStyle: React.CSSProperties = { display: 'inline-block', lineHeight: 1, filter: 'drop-shadow(0 0 4px oklch(from var(--ui-accent) l c h / 0.65))' };
-const hookSpanStyle: React.CSSProperties = { ...rehookSpanStyle, transform: 'scaleX(-1)' };
-const hookImgStyle: React.CSSProperties = { display: 'inline-block', width: '1.333em', height: '1.333em', verticalAlign: '-0.22em', objectFit: 'contain', pointerEvents: 'none' };
-
 /** Shared Hook / Re-Hook glyph using the native Segoe UI Emoji PNG for desktop/mobile parity. */
-export const HookGlyph: React.FC<{ role: 'hook' | 'rehook'; style?: React.CSSProperties }> = React.memo(({ role, style }) => {
-    const base = role === 'hook' ? hookSpanStyle : rehookSpanStyle;
-    return (
-        <span style={style ? { ...base, ...style } : base}>
-            <Image src="/assets/icons/hook-emoji.png" alt="" aria-hidden="true" width={16} height={16} unoptimized draggable={false} style={hookImgStyle} />
-        </span>
-    );
-});
+export const HookGlyph: React.FC<{ role: 'hook' | 'rehook'; className?: string; style?: React.CSSProperties }> = React.memo(({ role, className, style }) => (
+    <span className={className ? `tpe-hook-glyph ${className}` : "tpe-hook-glyph"} data-role={role} style={style}>
+        <Image src="/assets/icons/hook-emoji.png" alt="" aria-hidden="true" width={16} height={16} unoptimized draggable={false} className="tpe-hook-glyph-img" />
+    </span>
+));
 HookGlyph.displayName = "HookGlyph";
 
 const MODE_LABELS = {
@@ -71,8 +51,7 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                 disabled={delta < 0 && safeOffset <= 0}
                 aria-label={`Nudge ${label}`}
                 title={`Nudge ${label}`}
-                className="tpe-asset-btn"
-                style={nudgeBtnStyle}
+                className="tpe-asset-btn tpe-offset-nudge-btn"
                 onClick={() => {
                     const next = Math.round(Math.max(0, safeOffset + delta) * 10) / 10;
                     if (next !== safeOffset) onSetOffset(sceneIdx, next, true);
@@ -83,24 +62,15 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
         ));
 
     return (
-        <div
-            onClick={stopEventPropagation}
-            style={{
-                ...shellBaseStyle,
-                background: hasOffset ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.02)',
-                borderStyle: isCardActive ? 'solid' : 'dashed',
-                borderColor: hasOffset ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.14)',
-            }}
-        >
-            <div className="tpe-flex-row" style={headerRowStyle}>
-                <span className="tpe-flex-row" style={headerLabelStyle}>{MODE_LABELS[mode].title}</span>
+        <div onClick={stopEventPropagation} className="tpe-offset-trimmer" data-active={isCardActive} data-has-offset={hasOffset}>
+            <div className="tpe-flex-row tpe-offset-header">
+                <span className="tpe-flex-row tpe-offset-label">{MODE_LABELS[mode].title}</span>
                 {hasOffset && (
                     <button
                         type="button"
                         aria-label="Reset clip start offset to 00:00.0"
                         title="Reset to clip start (00:00.0)"
-                        className="tpe-asset-btn"
-                        style={resetBtnStyle}
+                        className="tpe-asset-btn tpe-offset-reset"
                         onClick={() => { cancelEditRef.current = false; setDraftText(null); onSetOffset(sceneIdx, undefined, true); }}
                     >
                         ↺
@@ -108,9 +78,9 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                 )}
             </div>
 
-            <div className="tpe-flex-row" style={controlsRowStyle}>
+            <div className="tpe-flex-row tpe-offset-controls">
                 {hasOffset ? (
-                    <div style={nudgeGroupStyle}>
+                    <div className="tpe-offset-nudges">
                         {renderNudges(NEG_NUDGES)}
                         <input
                             type="text"
@@ -122,8 +92,7 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                             autoComplete="off"
                             aria-label="Clip start offset timecode"
                             title="Type seconds (e.g. 19.7) or MM:SS.d (e.g. 00:19.7)"
-                            className="tpe-tabular-nums"
-                            style={offsetInputStyle}
+                            className="tpe-tabular-nums tpe-offset-input"
                             value={draftText ?? formatTimecode(safeOffset)}
                             onFocus={(e) => { cancelEditRef.current = false; setDraftText(formatTimecode(safeOffset)); e.currentTarget.select(); }}
                             onChange={(e) => setDraftText(e.target.value)}
@@ -146,22 +115,21 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                     <>
                         <button
                             type="button"
-                            className="tpe-nav-btn"
-                            style={setBtnStyle}
+                            className="tpe-nav-btn tpe-offset-set-btn"
                             title="Capture the current monitor timestamp as the start point"
                             onClick={() => onSetOffset(sceneIdx, Number.isFinite(currentMediaTime) ? currentMediaTime : 0, true)}
                         >
                             🎯 {MODE_LABELS[mode].cta} ({formatTimecode(currentMediaTime)})
                         </button>
-                        <span style={hintTextStyle}>Scrub monitor & click Set</span>
+                        <span className="tpe-offset-hint">Scrub monitor & click Set</span>
                     </>
                 )}
             </div>
 
             {hasOffset && (
-                <div style={summaryRowStyle}>
-                    {isHook ? 'Hook clip:' : 'Starts at:'} <strong style={summaryStrongStyle}>{formatTimecode(safeOffset)}</strong>
-                    {isHook && <> → <strong style={summaryStrongStyle}>{formatTimecode(safeOffset + sceneDuration)}</strong></>}
+                <div className="tpe-offset-summary">
+                    {isHook ? 'Hook clip:' : 'Starts at:'} <strong>{formatTimecode(safeOffset)}</strong>
+                    {isHook && <> → <strong>{formatTimecode(safeOffset + sceneDuration)}</strong></>}
                 </div>
             )}
         </div>

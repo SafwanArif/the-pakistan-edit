@@ -2,7 +2,7 @@
 
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { nudgeTimeToFrame, type SourceFrameIndex } from "@/types/news";
-import { useClickOutside } from "../hooks/useClickOutside";
+import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { CONTAIN_ZOOM_OPTIONS, KeyDiamondGlyph, KeyframeTimeChip, PAN_SNAP_OPTIONS, POS_Y_SNAP_OPTIONS, SnapCap } from "./FramingToolbarPrimitives";
 
@@ -58,31 +58,74 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
     onFramingSliderChange,
 }) => {
     const [showDeleteMenu, setShowDeleteMenu] = useState(false);
-    const deleteMenuRef = useClickOutside(() => setShowDeleteMenu(false), undefined, showDeleteMenu);
+    const [prevIsParked, setPrevIsParked] = useState(isParked);
+    if (isParked !== prevIsParked) {
+        setPrevIsParked(isParked);
+        if (!isParked && showDeleteMenu) setShowDeleteMenu(false);
+    }
 
-    const sliderChangeRef = useRef(onFramingSliderChange);
-    const toggleEasingRef = useRef(onToggleEasing);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const closeDeleteMenu = useCallback((reason?: CloseReason) => {
+        setShowDeleteMenu(false);
+        if (reason === "escape") triggerRef.current?.focus();
+    }, []);
+    const deleteMenuRef = useClickOutside(closeDeleteMenu, undefined, showDeleteMenu && isParked);
+
+    const latestRef = useRef({
+        sourceFps,
+        sourceFrameIndex,
+        activePreTime,
+        activePostTime,
+        kfEditSide,
+        onFramingSliderChange,
+        onToggleEasing,
+        onSetKfEditSide,
+        onUpdateKeyframeTime,
+    });
     useLayoutEffect(() => {
-        sliderChangeRef.current = onFramingSliderChange;
-        toggleEasingRef.current = onToggleEasing;
+        latestRef.current = {
+            sourceFps,
+            sourceFrameIndex,
+            activePreTime,
+            activePostTime,
+            kfEditSide,
+            onFramingSliderChange,
+            onToggleEasing,
+            onSetKfEditSide,
+            onUpdateKeyframeTime,
+        };
     });
 
-    const onZoomChange = useCallback((v: number) => sliderChangeRef.current('zoom', v), []);
-    const onPanChange = useCallback((v: number) => sliderChangeRef.current('posX', v), []);
-    const onPosYChange = useCallback((v: number) => sliderChangeRef.current('posY', v), []);
+    const onZoomChange = useCallback((v: number) => latestRef.current.onFramingSliderChange('zoom', v), []);
+    const onPanChange = useCallback((v: number) => latestRef.current.onFramingSliderChange('posX', v), []);
+    const onPosYChange = useCallback((v: number) => latestRef.current.onFramingSliderChange('posY', v), []);
+
+    const selectPre = useCallback(() => {
+        if (latestRef.current.kfEditSide !== 'pre') latestRef.current.onSetKfEditSide('pre');
+    }, []);
+    const selectPost = useCallback(() => {
+        if (latestRef.current.kfEditSide !== 'post') latestRef.current.onSetKfEditSide('post');
+    }, []);
+    const commitPre = useCallback((t: number) => latestRef.current.onUpdateKeyframeTime?.(t, 'pre'), []);
+    const commitPost = useCallback((t: number) => latestRef.current.onUpdateKeyframeTime?.(t, 'post'), []);
+    const nudgeSide = useCallback((side: 'pre' | 'post', frames: number) => {
+        const s = latestRef.current;
+        const base = side === 'pre' ? (s.activePreTime ?? s.activePostTime ?? 0) : (s.activePostTime ?? 0);
+        s.onUpdateKeyframeTime?.(nudgeTimeToFrame(base, frames, s.sourceFps, s.sourceFrameIndex), side, true);
+    }, []);
+    const nudgePre = useCallback((frames: number) => nudgeSide('pre', frames), [nudgeSide]);
+    const nudgePost = useCallback((frames: number) => nudgeSide('post', frames), [nudgeSide]);
 
     const isSnap = isParked && activeKeyframeEasing === 'snap';
     const isPreMode = isSnap && kfEditSide === 'pre';
     const targetAccent = isPreMode ? 'var(--ui-pre)' : 'var(--ui-accent)';
     const onSnapModeSelect = useCallback((v: number) => {
-        if ((v === 1) !== isSnap) toggleEasingRef.current();
+        if ((v === 1) !== isSnap) latestRef.current.onToggleEasing();
     }, [isSnap]);
 
     if (!isParked) {
         return (
-            <div
-                className="tpe-nested-action-row tpe-nested-capsule"
-            >
+            <div className="tpe-nested-action-row tpe-nested-capsule">
                 <button type="button" onClick={() => onAddOrUpdateKeyframe('snap')} className="tpe-mode-btn tpe-nested-action" title="Insert a Snap Keyframe (with PRE & POST states) at playhead">
                     <KeyDiamondGlyph kind="snap" />
                     <span>SNAP</span>
@@ -95,19 +138,11 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
         );
     }
 
+    const canUpdateTime = Boolean(onUpdateKeyframeTime);
+
     return (
-        <div
-            className="tpe-flex-row"
-            style={{
-                position: 'relative',
-                justifyContent: 'center', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap',
-                padding: '5px 10px', borderRadius: '7px',
-                background: isPreMode ? 'rgba(56, 189, 248, 0.08)' : 'oklch(from var(--ui-accent) l c h / 0.08)',
-                border: isPreMode ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid oklch(from var(--ui-accent) l c h / 0.45)',
-                transition: 'background-color 0.15s ease, border-color 0.15s ease',
-            }}
-        >
-            <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
+        <div className="tpe-flex-row tpe-kf-capsule" data-mode={isPreMode ? 'pre' : 'post'}>
+            <div className="tpe-flex-col tpe-kf-col">
                 <SnapCap
                     ariaLabel="Keyframe interpolation mode"
                     value={isSnap ? 1 : 0}
@@ -115,16 +150,16 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                     onSelect={onSnapModeSelect}
                 />
                 {isSnap ? (
-                    <div className="tpe-flex-row" style={{ gap: '4px', alignItems: 'center' }}>
+                    <div className="tpe-flex-row tpe-kf-chip-row">
                         <KeyframeTimeChip
                             prefix="◧ PRE"
                             time={activePreTime ?? activePostTime ?? 0}
                             active={isPreMode}
                             accentColor="var(--ui-pre)"
                             title="Select & preview incoming PRE framing"
-                            onSelect={() => onSetKfEditSide('pre')}
-                            onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'pre') : undefined}
-                            onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePreTime ?? activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'pre', true) : undefined}
+                            onSelect={selectPre}
+                            onCommitTime={canUpdateTime ? commitPre : undefined}
+                            onNudgeTime={canUpdateTime ? nudgePre : undefined}
                         />
                         <KeyframeTimeChip
                             prefix="◧ POST"
@@ -132,9 +167,9 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                             active={!isPreMode}
                             accentColor="var(--ui-accent)"
                             title="Select & preview outgoing POST framing"
-                            onSelect={() => onSetKfEditSide('post')}
-                            onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'post') : undefined}
-                            onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'post', true) : undefined}
+                            onSelect={selectPost}
+                            onCommitTime={canUpdateTime ? commitPost : undefined}
+                            onNudgeTime={canUpdateTime ? nudgePost : undefined}
                         />
                     </div>
                 ) : (
@@ -144,14 +179,14 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                         active={true}
                         accentColor="var(--ui-accent)"
                         title="Smooth glide keyframe"
-                        onCommitTime={onUpdateKeyframeTime ? (t) => onUpdateKeyframeTime(t, 'post') : undefined}
-                        onNudgeTime={onUpdateKeyframeTime ? (frames) => onUpdateKeyframeTime(nudgeTimeToFrame(activePostTime ?? 0, frames, sourceFps, sourceFrameIndex), 'post', true) : undefined}
+                        onCommitTime={canUpdateTime ? commitPost : undefined}
+                        onNudgeTime={canUpdateTime ? nudgePost : undefined}
                     />
                 )}
             </div>
 
             {isTopBox45 ? (
-                <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
+                <div className="tpe-flex-col tpe-kf-col">
                     <SnapCap
                         ariaLabel="4:5 Contain zoom snap"
                         value={activeFraming.zoom}
@@ -164,7 +199,7 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                 <ScrubPillSlider label="ZOOM" value={activeFraming.zoom} min={zoomMin} max={zoomMax} accentColor={targetAccent} width="96px" height="20px" onChange={onZoomChange} />
             )}
 
-            <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
+            <div className="tpe-flex-col tpe-kf-col">
                 <SnapCap
                     ariaLabel="Horizontal pan snap"
                     value={activeFraming.posX}
@@ -175,7 +210,7 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
             </div>
 
             {isLetterboxActive && (
-                <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
+                <div className="tpe-flex-col tpe-kf-col">
                     <SnapCap
                         ariaLabel="Vertical position snap"
                         value={activeFraming.posY}
@@ -186,17 +221,15 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                 </div>
             )}
 
-            <div ref={deleteMenuRef} style={{ position: 'absolute', left: '-18px', top: '50%', transform: 'translateY(-50%)' }}>
+            <div ref={deleteMenuRef} className="tpe-kf-del-anchor">
                 <button
+                    ref={triggerRef}
                     type="button"
                     aria-label="Delete keyframe options"
                     aria-expanded={showDeleteMenu}
                     aria-haspopup="menu"
                     onClick={() => setShowDeleteMenu((prev) => !prev)}
-                    style={{
-                        background: 'transparent', border: 'none', padding: '1px 3px',
-                        color: 'var(--ui-danger)', fontSize: '10px', fontWeight: 800, lineHeight: 1, cursor: 'pointer', opacity: 0.85,
-                    }}
+                    className="tpe-kf-del-trigger"
                     title="Delete keyframe options"
                 >
                     ✕
@@ -205,15 +238,14 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                     <div
                         role="menu"
                         aria-label="Delete keyframe actions"
-                        className="tpe-asset-tray-expanded tpe-flex-col"
-                        style={{ bottom: '24px', top: 'auto', left: 0, right: 'auto', minWidth: '150px', gap: '4px', padding: '6px', zIndex: 30 }}
+                        className="tpe-asset-tray-expanded tpe-flex-col tpe-kf-del-menu"
                     >
                         <button
                             type="button"
                             role="menuitem"
                             onClick={() => { setShowDeleteMenu(false); onRemoveKeyframe(); }}
-                            className="tpe-mode-btn"
-                            style={{ width: '100%', justifyContent: 'flex-start', padding: '4px 8px', fontSize: '8.5px', color: 'var(--ui-danger)' }}
+                            className="tpe-mode-btn tpe-kf-del-item"
+                            data-tone="danger"
                         >
                             ✕ Delete Keyframe
                         </button>
@@ -222,8 +254,8 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                                 type="button"
                                 role="menuitem"
                                 onClick={() => { setShowDeleteMenu(false); onClearAllKeyframes(); }}
-                                className="tpe-mode-btn"
-                                style={{ width: '100%', justifyContent: 'flex-start', padding: '4px 8px', fontSize: '8.5px', color: 'var(--ui-danger)' }}
+                                className="tpe-mode-btn tpe-kf-del-item"
+                                data-tone="danger"
                             >
                                 🗑 Delete All ({kfCount})
                             </button>
@@ -231,9 +263,8 @@ export const KeyframeEditorCapsule: React.FC<KeyframeEditorCapsuleProps> = React
                         <button
                             type="button"
                             role="menuitem"
-                            onClick={() => setShowDeleteMenu(false)}
-                            className="tpe-mode-btn"
-                            style={{ width: '100%', justifyContent: 'flex-start', padding: '4px 8px', fontSize: '8.5px' }}
+                            onClick={() => { setShowDeleteMenu(false); triggerRef.current?.focus(); }}
+                            className="tpe-mode-btn tpe-kf-del-item"
                         >
                             Cancel
                         </button>

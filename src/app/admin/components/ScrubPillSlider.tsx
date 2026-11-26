@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { clamp } from "@/types/news";
-import { safeReleasePointerCapture } from "../utils/domUtils";
+import { isPrimaryPointer, safeReleasePointerCapture, safeSetPointerCapture } from "../utils/domUtils";
 
 interface ScrubPillSliderProps {
     label: string;
@@ -44,17 +44,38 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     const [isEditing, setIsEditing] = useState(false);
     const [draftText, setDraftText] = useState("");
     const [isDragging, setIsDragging] = useState(false);
-    const dragRef = useRef<{ startX: number; startVal: number; moved: boolean; lastShift: boolean } | null>(null);
+    const cancelEditRef = useRef(false);
+    const pillRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{ pointerId: number; startX: number; startVal: number; lastEmitted: number; moved: boolean; lastShift: boolean } | null>(null);
 
+    const safeVal = Number.isFinite(value) ? clamp(value, min, max) : min;
+    const roundedVal = Math.round(safeVal);
     const span = Math.max(1, max - min);
-    const pct = Math.max(0, Math.min(100, ((value - min) / span) * 100));
+    const pct = clamp(((safeVal - min) / span) * 100, 0, 100);
+    const pillStyle = { width, height, "--pill-accent": accentColor } as React.CSSProperties;
+
+    const restorePillFocus = () => {
+        requestAnimationFrame(() => pillRef.current?.focus());
+    };
 
     const commitText = () => {
+        if (cancelEditRef.current) {
+            cancelEditRef.current = false;
+            setIsEditing(false);
+            return;
+        }
         const parsed = parseScrubPillInput(draftText, min, max);
-        if (parsed !== null) {
+        if (parsed !== null && parsed !== roundedVal) {
             onChange(parsed);
         }
         setIsEditing(false);
+    };
+
+    const cancelDrag = (pointerId?: number) => {
+        const state = dragRef.current;
+        if (!state || (pointerId !== undefined && state.pointerId !== pointerId)) return;
+        dragRef.current = null;
+        setIsDragging(false);
     };
 
     if (isEditing) {
@@ -68,27 +89,21 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 autoCapitalize="off"
                 autoFocus
                 aria-label={`${label} numeric value`}
-                className="tpe-tabular-nums"
+                className="tpe-tabular-nums tpe-scrub-pill-input"
+                style={pillStyle}
                 value={draftText}
-                onFocus={(e) => e.currentTarget.select()}
+                onFocus={(e) => { cancelEditRef.current = false; e.currentTarget.select(); }}
                 onChange={(e) => setDraftText(e.target.value)}
                 onBlur={commitText}
                 onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                    if (e.key === "Escape") setIsEditing(false);
-                }}
-                style={{
-                    width,
-                    height,
-                    textAlign: "center",
-                    fontSize: "9.5px",
-                    fontFamily: "monospace",
-                    fontWeight: 800,
-                    color: accentColor,
-                    background: "rgba(0,0,0,0.65)",
-                    border: `1px solid ${accentColor}`,
-                    borderRadius: "5px",
-                    padding: "0 6px",
+                    if (e.key === "Enter") {
+                        e.currentTarget.blur();
+                        restorePillFocus();
+                    } else if (e.key === "Escape") {
+                        cancelEditRef.current = true;
+                        setIsEditing(false);
+                        restorePillFocus();
+                    }
                 }}
             />
         );
@@ -96,142 +111,89 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
 
     return (
         <div
+            ref={pillRef}
+            dir="ltr"
             role="slider"
             tabIndex={0}
             aria-label={label}
             aria-valuemin={min}
             aria-valuemax={max}
-            aria-valuenow={Math.round(value)}
-            className="tpe-scrubber"
+            aria-valuenow={roundedVal}
+            aria-valuetext={`${roundedVal}${unit}`}
+            className="tpe-scrubber tpe-scrub-pill"
+            data-dragging={isDragging}
             title={title || `${label}: drag horizontally to scrub (Shift for fine control) or click to type`}
+            style={pillStyle}
             onPointerDown={(e) => {
-                if (e.pointerType === "mouse" && e.button !== 0) return;
-                e.stopPropagation();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                dragRef.current = { startX: e.clientX, startVal: value, moved: false, lastShift: e.shiftKey };
+                if (!isPrimaryPointer(e) || dragRef.current) return;
+                safeSetPointerCapture(e.currentTarget, e.pointerId);
+                dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startVal: safeVal, lastEmitted: roundedVal, moved: false, lastShift: e.shiftKey };
                 setIsDragging(true);
             }}
             onPointerMove={(e) => {
                 const state = dragRef.current;
-                if (!state) return;
+                if (!state || e.pointerId !== state.pointerId) return;
                 const dx = e.clientX - state.startX;
                 if (!state.moved && Math.abs(dx) > 3) state.moved = true;
                 if (!state.moved) return;
                 if (e.shiftKey !== state.lastShift) {
                     state.startX = e.clientX;
-                    state.startVal = value;
+                    state.startVal = state.lastEmitted;
                     state.lastShift = e.shiftKey;
                     return;
                 }
                 const speed = e.shiftKey ? 0.25 : 1;
-                const next = Math.round(clamp(state.startVal + (dx / 120) * span * speed, min, max));
-                if (next !== Math.round(value)) onChange(next);
+                const raw = clamp(state.startVal + (dx / 120) * span * speed, min, max);
+                const next = step > 1
+                    ? clamp(min + Math.round((raw - min) / step) * step, min, max)
+                    : Math.round(raw);
+                if (next !== state.lastEmitted) {
+                    state.lastEmitted = next;
+                    onChange(next);
+                }
             }}
             onPointerUp={(e) => {
                 const state = dragRef.current;
+                if (!state || e.pointerId !== state.pointerId) return;
                 dragRef.current = null;
                 setIsDragging(false);
                 safeReleasePointerCapture(e.currentTarget, e.pointerId);
-                if (state && !state.moved) {
-                    setDraftText(String(Math.round(value)));
+                if (!state.moved) {
+                    setDraftText(String(roundedVal));
                     setIsEditing(true);
                 }
             }}
-            onPointerCancel={() => {
-                dragRef.current = null;
-                setIsDragging(false);
-            }}
-            onLostPointerCapture={() => {
-                if (!dragRef.current) return;
-                dragRef.current = null;
-                setIsDragging(false);
-            }}
+            onPointerCancel={(e) => cancelDrag(e.pointerId)}
+            onLostPointerCapture={() => cancelDrag()}
             onKeyDown={(e) => {
                 const keyStep = e.shiftKey ? step * 5 : step;
-                if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                let next: number | null = null;
+                if (e.key === "ArrowRight" || e.key === "ArrowUp") next = clamp(roundedVal + keyStep, min, max);
+                else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = clamp(roundedVal - keyStep, min, max);
+                else if (e.key === "Home") next = min;
+                else if (e.key === "End") next = max;
+                else if (e.key === "Enter") {
                     e.preventDefault();
-                    onChange(clamp(Math.round(value) + keyStep, min, max));
-                } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-                    e.preventDefault();
-                    onChange(clamp(Math.round(value) - keyStep, min, max));
-                } else if (e.key === "Home") {
-                    e.preventDefault();
-                    onChange(min);
-                } else if (e.key === "End") {
-                    e.preventDefault();
-                    onChange(max);
-                } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    setDraftText(String(Math.round(value)));
+                    setDraftText(String(roundedVal));
                     setIsEditing(true);
+                    return;
                 }
-            }}
-            style={{
-                position: "relative",
-                width,
-                height,
-                borderRadius: "5px",
-                background: "rgba(0,0,0,0.45)",
-                border: `1px solid ${isDragging ? accentColor : "var(--ui-border)"}`,
-                overflow: "hidden",
-                cursor: "ew-resize",
-                userSelect: "none",
-                touchAction: "none",
-                transition: "border-color 0.12s ease",
+                if (next === null) return;
+                e.preventDefault();
+                if (next !== roundedVal) onChange(next);
             }}
         >
             {/* Proportional fill track behind label & readout (GPU scaleX + GPU translate3d edge cap) */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    transform: `scaleX(${pct / 100})`,
-                    transformOrigin: "left center",
-                    willChange: isDragging ? "transform" : undefined,
-                    background: `color-mix(in oklch, ${accentColor} 24%, transparent)`,
-                    pointerEvents: "none",
-                }}
-            />
+            <div className="tpe-scrub-pill-fill" data-dragging={isDragging} style={{ transform: `scaleX(${pct / 100})` }} />
             {pct > 0 && pct < 100 && (
-                <div
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        transform: `translate3d(${pct}%, 0, 0)`,
-                        willChange: isDragging ? "transform" : undefined,
-                        pointerEvents: "none",
-                    }}
-                >
-                    <div
-                        style={{
-                            position: "absolute",
-                            left: "-1px",
-                            top: 0,
-                            bottom: 0,
-                            width: "2px",
-                            background: accentColor,
-                        }}
-                    />
+                <div className="tpe-scrub-pill-edge-wrap" data-dragging={isDragging} style={{ transform: `translate3d(${pct}%, 0, 0)` }}>
+                    <div className="tpe-scrub-pill-edge" />
                 </div>
             )}
-            <div
-                style={{
-                    position: "relative",
-                    zIndex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    height: "100%",
-                    paddingInline: "7px",
-                    gap: "6px",
-                    pointerEvents: "none",
-                }}
-            >
-                <span style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.07em", color: "var(--ui-text-dim)" }}>
-                    {label}
-                </span>
-                <span className="tpe-tabular-nums" style={{ fontSize: "9.5px", fontWeight: 800, fontFamily: "monospace", color: accentColor }}>
-                    {Math.round(value)}{unit}
+            <div className="tpe-scrub-pill-content">
+                <span className="tpe-scrub-pill-label">{label}</span>
+                <span className="tpe-tabular-nums tpe-scrub-pill-val">
+                    {roundedVal}{unit}
                 </span>
             </div>
         </div>

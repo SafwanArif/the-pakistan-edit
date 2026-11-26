@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
     clamp,
     formatTimecode,
@@ -11,28 +11,27 @@ import {
     type VideoKeyframe,
 } from "@/types/news";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
+import { stopEventPropagation } from "../utils/domUtils";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { FadePresetControl, SceneChecklistPopover } from "./SceneChecklistPopover";
 import { SubtitleRowList } from "./SubtitleEditorTray";
 import { CardTimelineScrubber } from "./CardTimelineScrubber";
 import { CloseIcon } from "@/components/icons/TPEIcons";
 
-const playingPillStyle: React.CSSProperties = {
-    fontSize: '8px',
-    padding: '1px 5px',
-    borderRadius: '3px',
-    background: 'var(--ui-accent)',
-    color: '#000',
-    fontWeight: 900,
-};
-
-const SceneDurationInput: React.FC<{ value: number; onCommit: (next: number) => void }> = React.memo(({ value, onCommit }) => {
+const SceneDurationInput: React.FC<{ value: number; maxDur: number; onCommit: (next: number) => void }> = React.memo(({ value, maxDur, onCommit }) => {
     const [draftText, setDraftText] = useState<string | null>(null);
+    const cancelEditRef = useRef(false);
     const commit = (raw: string) => {
+        if (cancelEditRef.current) {
+            cancelEditRef.current = false;
+            setDraftText(null);
+            return;
+        }
         const parsed = parseFloat(raw.trim());
         setDraftText(null);
-        if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-            onCommit(clamp(Math.round(parsed * 10) / 10, 2, 180));
+        if (Number.isFinite(parsed)) {
+            const next = clamp(Math.round(parsed * 10) / 10, 2, maxDur);
+            if (next !== value) onCommit(next);
         }
     };
     return (
@@ -43,16 +42,15 @@ const SceneDurationInput: React.FC<{ value: number; onCommit: (next: number) => 
             spellCheck={false}
             value={draftText ?? String(value)}
             aria-label="Scene duration in seconds"
-            className="tpe-tabular-nums"
-            onFocus={(e) => { setDraftText(String(value)); e.currentTarget.select(); }}
+            className="tpe-tabular-nums tpe-scene-dur-input"
+            onFocus={(e) => { cancelEditRef.current = false; setDraftText(String(value)); e.currentTarget.select(); }}
             onChange={(e) => setDraftText(e.target.value)}
             onBlur={(e) => commit(e.currentTarget.value)}
             onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
-                if (e.key === 'Escape') { setDraftText(null); e.currentTarget.blur(); }
+                else if (e.key === 'Escape') { cancelEditRef.current = true; setDraftText(null); e.currentTarget.blur(); }
             }}
-            style={{ width: '36px', fontSize: '11px', fontFamily: 'monospace', fontWeight: 800, color: 'var(--ui-text)', background: 'transparent', border: 'none', textAlign: 'center', padding: 0 }}
-            title="Directly enter seconds for this angle (2–180s)"
+            title={`Directly enter seconds for this angle (2–${maxDur}s)`}
         />
     );
 });
@@ -183,6 +181,16 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     );
 
     const cardCcOn = scene.showSubtitles ?? globalShowSubtitles;
+    const isVideoMode = (scene.mediaType || 'video') === 'video';
+    const maxDur = Math.max(180, Math.ceil(videoDuration || 0));
+    const checklistTitle = idx === 0
+        ? "01. The Hook Retention Checklist"
+        : (isReHook ? "02. Re-Hook Retention Checklist" : "03. The Story Retention Checklist");
+
+    const stepDuration = (delta: number) => {
+        const next = clamp(Math.round((scene.duration + delta) * 10) / 10, 2, maxDur);
+        if (next !== scene.duration) onUpdateScene(idx, { duration: next });
+    };
 
     return (
         <div
@@ -190,43 +198,31 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
             aria-roledescription="slide"
             aria-label={`${sceneLabel}, scene ${idx + 1} of ${carouselItemCount}`}
             aria-current={isSceneActive ? "step" : undefined}
-            className={isChecklistOpen ? "tpe-storyboard-slide" : "tpe-storyboard-card tpe-storyboard-slide"}
+            className={`${isChecklistOpen ? "tpe-storyboard-slide" : "tpe-storyboard-card tpe-storyboard-slide"} tpe-scene-card`}
+            data-active={isSceneActive}
             onClick={() => { if (bounds && !isSceneActive) onSeekTo(bounds.start); }}
-            style={{
-                width: '100%',
-                cursor: isSceneActive ? 'default' : 'pointer',
-                background: isSceneActive ? `color-mix(in oklch, ${roleColor} 9%, transparent)` : 'oklch(from var(--ui-text) l c h / 0.02)',
-                borderStyle: 'solid',
-                borderWidth: '1px 1px 1px 3px',
-                borderColor: isSceneActive ? roleColor : `var(--ui-border) var(--ui-border) var(--ui-border) ${roleColor}`,
-                borderRadius: '10px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                boxShadow: isSceneActive ? `0 0 16px color-mix(in oklch, ${roleColor} 18%, transparent)` : 'none',
-                transition: 'background-color 0.2s ease, border-color 0.2s ease',
-                position: 'relative',
-            }}
+            style={{ "--role-color": roleColor } as React.CSSProperties}
         >
-            <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 900, color: roleColor, letterSpacing: '0.06em' }}>{sceneLabel}</span>
-                    {isSceneActive && <span style={playingPillStyle}>PLAYING</span>}
+            <div className="tpe-flex-row tpe-scene-card-row">
+                <div className="tpe-flex-row tpe-scene-card-head-left">
+                    <span className="tpe-scene-card-label">{sceneLabel}</span>
+                    {isSceneActive && <span className="tpe-scene-playing-pill">PLAYING</span>}
                 </div>
 
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '4px', position: 'relative' }} ref={isChecklistOpen ? checklistRef : undefined}>
+                <div className="tpe-flex-row tpe-scene-card-actions" onClick={stopEventPropagation} ref={isChecklistOpen ? checklistRef : undefined}>
                     {(idx === 0 || isReHook || isSetup) && (
                         <>
                             <button
                                 type="button"
-                                className="tpe-asset-btn"
+                                className="tpe-asset-btn tpe-scene-checklist-btn"
                                 data-active={isChecklistOpen}
-                                onClick={(e) => { e.stopPropagation(); onToggleChecklist(idx); }}
-                                title={idx === 0 ? "01. The Hook Retention Checklist" : (isReHook ? "02. Re-Hook Retention Checklist" : "03. The Story Retention Checklist")}
-                                style={{ width: '20px', height: '20px', padding: 0 }}
+                                aria-label={checklistTitle}
+                                aria-expanded={isChecklistOpen}
+                                aria-haspopup="dialog"
+                                onClick={() => onToggleChecklist(idx)}
+                                title={checklistTitle}
                             >
-                                <svg width="11" height="11" viewBox="0 0 24 24" style={{ width: '11px', height: '11px', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '11px', height: '11px', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
                                     <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />
                                 </svg>
                             </button>
@@ -241,9 +237,9 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                             )}
                         </>
                     )}
-                    <div className="tpe-mode-cluster" style={{ padding: '2px', gap: '2px' }}>
-                        <button type="button" className="tpe-mode-btn" data-active={(scene.mediaType || 'video') === 'video'} onClick={() => onUpdateScene(idx, { mediaType: 'video' })} title="Loop native video footage" style={{ padding: '3px 6px', fontSize: '8.5px' }}>🎬 VIDEO</button>
-                        <button type="button" className="tpe-mode-btn" data-active={scene.mediaType === 'image'} onClick={() => onUpdateScene(idx, { mediaType: 'image' })} title="Kinetic Ken Burns drift (100% to 104% continuous zoom)" style={{ padding: '3px 6px', fontSize: '8.5px' }}>🖼️ PHOTO</button>
+                    <div className="tpe-mode-cluster tpe-scene-media-cluster" role="group" aria-label="Scene media mode">
+                        <button type="button" aria-pressed={isVideoMode} className="tpe-mode-btn tpe-scene-media-btn" data-active={isVideoMode} onClick={() => { if (!isVideoMode) onUpdateScene(idx, { mediaType: 'video' }); }} title="Loop native video footage">🎬 VIDEO</button>
+                        <button type="button" aria-pressed={!isVideoMode} className="tpe-mode-btn tpe-scene-media-btn" data-active={!isVideoMode} onClick={() => { if (isVideoMode) onUpdateScene(idx, { mediaType: 'image' }); }} title="Kinetic Ken Burns drift (100% to 104% continuous zoom)">🖼️ PHOTO</button>
                     </div>
                     {canDelete && (
                         <button type="button" aria-label={`Delete ${sceneLabel} scene`} onClick={() => onDeleteScene(idx)} className="tpe-asset-btn tpe-asset-btn-danger tpe-storyboard-remove-btn" title="Delete scene"><CloseIcon width={16} height={16} /></button>
@@ -252,45 +248,50 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
             </div>
 
             {/* Duration Timer & Actions */}
-            <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '3px' }}>
-                    <button type="button" aria-label="Decrease duration 1s" onClick={() => onUpdateScene(idx, { duration: Math.max(2, Math.round((scene.duration - 1) * 10) / 10) })} className="tpe-asset-btn" style={{ width: '20px', height: '20px', fontSize: '11px', lineHeight: 1 }} title="Decrease 1s">-</button>
-                    <div style={{ display: 'flex', alignItems: 'center', background: 'oklch(from var(--ui-bg) l c h / 0.85)', border: '1px solid var(--ui-border)', borderRadius: '4px', padding: '1px 4px' }}>
-                        <SceneDurationInput
-                            value={scene.duration}
-                            onCommit={handleCommitDuration}
-                        />
-                        <span style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontWeight: 700 }}>s</span>
+            <div className="tpe-flex-row tpe-scene-card-row" onClick={stopEventPropagation}>
+                <div className="tpe-flex-row tpe-scene-dur-group">
+                    <button type="button" disabled={scene.duration <= 2} aria-label="Decrease duration 1s" onClick={() => stepDuration(-1)} className="tpe-asset-btn tpe-scene-dur-step" title="Decrease 1s">-</button>
+                    <div className="tpe-scene-dur-box">
+                        <SceneDurationInput value={scene.duration} maxDur={maxDur} onCommit={handleCommitDuration} />
+                        <span className="tpe-scene-dur-unit">s</span>
                     </div>
-                    <button type="button" aria-label="Increase duration 1s" onClick={() => onUpdateScene(idx, { duration: Math.max(2, Math.round((scene.duration + 1) * 10) / 10) })} className="tpe-asset-btn" style={{ width: '20px', height: '20px', fontSize: '11px', lineHeight: 1 }} title="Increase 1s">+</button>
+                    <button type="button" disabled={scene.duration >= maxDur} aria-label="Increase duration 1s" onClick={() => stepDuration(1)} className="tpe-asset-btn tpe-scene-dur-step" title="Increase 1s">+</button>
                 </div>
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
-                    {scene.mediaType === 'image' && <span style={{ fontSize: '8px', fontWeight: 800, letterSpacing: '0.06em', color: 'var(--ui-accent)', textTransform: 'uppercase' }}>KEN BURNS ✨</span>}
+                <div className="tpe-flex-row tpe-scene-meta-actions">
+                    {!isVideoMode && <span className="tpe-scene-kb-badge">KEN BURNS ✨</span>}
                     {Boolean(hasSubtitles && bounds) && (
-                        <button type="button" className="tpe-mode-btn" data-active={isSubsOpen} onClick={(e) => { e.stopPropagation(); onToggleSubs(idx); }} title="View & edit subtitles playing during this angle card" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
+                        <button type="button" aria-expanded={isSubsOpen} className="tpe-mode-btn tpe-scene-pill-btn tpe-tabular-nums" data-active={isSubsOpen} onClick={() => onToggleSubs(idx)} title="View & edit subtitles playing during this angle card">
                             💬 CC ({cardSubs.length})
                         </button>
                     )}
                     {idx === 0 && (
                         hasReHook ? (
-                            <button type="button" className="tpe-mode-btn" onClick={(e) => { e.stopPropagation(); onJumpToReHook(); }} title={reHookAnchored ? "Anchored to 02 Re-Hook (shared headline)" : "Un-anchored (02 Re-Hook uses its own headline)"} style={{ padding: '2px 7px', fontSize: '10px', whiteSpace: 'nowrap', lineHeight: 1, color: 'var(--ui-text)', opacity: reHookAnchored ? 1 : 0.35, filter: reHookAnchored ? 'none' : 'grayscale(1)', background: reHookAnchored ? 'oklch(from var(--ui-accent) l c h / 0.16)' : 'transparent', border: `1px solid ${reHookAnchored ? 'oklch(from var(--ui-accent) l c h / 0.5)' : 'var(--ui-border)'}`, boxShadow: reHookAnchored ? '0 0 12px oklch(from var(--ui-accent) l c h / 0.22)' : 'none' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center' }}><HookGlyph role="hook" /><HookGlyph role="rehook" style={{ marginLeft: '-10.5px' }} /></span>
+                            <button
+                                type="button"
+                                aria-label={reHookAnchored ? "Jump to anchored 02 Re-Hook scene" : "Jump to un-anchored 02 Re-Hook scene"}
+                                className="tpe-mode-btn tpe-scene-rehook-link"
+                                data-anchored={reHookAnchored}
+                                onClick={onJumpToReHook}
+                                title={reHookAnchored ? "Anchored to 02 Re-Hook (shared headline)" : "Un-anchored (02 Re-Hook uses its own headline)"}
+                            >
+                                <span className="tpe-scene-rehook-glyphs"><HookGlyph role="hook" /><HookGlyph role="rehook" className="tpe-scene-rehook-glyph-overlap" /></span>
                             </button>
                         ) : (
-                            <button type="button" className="tpe-mode-btn" onClick={(e) => { e.stopPropagation(); onAddReHook(); }} title="Insert a 4s Re-Hook right after 01 The Hook" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.45)' }}>
+                            <button type="button" className="tpe-mode-btn tpe-scene-add-rehook" onClick={onAddReHook} title="Insert a 4s Re-Hook right after 01 The Hook">
                                 + RE-HOOK
                             </button>
                         )
                     )}
                     {isReHook && (
-                        <button type="button" className="tpe-mode-btn" data-active={scene.shareHookText !== false} onClick={(e) => { e.stopPropagation(); onUpdateScene(idx, { shareHookText: scene.shareHookText === false }); }} title="Anchor Hook: lock 01. The Hook's headline & subheading continuously across both hooks with zero flash" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
+                        <button type="button" aria-pressed={scene.shareHookText !== false} className="tpe-mode-btn tpe-scene-pill-btn" data-active={scene.shareHookText !== false} onClick={() => onUpdateScene(idx, { shareHookText: scene.shareHookText === false })} title="Anchor Hook: lock 01. The Hook's headline & subheading continuously across both hooks with zero flash">
                             ⚓ ANCHOR HOOK
                         </button>
                     )}
                     {isSetup && Boolean(videoDuration && videoDuration > 0) && (() => {
                         const adaptedDur = Math.max(2, Math.round((videoDuration! - (scene.clipStartOffset || 0)) * 10) / 10);
+                        const isAdapted = Math.abs(scene.duration - adaptedDur) < 0.2;
                         return (
-                            <button type="button" className="tpe-mode-btn" data-active={Math.abs(scene.duration - adaptedDur) < 0.2} onClick={(e) => { e.stopPropagation(); onUpdateScene(idx, { duration: adaptedDur }); }} title="Adapt 03. The Story duration to match the remaining imported clip from its start offset" style={{ padding: '2px 7px', fontSize: '9px', whiteSpace: 'nowrap' }}>
+                            <button type="button" aria-pressed={isAdapted} className="tpe-mode-btn tpe-scene-pill-btn tpe-tabular-nums" data-active={isAdapted} onClick={() => { if (scene.duration !== adaptedDur) onUpdateScene(idx, { duration: adaptedDur }); }} title="Adapt 03. The Story duration to match the remaining imported clip from its start offset">
                                 ADAPT TO CLIP ({formatTimecode(adaptedDur)})
                             </button>
                         );
@@ -300,15 +301,15 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
 
             {/* Scoped Angle Subtitles Tab */}
             {isSubsOpen && bounds && hasSubtitles && (
-                <div onClick={(e) => e.stopPropagation()} style={{ padding: '6px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--ui-border)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '8.5px', fontWeight: 800, color: 'var(--ui-text-dim)', letterSpacing: '0.06em' }}>CARD CAPTIONS ({cardSubs.length})</span>
+                <div onClick={stopEventPropagation} className="tpe-scene-subs-tray">
+                    <div className="tpe-flex-row tpe-scene-card-row">
+                        <span className="tpe-scene-subs-label tpe-tabular-nums">CARD CAPTIONS ({cardSubs.length})</span>
                         <button
                             type="button"
+                            aria-pressed={cardCcOn}
                             onClick={() => onUpdateScene(idx, { showSubtitles: !cardCcOn })}
-                            className="tpe-mode-btn"
+                            className="tpe-mode-btn tpe-scene-subs-toggle"
                             data-active={cardCcOn}
-                            style={{ padding: '1px 7px', fontSize: '8.5px' }}
                             title="Toggle closed captions only for this angle card"
                         >
                             CC: {cardCcOn ? "ON" : "OFF"}
@@ -322,7 +323,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                             onSeekMedia={handleSeekSub}
                         />
                     ) : (
-                        <div style={{ fontSize: '9px', color: 'var(--ui-text-dim)', fontStyle: 'italic' }}>No speech detected in this angle window.</div>
+                        <div className="tpe-scene-subs-empty">No speech detected in this angle window.</div>
                     )}
                 </div>
             )}
@@ -348,16 +349,16 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                 />
             )}
 
-            {/* Side-by-side Clip Start Trimmer & Fade Control (Hook, Re-Hook & Setup) */}
+            {/* Side-by-side Clip Start Trimmer & Fade Control (Hook, Re-Hook & Story) */}
             {(idx === 0 || isReHook || isSetup) && (
-                <div className={hasVideo ? "tpe-storyboard-controls-grid" : undefined} style={hasVideo ? undefined : { display: 'grid', gridTemplateColumns: '1fr', gap: '8px', marginTop: '2px', alignItems: 'stretch' }}>
+                <div className={hasVideo ? "tpe-storyboard-controls-grid" : "tpe-scene-single-control-grid"}>
                     {hasVideo && (
                         <ClipOffsetTrimmer
                             sceneIdx={idx}
                             mode={idx === 0 ? 'hook' : (isReHook ? 'rehook' : 'setup')}
                             clipStartOffset={scene.clipStartOffset}
                             sceneDuration={scene.duration}
-                            currentMediaTime={scene.clipStartOffset !== undefined ? 0 : currentMediaTime}
+                            currentMediaTime={currentMediaTime}
                             isCardActive={isSceneActive}
                             onSetOffset={onSetOffset}
                         />
@@ -381,8 +382,8 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
 
             {/* Per-Scene Media Override (Scenes 02+) */}
             {idx > 0 && (
-                <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px', padding: '6px 8px', borderRadius: '6px', background: scene.mediaUrl ? 'oklch(from var(--ui-accent) l c h / 0.1)' : 'oklch(from var(--ui-text) l c h / 0.03)', border: scene.mediaUrl ? '1px solid oklch(from var(--ui-accent) l c h / 0.4)' : '1px dashed var(--ui-border)' }}>
-                    <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.06em', color: scene.mediaUrl ? 'var(--ui-accent)' : 'var(--ui-text-dim)', whiteSpace: 'nowrap' }}>
+                <div className="tpe-flex-row tpe-scene-broll-bar" data-custom={Boolean(scene.mediaUrl)} onClick={stopEventPropagation}>
+                    <span className="tpe-scene-broll-tag" data-custom={Boolean(scene.mediaUrl)}>
                         {scene.mediaUrl ? 'CUSTOM' : 'MASTER'}
                     </span>
                     <input
@@ -397,14 +398,22 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                         value={scene.mediaUrl || ''}
                         onChange={(e) => onUpdateScene(idx, { mediaUrl: e.target.value || undefined, mediaName: undefined })}
                         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                        style={{ flex: 1, minWidth: 0, fontSize: '9.5px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
+                        className="tpe-scene-broll-input"
                     />
-                    <label className="tpe-upload-label" style={{ cursor: 'pointer', fontSize: '9px', fontWeight: 800, color: 'var(--ui-accent)', padding: '2px 6px', borderRadius: '4px', border: '1px solid oklch(from var(--ui-accent) l c h / 0.3)', whiteSpace: 'nowrap' }} title="Upload custom video or photo for this angle">
+                    <label className="tpe-upload-label tpe-scene-broll-upload" title="Upload custom video or photo for this angle">
                         UPLOAD
                         <input type="file" className="tpe-sr-only" accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) onSceneMediaUpload(idx, f); e.target.value = ''; }} />
                     </label>
                     {scene.mediaUrl && (
-                        <button type="button" aria-label="Revert to master clip" onClick={() => onUpdateScene(idx, { mediaUrl: undefined, mediaName: undefined })} className="tpe-asset-btn tpe-asset-btn-danger" style={{ width: '18px', height: '18px', fontSize: '10px', padding: 0 }} title="Revert to master clip">✕</button>
+                        <button
+                            type="button"
+                            aria-label="Revert to master clip"
+                            onClick={() => onUpdateScene(idx, { mediaUrl: undefined, mediaName: undefined, ...(hasVideo ? { mediaType: 'video' } : {}) })}
+                            className="tpe-asset-btn tpe-asset-btn-danger tpe-scene-broll-revert"
+                            title="Revert to master clip"
+                        >
+                            ✕
+                        </button>
                     )}
                 </div>
             )}

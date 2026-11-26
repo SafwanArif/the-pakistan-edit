@@ -3,11 +3,6 @@
 import React, { useRef, useState } from "react";
 import { clamp } from "@/types/news";
 
-const sliderColStyle: React.CSSProperties = { display: "flex", flexDirection: "column", inlineSize: "100%", alignItems: "center", gap: "4px" };
-const sliderLabelStyle: React.CSSProperties = { fontSize: "7px", fontWeight: 800, opacity: 0.5, letterSpacing: "0.05em" };
-const sliderTrackWrapStyle: React.CSSProperties = { position: "relative", inlineSize: "100%", blockSize: "18px", display: "flex", alignItems: "center" };
-const sliderValueInputStyle: React.CSSProperties = { background: "transparent", border: "none", color: "var(--ui-accent)", fontSize: "10px", fontWeight: 700, textAlign: "center", inlineSize: "100%", padding: 0, margin: 0 };
-
 interface FocalSliderProps {
     id: string;
     label: string;
@@ -20,12 +15,12 @@ interface FocalSliderProps {
 }
 
 /** Controlled slider and numeric input pair for focal zoom and pan coordinates. */
-export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, value, field, unit, onChange }) => {
+export const FocalSlider = React.memo<FocalSliderProps>(({ label, min, max, value, field, unit = "", onChange }) => {
     const [textInput, setTextInput] = useState<string | null>(null);
     const cancelEditRef = useRef(false);
 
     const safeValue = Number.isFinite(value) ? clamp(Math.round(value), min, max) : min;
-    const committedText = `${safeValue}${unit ?? (id === "zoom" ? "%" : "")}`;
+    const committedText = `${safeValue}${unit}`;
     const commitNumeric = (raw: string) => {
         const parsed = parseInt(raw, 10);
         if (Number.isNaN(parsed)) return;
@@ -34,9 +29,9 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
     };
 
     return (
-        <div style={sliderColStyle}>
-            <span className="focal-slider-label" style={sliderLabelStyle}>{label}</span>
-            <div style={sliderTrackWrapStyle}>
+        <div className="tpe-focal-slider">
+            <span className="tpe-focal-slider-label">{label}</span>
+            <div className="tpe-focal-slider-track">
                 <input
                     type="range"
                     aria-label={label}
@@ -48,7 +43,7 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                 />
             </div>
             <input
-                className="tpe-tabular-nums"
+                className="tpe-tabular-nums tpe-focal-slider-value"
                 type="text"
                 inputMode="numeric"
                 enterKeyHint="done"
@@ -58,7 +53,6 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                 autoCapitalize="off"
                 aria-label={`${label} numeric value`}
                 value={textInput ?? committedText}
-                style={sliderValueInputStyle}
                 onFocus={(e) => { cancelEditRef.current = false; setTextInput(String(safeValue)); e.currentTarget.select(); }}
                 onChange={(e) => setTextInput(e.target.value.replace(/[^0-9]/g, ""))}
                 onBlur={() => {

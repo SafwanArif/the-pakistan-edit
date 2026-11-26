@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     VideoDraft,
     StarSpinCue,
@@ -28,6 +28,14 @@ interface MotionControlDeckProps {
     onJumpCue: (dir: 'prev' | 'next') => void;
 }
 
+type MotionAssetTab = 'logo' | 'wordmark' | 'text';
+
+const ASSET_TABS: readonly { id: MotionAssetTab; label: string; title: string }[] = [
+    { id: 'logo', label: 'LOGO', title: 'Configure P. logo spin cues and star motion' },
+    { id: 'wordmark', label: 'WORDMARK', title: 'Toggle initial 0.6s PAKISTAN / EDIT wordmark wipe reveal' },
+    { id: 'text', label: 'TEXT FX', title: 'Toggle kinetic headline slide-in and // slash pulse' },
+];
+
 const SPIN_MODES: { mode: StarSpinMode; val: number; label: string; title: string }[] = [
     { mode: 'ccw', val: 0, label: 'CCW', title: 'Anti-clockwise spin (default Pakistan Flag emblem flow)' },
     { mode: 'flag-tilt', val: 1, label: 'TILT', title: 'Clockwise Pakistan Flag tilt spin' },
@@ -48,6 +56,8 @@ const SPIN_SNAP_OPTIONS = SPIN_MODES.map(({ label, val, title }) => ({ label, va
 const SEQUENCE_SNAP_OPTIONS = SEQUENCE_MODES.map(({ label, val, title }) => ({ label, val, title }));
 const HOLD_FEEL_SNAP_OPTIONS = HOLD_FEEL_MODES.map(({ label, val, title }) => ({ label, val, title }));
 
+const toCleanStepSeconds = (ms: number): number => Number(((Math.round(ms / 50) * 50) / 1000).toFixed(2));
+
 /**
  * On-demand Motion & Flag-Star Control Deck allowing exact placement of P. dot -> 5-point star cues,
  * live preview testing, spin style/speed/hold/size tuning, and independent motion channel switches.
@@ -65,9 +75,9 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
 }) => {
     const wordmarkOn = draft.motionWordmark !== false;
     const textOn = draft.motionText !== false;
-    const [activeAsset, setActiveAsset] = useState<'logo' | 'wordmark' | 'text' | null>(null);
-    const addCueBtnRef = useRef<HTMLButtonElement>(null);
     const logoOn = draft.enableLogo !== false;
+    const [activeAsset, setActiveAsset] = useState<MotionAssetTab | null>(null);
+    const addCueBtnRef = useRef<HTMLButtonElement>(null);
 
     const rawCues = draft.starCues ?? DEFAULT_STAR_CUES;
     const isLogoOpen = activeAsset === 'logo';
@@ -82,9 +92,11 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     );
 
     const activeDisplayTimeRef = useRef(activeDisplayTime);
-    useEffect(() => {
+    const latestRef = useRef({ draft, onUpdateDraft, onSeekTo, activeDisplayTime });
+    useLayoutEffect(() => {
         activeDisplayTimeRef.current = activeDisplayTime;
-    }, [activeDisplayTime]);
+        latestRef.current = { draft, onUpdateDraft, onSeekTo, activeDisplayTime };
+    });
 
     useEffect(() => {
         if (!isPlaying || !isLogoOpen || !logoOn || !liveClock) return;
@@ -129,11 +141,42 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     const holdMs = Math.round((draft.starHoldDuration ?? 0.5) * 1000);
     const starScale = Math.round(draft.starScale ?? 100);
 
+    const onSelectSequence = useCallback((v: number) => {
+        const nextMode = SEQUENCE_MODES[v]?.mode ?? 'star-crescent';
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if ((d.starSequence ?? 'star-crescent') !== nextMode) update({ ...d, starSequence: nextMode });
+    }, []);
+    const onSelectHoldFeel = useCallback((v: number) => {
+        const nextFeel = HOLD_FEEL_MODES[v]?.mode ?? 'drift';
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if ((d.starHoldFeel ?? 'drift') !== nextFeel) update({ ...d, starHoldFeel: nextFeel });
+    }, []);
+    const onSelectSpinStyle = useCallback((v: number) => {
+        const nextSpin = SPIN_MODES[v]?.mode ?? 'ccw';
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if ((d.starSpinMode ?? 'ccw') !== nextSpin) update({ ...d, starSpinMode: nextSpin });
+    }, []);
+    const onChangeMorph = useCallback((ms: number) => {
+        const nextDur = toCleanStepSeconds(ms);
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if ((d.starMorphDuration ?? 0.45) !== nextDur) update({ ...d, starMorphDuration: nextDur });
+    }, []);
+    const onChangeHold = useCallback((ms: number) => {
+        const nextDur = toCleanStepSeconds(ms);
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if ((d.starHoldDuration ?? 0.5) !== nextDur) update({ ...d, starHoldDuration: nextDur });
+    }, []);
+    const onChangeScale = useCallback((pct: number) => {
+        const { draft: d, onUpdateDraft: update } = latestRef.current;
+        if (Math.round(d.starScale ?? 100) !== pct) update({ ...d, starScale: pct });
+    }, []);
+
     const addCueAtTime = (targetTime: number) => {
+        if (!Number.isFinite(targetTime)) return;
         const rounded = Math.max(0, Math.round(targetTime * 100) / 100);
         const existing = sortedCues.find((c) => Math.abs(c.time - rounded) <= 0.08);
         if (existing) {
-            onSeekTo(existing.time);
+            if (Math.abs(existing.time - activeDisplayTime) > 0.005) onSeekTo(existing.time);
             return;
         }
         const nextCue: StarSpinCue = {
@@ -148,129 +191,84 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
         onUpdateDraft({ ...draft, starCues: rawCues.filter((c) => c.id !== id) });
     };
 
+    const toggleChannel = (channel: MotionAssetTab) => {
+        const nextWordmark = channel === 'wordmark' ? !wordmarkOn : wordmarkOn;
+        const nextText = channel === 'text' ? !textOn : textOn;
+        const nextLogo = channel === 'logo' ? !logoOn : logoOn;
+        onUpdateDraft({
+            ...draft,
+            ...(channel === 'wordmark' ? { motionWordmark: nextWordmark } : {}),
+            ...(channel === 'text' ? { motionText: nextText } : {}),
+            ...(channel === 'logo' ? { enableLogo: nextLogo } : {}),
+            enableMotion: nextWordmark || nextText || nextLogo,
+        });
+    };
+
+    const simpleChannel = activeAsset === 'wordmark'
+        ? { id: 'wordmark' as const, heading: 'WORDMARK MOTION', sub: '0.6s PAKISTAN / EDIT wipe reveal', enabled: wordmarkOn }
+        : activeAsset === 'text'
+            ? { id: 'text' as const, heading: 'TEXT MOTION', sub: 'Kinetic headline slide-in and // slash pulse', enabled: textOn }
+            : null;
+
     return (
-        <div
-            className="tpe-flex-col"
-            style={{
-                width: '100%',
-                maxWidth: '680px',
-                gap: '6px',
-            }}
-        >
-            {/* Row 1: Scheduled ★ Star Cues (WHEN) + Channel Switches */}
-            <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                {/* Independent Motion Assets */}
-                <div
-                    className="tpe-nested-action-row tpe-nested-capsule"
-                    role="group"
-                    aria-label="Motion assets"
-                >
-                    <button
-                        type="button"
-                        aria-expanded={activeAsset === 'logo'}
-                        onClick={() => setActiveAsset(p => p === 'logo' ? null : 'logo')}
-                        className="tpe-mode-btn tpe-nested-action"
-                        data-active={activeAsset === 'logo'}
-                        title="Configure P. logo spin cues and star motion"
-                    >
-                        LOGO
-                    </button>
-                    <button
-                        type="button"
-                        aria-expanded={activeAsset === 'wordmark'}
-                        onClick={() => setActiveAsset(p => p === 'wordmark' ? null : 'wordmark')}
-                        className="tpe-mode-btn tpe-nested-action"
-                        data-active={activeAsset === 'wordmark'}
-                        title="Toggle initial 0.6s PAKISTAN / EDIT wordmark wipe reveal"
-                    >
-                        WORDMARK
-                    </button>
-                    <button
-                        type="button"
-                        aria-expanded={activeAsset === 'text'}
-                        onClick={() => setActiveAsset(p => p === 'text' ? null : 'text')}
-                        className="tpe-mode-btn tpe-nested-action"
-                        data-active={activeAsset === 'text'}
-                        title="Toggle kinetic headline slide-in and // slash pulse"
-                    >
-                        TEXT FX
-                    </button>
+        <div className="tpe-flex-col tpe-motion-deck">
+            {/* Row 1: Motion asset channel tabs */}
+            <div className="tpe-flex-row tpe-motion-top-row">
+                <div className="tpe-nested-action-row tpe-nested-capsule" role="group" aria-label="Motion assets">
+                    {ASSET_TABS.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            aria-expanded={activeAsset === tab.id}
+                            onClick={() => setActiveAsset((p) => (p === tab.id ? null : tab.id))}
+                            className="tpe-mode-btn tpe-nested-action"
+                            data-active={activeAsset === tab.id}
+                            title={tab.title}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {activeAsset === 'wordmark' && (
-                <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '2px 4px' }}>
-                    <div className="tpe-flex-col" style={{ gap: '2px' }}>
-                        <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>WORDMARK MOTION</span>
-                        <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>0.6s PAKISTAN / EDIT wipe reveal</span>
+            {simpleChannel && (
+                <div className="tpe-flex-row tpe-motion-channel">
+                    <div className="tpe-flex-col tpe-motion-channel-copy">
+                        <span className="tpe-motion-channel-title">{simpleChannel.heading}</span>
+                        <span className="tpe-motion-channel-sub">{simpleChannel.sub}</span>
                     </div>
                     <button
                         type="button"
-                        aria-pressed={wordmarkOn}
-                        onClick={() => {
-                            const nextWordmark = !wordmarkOn;
-                            onUpdateDraft({
-                                ...draft,
-                                motionWordmark: nextWordmark,
-                                enableMotion: nextWordmark || textOn,
-                            });
-                        }}
-                        className="tpe-mode-btn"
-                        data-active={wordmarkOn}
-                        style={{ padding: '3px 8px', fontSize: '8px' }}
+                        aria-pressed={simpleChannel.enabled}
+                        onClick={() => toggleChannel(simpleChannel.id)}
+                        className="tpe-mode-btn tpe-motion-toggle"
+                        data-active={simpleChannel.enabled}
                     >
-                        {wordmarkOn ? 'ON' : 'OFF'}
+                        {simpleChannel.enabled ? 'ON' : 'OFF'}
                     </button>
                 </div>
             )}
 
-            {activeAsset === 'text' && (
-                <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '2px 4px' }}>
-                    <div className="tpe-flex-col" style={{ gap: '2px' }}>
-                        <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>TEXT MOTION</span>
-                        <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>Kinetic headline slide-in and // slash pulse</span>
-                    </div>
-                    <button
-                        type="button"
-                        aria-pressed={textOn}
-                        onClick={() => {
-                            const nextText = !textOn;
-                            onUpdateDraft({
-                                ...draft,
-                                motionText: nextText,
-                                enableMotion: nextText || wordmarkOn,
-                            });
-                        }}
-                        className="tpe-mode-btn"
-                        data-active={textOn}
-                        style={{ padding: '3px 8px', fontSize: '8px' }}
-                    >
-                        {textOn ? 'ON' : 'OFF'}
-                    </button>
-                </div>
-            )}
-
-            {activeAsset === 'logo' && (
+            {isLogoOpen && (
                 <>
-                    <div className="tpe-flex-col" style={{ gap: '6px', padding: '2px 4px' }}>
-                        <div className="tpe-flex-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                            <div className="tpe-flex-col" style={{ gap: '2px' }}>
-                                <span style={{ fontSize: '8px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)' }}>P. LOGO MOTION</span>
-                                <span style={{ fontSize: '8px', color: 'var(--ui-text-dim)' }}>Dot → 5-point star / crescent cues</span>
+                    <div className="tpe-flex-col tpe-motion-channel-stack">
+                        <div className="tpe-flex-row tpe-motion-channel-head">
+                            <div className="tpe-flex-col tpe-motion-channel-copy">
+                                <span className="tpe-motion-channel-title">P. LOGO MOTION</span>
+                                <span className="tpe-motion-channel-sub">Dot → 5-point star / crescent cues</span>
                             </div>
                             <button
                                 type="button"
                                 aria-pressed={logoOn}
-                                onClick={() => onUpdateDraft({ ...draft, enableLogo: !logoOn })}
-                                className="tpe-mode-btn"
+                                onClick={() => toggleChannel('logo')}
+                                className="tpe-mode-btn tpe-motion-toggle"
                                 data-active={logoOn}
-                                style={{ padding: '3px 8px', fontSize: '8px' }}
                             >
                                 {logoOn ? 'ON' : 'OFF'}
                             </button>
                         </div>
                         {logoOn && (
-                            <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                            <div className="tpe-flex-row tpe-motion-cue-bar">
                                 {sortedCues.length > 1 && (
                                     <div className="tpe-mode-cluster" role="group" aria-label="Navigate star cues">
                                         <button type="button" aria-label="Jump to previous star cue" onClick={() => onJumpCue('prev')} className="tpe-cycle-arrow" title="Previous star cue"><ChevronLeftIcon /></button>
@@ -278,140 +276,106 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
                                     </div>
                                 )}
                                 {parkedCue ? (
-                                    <div className="tpe-flex-row tpe-tabular-nums" style={{ alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '5px', background: 'oklch(from var(--ui-accent) l c h / 0.16)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.5)', fontSize: '8.5px', fontWeight: 900, color: 'var(--ui-accent)' }}>
+                                    <div className="tpe-flex-row tpe-tabular-nums tpe-motion-parked-pill">
                                         <span>★ AT {formatTimecode(parkedCue.time)}</span>
-                                        <button type="button" aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`} onClick={() => removeCue(parkedCue.id)} style={{ background: 'transparent', border: 'none', padding: '0 2px', color: 'var(--ui-danger)', fontWeight: 900, cursor: 'pointer', lineHeight: 1 }} title="Remove star spin cue at playhead">✕</button>
+                                        <button type="button" aria-label={`Remove star spin cue at ${formatTimecode(parkedCue.time)}`} onClick={() => removeCue(parkedCue.id)} className="tpe-motion-parked-remove" title="Remove star spin cue at playhead">✕</button>
                                     </div>
                                 ) : (
-                                    <button ref={addCueBtnRef} type="button" onClick={() => addCueAtTime(isPlaying && liveClock ? liveClock.getTime() : activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 7px', fontSize: '8.5px', color: 'var(--ui-accent)', border: '1px dashed oklch(from var(--ui-accent) l c h / 0.5)' }} title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">{`+ ★ AT ${formatTimecode(activeDisplayTime)}`}</button>
+                                    <button ref={addCueBtnRef} type="button" onClick={() => addCueAtTime(isPlaying && liveClock ? liveClock.getTime() : activeDisplayTime)} className="tpe-mode-btn tpe-tabular-nums tpe-motion-add-cue" title="Trigger P. dot → 5-point star → dot animation at the current playhead timestamp">{`+ ★ AT ${formatTimecode(activeDisplayTime)}`}</button>
                                 )}
-                                {!hasHookCue && <button type="button" onClick={() => addCueAtTime(0)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px' }} title="Add star spin cue at 01. Hook start (00:00.0)">+ 0s</button>}
-                                {storyStart > 0.2 && !hasStoryCue && <button type="button" onClick={() => addCueAtTime(storyStart)} className="tpe-mode-btn tpe-tabular-nums" style={{ padding: '2px 6px', fontSize: '8px' }} title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}>+ STORY</button>}
-                                <button type="button" onClick={onPreviewStar} className="tpe-mode-btn" style={{ padding: '2px 7px', fontSize: '8.5px', fontWeight: 900, background: 'oklch(from var(--ui-accent) l c h / 0.14)', border: '1px solid oklch(from var(--ui-accent) l c h / 0.45)', color: 'var(--ui-accent)' }} title="Preview the P. dot → 5-point star → dot animation live right now on the monitor">▶ TEST SPIN</button>
+                                {!hasHookCue && <button type="button" onClick={() => addCueAtTime(0)} className="tpe-mode-btn tpe-motion-quick-cue" title="Add star spin cue at 01. Hook start (00:00.0)">+ 0s</button>}
+                                {storyStart > 0.2 && !hasStoryCue && <button type="button" onClick={() => addCueAtTime(storyStart)} className="tpe-mode-btn tpe-tabular-nums tpe-motion-quick-cue" title={`Add star spin cue right at 03. The Story start (${formatTimecode(storyStart)})`}>+ STORY</button>}
+                                <button type="button" onClick={onPreviewStar} className="tpe-mode-btn tpe-motion-preview-btn" title="Preview the P. dot → 5-point star → dot animation live right now on the monitor">▶ TEST SPIN</button>
                             </div>
                         )}
                     </div>
 
                     {/* Active Star Cue Pills (if any scheduled) */}
-            {logoOn && sortedCues.length > 0 && (
-                <div className="tpe-flex-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-                    <span style={{ fontSize: '7.5px', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--ui-text-dim)', marginInlineEnd: '2px' }}>
-                        STAR CUES:
-                    </span>
-                    {sortedCues.map((cue) => {
-                        const isNear = !isPlaying && Math.abs(cue.time - activeDisplayTime) <= 0.08;
-                        return (
-                            <div
-                                key={cue.id}
-                                className="tpe-flex-row tpe-tabular-nums"
-                                style={{
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    padding: '1px 5px',
-                                    borderRadius: '4px',
-                                    background: isNear ? 'oklch(from var(--ui-accent) l c h / 0.2)' : 'rgba(255,255,255,0.04)',
-                                    border: `1px solid ${isNear ? 'var(--ui-accent)' : 'var(--ui-border)'}`,
-                                    fontSize: '8px',
-                                    fontFamily: 'monospace',
-                                    fontWeight: 800,
-                                    color: isNear ? 'var(--ui-accent)' : 'var(--ui-text)',
-                                }}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => onSeekTo(cue.time)}
-                                    title={`Seek to star cue at ${formatTimecode(cue.time)}`}
-                                    style={{ background: 'transparent', border: 'none', padding: 0, color: 'inherit', font: 'inherit', cursor: 'pointer' }}
-                                >
-                                    ★ {formatTimecode(cue.time)}
-                                </button>
-                                <button
-                                    type="button"
-                                    aria-label={`Delete star cue at ${formatTimecode(cue.time)}`}
-                                    onClick={() => removeCue(cue.id)}
-                                    title="Delete cue"
-                                    style={{ background: 'transparent', border: 'none', padding: '0 1px', color: 'var(--ui-text-dim)', fontSize: '9px', lineHeight: 1, cursor: 'pointer' }}
-                                >
-                                    ×
-                                </button>
+                    {logoOn && sortedCues.length > 0 && (
+                        <div className="tpe-flex-row tpe-motion-cue-bar">
+                            <span className="tpe-motion-cues-label">STAR CUES:</span>
+                            {sortedCues.map((cue) => {
+                                const isNear = !isPlaying && Math.abs(cue.time - activeDisplayTime) <= 0.08;
+                                return (
+                                    <div key={cue.id} className="tpe-flex-row tpe-tabular-nums tpe-motion-cue-pill" data-near={isNear}>
+                                        <button
+                                            type="button"
+                                            onClick={() => { if (Math.abs(cue.time - activeDisplayTime) > 0.005) onSeekTo(cue.time); }}
+                                            title={`Seek to star cue at ${formatTimecode(cue.time)}`}
+                                            className="tpe-motion-cue-jump"
+                                        >
+                                            ★ {formatTimecode(cue.time)}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            aria-label={`Delete star cue at ${formatTimecode(cue.time)}`}
+                                            onClick={() => removeCue(cue.id)}
+                                            title="Delete cue"
+                                            className="tpe-motion-cue-del"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Row 2: Sequence, Hold Feel, Spin Style, Morph Speed, Hold Time, Size (HOW) */}
+                    {logoOn && (
+                        <div className="tpe-flex-row tpe-motion-tuning-row">
+                            <div className="tpe-flex-col tpe-kf-col">
+                                <span className="tpe-motion-col-label">SEQUENCE</span>
+                                <SnapCap ariaLabel="Emblem morph sequence" value={sequenceVal >= 0 ? sequenceVal : 0} options={SEQUENCE_SNAP_OPTIONS} onSelect={onSelectSequence} />
                             </div>
-                        );
-                    })}
-                </div>
-            )}
+                            <div className="tpe-flex-col tpe-kf-col">
+                                <span className="tpe-motion-col-label">HOLD FEEL</span>
+                                <SnapCap ariaLabel="Hold motion feel" value={holdFeelVal >= 0 ? holdFeelVal : 0} options={HOLD_FEEL_SNAP_OPTIONS} onSelect={onSelectHoldFeel} />
+                            </div>
+                            <div className="tpe-flex-col tpe-kf-col">
+                                <span className="tpe-motion-col-label">SPIN STYLE</span>
+                                <SnapCap ariaLabel="Star rotation style" value={spinVal >= 0 ? spinVal : 0} options={SPIN_SNAP_OPTIONS} onSelect={onSelectSpinStyle} />
+                            </div>
 
-            {/* Row 2: Sequence, Hold Feel, Spin Style, Morph Speed, Hold Time, Size (HOW) */}
-            {logoOn && (
-            <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'flex-end', flexWrap: 'wrap', gap: '8px', paddingBlockStart: '2px', borderBlockStart: '1px solid var(--ui-border)' }}>
-                <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
-                    <span style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '0.07em', color: 'var(--ui-text-dim)' }}>SEQUENCE</span>
-                    <SnapCap
-                        ariaLabel="Emblem morph sequence"
-                        value={sequenceVal >= 0 ? sequenceVal : 0}
-                        options={SEQUENCE_SNAP_OPTIONS}
-                        onSelect={(v) => onUpdateDraft({ ...draft, starSequence: SEQUENCE_MODES[v]?.mode ?? 'star-crescent' })}
-                    />
-                </div>
+                            <ScrubPillSlider
+                                label="MORPH"
+                                value={morphMs}
+                                min={200}
+                                max={1500}
+                                step={50}
+                                unit="ms"
+                                width="110px"
+                                height="20px"
+                                title="Dot -> Star morph & spin speed in milliseconds (default 450ms)"
+                                onChange={onChangeMorph}
+                            />
 
-                <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
-                    <span style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '0.07em', color: 'var(--ui-text-dim)' }}>HOLD FEEL</span>
-                    <SnapCap
-                        ariaLabel="Hold motion feel"
-                        value={holdFeelVal >= 0 ? holdFeelVal : 0}
-                        options={HOLD_FEEL_SNAP_OPTIONS}
-                        onSelect={(v) => onUpdateDraft({ ...draft, starHoldFeel: HOLD_FEEL_MODES[v]?.mode ?? 'drift' })}
-                    />
-                </div>
+                            <ScrubPillSlider
+                                label="HOLD"
+                                value={holdMs}
+                                min={0}
+                                max={2500}
+                                step={50}
+                                unit="ms"
+                                width="106px"
+                                height="20px"
+                                title="How long the 5-point star holds its silhouette before spinning back into the dot"
+                                onChange={onChangeHold}
+                            />
 
-                <div className="tpe-flex-col" style={{ gap: '2px', alignItems: 'stretch' }}>
-                    <span style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '0.07em', color: 'var(--ui-text-dim)' }}>SPIN STYLE</span>
-                    <SnapCap
-                        ariaLabel="Star rotation style"
-                        value={spinVal >= 0 ? spinVal : 0}
-                        options={SPIN_SNAP_OPTIONS}
-                        onSelect={(v) => onUpdateDraft({ ...draft, starSpinMode: SPIN_MODES[v]?.mode ?? 'ccw' })}
-                    />
-                </div>
-
-                <ScrubPillSlider
-                    label="MORPH"
-                    value={morphMs}
-                    min={200}
-                    max={1500}
-                    step={50}
-                    unit="ms"
-                    width="110px"
-                    height="20px"
-                    title="Dot -> Star morph & spin speed in milliseconds (default 500ms)"
-                    onChange={(ms) => onUpdateDraft({ ...draft, starMorphDuration: Math.round(ms / 50) * 0.05 })}
-                />
-
-                <ScrubPillSlider
-                    label="HOLD"
-                    value={holdMs}
-                    min={0}
-                    max={2500}
-                    step={50}
-                    unit="ms"
-                    width="106px"
-                    height="20px"
-                    title="How long the 5-point star holds its silhouette before spinning back into the dot"
-                    onChange={(ms) => onUpdateDraft({ ...draft, starHoldDuration: Math.round(ms / 50) * 0.05 })}
-                />
-
-                <ScrubPillSlider
-                    label="SIZE"
-                    value={starScale}
-                    min={75}
-                    max={160}
-                    unit="%"
-                    width="98px"
-                    height="20px"
-                    title="5-point star expansion size relative to default"
-                    onChange={(pct) => onUpdateDraft({ ...draft, starScale: pct })}
-                />
-            </div>
-            )}
+                            <ScrubPillSlider
+                                label="SIZE"
+                                value={starScale}
+                                min={75}
+                                max={160}
+                                unit="%"
+                                width="98px"
+                                height="20px"
+                                title="5-point star expansion size relative to default"
+                                onChange={onChangeScale}
+                            />
+                        </div>
+                    )}
                 </>
             )}
         </div>

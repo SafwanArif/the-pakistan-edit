@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { HookGlyph } from "./ClipOffsetTrimmer";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
-import { isPrimaryPointer, safeReleasePointerCapture } from "../utils/domUtils";
+import { isActivationKey, isPrimaryPointer, safeReleasePointerCapture, safeSetPointerCapture } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 interface SceneMarker {
@@ -27,31 +27,23 @@ const MainTimelineSegments = React.memo<{
             const startPct = Math.min(m.percent, sceneEndPct);
             const nextPct = Math.min(sceneMarkers[idx + 1]?.percent ?? sceneEndPct, sceneEndPct);
             const segW = Math.max(0, nextPct - startPct);
-            const isActiveSeg = idx === activeSegIdx;
-            const roleColor = m.color || "var(--ui-accent)";
-            const displayLabel = segW >= 8 ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
+            const isNarrow = segW < 8;
+            const displayLabel = !isNarrow ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
             return (
                 <div
                     key={`${m.id}-${idx}`}
+                    className="tpe-main-scrubber-seg"
+                    data-active={idx === activeSegIdx}
+                    data-divider={idx < sceneMarkers.length - 1 || outroPct > 0}
+                    data-narrow={isNarrow}
                     style={{
-                        position: "absolute",
                         left: `${startPct}%`,
                         width: `${segW}%`,
-                        top: 0,
-                        bottom: 0,
-                        borderRight: idx < sceneMarkers.length - 1 || outroPct > 0 ? "2px solid #050505" : "none",
-                        borderTop: `2.5px solid ${roleColor}`,
-                        background: `color-mix(in oklch, ${roleColor} ${isActiveSeg ? "22%" : "9%"}, transparent)`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: segW < 8 ? "center" : "flex-start",
-                        paddingInline: segW < 8 ? "0px" : "5px",
-                        overflow: "hidden",
-                        pointerEvents: "none",
-                    }}
+                        "--seg-color": m.color || "var(--ui-accent)",
+                    } as React.CSSProperties}
                 >
                     {displayLabel && (
-                        <span style={{ fontSize: segW < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: segW < 8 ? "0" : "0.05em", color: roleColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: segW < 8 ? "clip" : "ellipsis" }}>
+                        <span className="tpe-main-scrubber-seg-label" data-narrow={isNarrow}>
                             {displayLabel}
                         </span>
                     )}
@@ -60,29 +52,19 @@ const MainTimelineSegments = React.memo<{
         })}
 
         {outroPct > 0 && (() => {
-            const outroColor = "var(--ui-outro)";
             const outroNum = String(sceneMarkers.length + 1).padStart(2, "0");
-            const outroLabel = outroPct >= 8 ? `${outroNum}. OUTRO` : (outroPct >= 1.2 ? outroNum : undefined);
+            const isNarrow = outroPct < 8;
+            const outroLabel = !isNarrow ? `${outroNum}. OUTRO` : (outroPct >= 1.2 ? outroNum : undefined);
             return (
                 <div
-                    style={{
-                        position: "absolute",
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: `${outroPct}%`,
-                        borderTop: `2.5px solid ${outroColor}`,
-                        background: `color-mix(in oklch, ${outroColor} ${isOutroActive ? "22%" : "9%"}, transparent)`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: outroPct < 8 ? "center" : "flex-start",
-                        paddingInline: outroPct < 8 ? "0px" : "5px",
-                        overflow: "hidden",
-                        pointerEvents: "none",
-                    }}
+                    className="tpe-main-scrubber-seg"
+                    data-outro="true"
+                    data-active={isOutroActive}
+                    data-narrow={isNarrow}
+                    style={{ width: `${outroPct}%` }}
                 >
                     {outroLabel && (
-                        <span style={{ fontSize: outroPct < 8 ? "7px" : "7.5px", fontWeight: 900, letterSpacing: outroPct < 8 ? "0" : "0.05em", color: outroColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: outroPct < 8 ? "clip" : "ellipsis" }}>
+                        <span className="tpe-main-scrubber-seg-label" data-narrow={isNarrow}>
                             {outroLabel}
                         </span>
                     )}
@@ -122,7 +104,7 @@ interface MainTimelineScrubberProps {
     onJumpToTime: (time: number, side?: 'pre' | 'post') => void;
 }
 
-/** 2027 NLE-style master timeline scrubber with fused draggable Hook/Re-Hook emoji handles, hover timecode, vertical playhead, and clickable keyframes. */
+/** 2027 NLE-style master timeline scrubber with fused draggable Hook/Re-Hook handles, hover timecode, vertical playhead, and clickable keyframes. */
 export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.memo(({
     duration,
     currentTime,
@@ -160,18 +142,33 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const lastScrubTimeRef = useRef<number | null>(null);
     const activePointerIdRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
-    const handleDragCleanupRef = useRef<(() => void) | null>(null);
+    const handleDragCleanupRef = useRef<((notifyEnd?: boolean) => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
-
-    useEffect(() => () => {
-        handleDragCleanupRef.current?.();
-    }, []);
 
     const safeDuration = Math.max(duration, 0.1);
     const pct = clamp((currentTime / safeDuration) * 100, 0, 100);
     const outroPct = enableOutro && duration > 0 ? Math.min(25, (outroDuration / safeDuration) * 100) : 0;
     const sceneEndPct = 100 - outroPct;
+
+    const latestRef = useRef({ pct, currentTime, onScrubEnd });
+    useLayoutEffect(() => {
+        latestRef.current = { pct, currentTime, onScrubEnd };
+    });
+
+    useEffect(() => () => {
+        handleDragCleanupRef.current?.(true);
+        if (isDraggingRef.current) {
+            isDraggingRef.current = false;
+            activePointerIdRef.current = null;
+            latestRef.current.onScrubEnd(lastScrubTimeRef.current ?? latestRef.current.currentTime);
+        }
+    }, []);
+
+    const paintPlayhead = (nextPct: number) => {
+        if (sweepRef.current) sweepRef.current.style.transform = `scaleX(${nextPct / 100})`;
+        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+    };
 
     // Drive master playhead needle + progress sweep at native 120Hz/144Hz via GPU transforms (0 React renders)
     useEffect(() => {
@@ -181,11 +178,14 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             const nextPct = clamp((t / safeDuration) * 100, 0, 100);
             if (!Number.isNaN(lastPct) && Math.abs(nextPct - lastPct) < 0.015) return;
             lastPct = nextPct;
-            if (sweepRef.current) sweepRef.current.style.transform = `scaleX(${nextPct / 100})`;
-            if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+            paintPlayhead(nextPct);
         };
         applyTime(liveClock.getTime());
-        return liveClock.subscribe((frame) => applyTime(frame.time));
+        const unsub = liveClock.subscribe((frame) => applyTime(frame.time));
+        return () => {
+            unsub();
+            paintPlayhead(latestRef.current.pct);
+        };
     }, [isPlaying, isDragging, liveClock, safeDuration]);
 
     const updateHoverDom = (nextPct: number, time: number, mode: "scrub" | "hook" | "rehook" = "scrub") => {
@@ -193,7 +193,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         const pill = hoverPillRef.current;
         if (!wrap || !pill) return;
         wrap.style.visibility = "visible";
-        wrap.style.transform = `translate3d(${Math.max(4, Math.min(96, nextPct))}%, 0, 0)`;
+        wrap.style.transform = `translate3d(${clamp(nextPct, 4, 96)}%, 0, 0)`;
         const accent = mode === "rehook" ? "var(--ui-indicator)" : "var(--ui-accent)";
         pill.style.borderColor = accent;
         pill.style.color = accent;
@@ -212,7 +212,9 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 }
             }
         }
-        pill.textContent = `${prefix}${formatTimecode(time)}`;
+        const label = `${prefix}${formatTimecode(time)}`;
+        if (pill.firstChild) pill.firstChild.nodeValue = label;
+        else pill.textContent = label;
     };
 
     const hideHoverDom = () => {
@@ -223,13 +225,11 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const getHandleTimelinePos = (sourceOffset: number) =>
         preSetupDur + Math.max(0, sourceOffset - setupOffset);
     const hookMax = Math.max(0, clipDuration - hookDuration);
-    const hookTimelinePos = getHandleTimelinePos(hookOffset);
-    const hookLeftPct = safeDuration > 0 ? clamp((hookTimelinePos / safeDuration) * 100, 0, sceneEndPct) : 0;
+    const hookLeftPct = safeDuration > 0 ? clamp((getHandleTimelinePos(hookOffset) / safeDuration) * 100, 0, sceneEndPct) : 0;
     const hookWidthPct = safeDuration > 0 ? Math.min(sceneEndPct - hookLeftPct, (hookDuration / safeDuration) * 100) : 0;
 
     const rehookMax = Math.max(0, clipDuration - rehookDuration);
-    const rehookTimelinePos = getHandleTimelinePos(rehookOffset);
-    const rehookLeftPct = safeDuration > 0 ? clamp((rehookTimelinePos / safeDuration) * 100, 0, sceneEndPct) : 0;
+    const rehookLeftPct = safeDuration > 0 ? clamp((getHandleTimelinePos(rehookOffset) / safeDuration) * 100, 0, sceneEndPct) : 0;
     const rehookWidthPct = safeDuration > 0 ? Math.min(sceneEndPct - rehookLeftPct, (rehookDuration / safeDuration) * 100) : 0;
 
     const timeAtClientX = (clientX: number, maxSec = safeDuration) => {
@@ -248,12 +248,26 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             return pct >= m.percent && pct < nextPct;
         });
 
+    const cancelTrackDrag = (pointerId?: number) => {
+        if (!isDraggingRef.current) return;
+        if (pointerId !== undefined && activePointerIdRef.current !== null && pointerId !== activePointerIdRef.current) return;
+        isDraggingRef.current = false;
+        activePointerIdRef.current = null;
+        setIsDragging(false);
+        const finalTime = lastScrubTimeRef.current ?? currentTime;
+        dragRectRef.current = null;
+        lastScrubTimeRef.current = null;
+        hideHoverDom();
+        onScrubEnd(finalTime);
+    };
+
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
+        if (!isPrimaryPointer(e) || dragTarget) return;
         e.stopPropagation();
         e.preventDefault();
         const handleEl = e.currentTarget;
         const activePointerId = e.pointerId;
-        handleEl.setPointerCapture(activePointerId);
+        safeSetPointerCapture(handleEl, activePointerId);
         setDragTarget(target);
         onHookDragStart?.();
         const startX = e.clientX;
@@ -273,23 +287,26 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 lastSent = next;
                 if (target === "hook") onChangeHookOffset?.(next);
                 else onChangeRehookOffset?.(next);
-                const nextTimelinePos = getHandleTimelinePos(next);
-                updateHoverDom((nextTimelinePos / safeDuration) * 100, next, target);
+                updateHoverDom((getHandleTimelinePos(next) / safeDuration) * 100, next, target);
             }
         };
 
-        const cleanup = () => {
+        const cleanup = (notifyEnd = false) => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onCancel);
             handleEl.removeEventListener("lostpointercapture", onLostCapture);
             handleDragCleanupRef.current = null;
+            if (notifyEnd && !finished) {
+                finished = true;
+                onHookDragEnd?.(target, moved);
+            }
         };
 
         const finishDrag = (didMove: boolean) => {
             if (finished) return;
             finished = true;
-            cleanup();
+            cleanup(false);
             safeReleasePointerCapture(handleEl, activePointerId);
             setDragTarget(null);
             hideHoverDom();
@@ -301,17 +318,11 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             }
         };
 
-        const onCancel = (ev: PointerEvent) => {
-            if (ev.pointerId !== activePointerId) return;
-            finishDrag(moved);
-        };
-        const onUp = (ev: PointerEvent) => {
-            if (ev.pointerId !== activePointerId) return;
-            finishDrag(moved);
-        };
+        const onCancel = (ev: PointerEvent) => { if (ev.pointerId === activePointerId) finishDrag(moved); };
+        const onUp = (ev: PointerEvent) => { if (ev.pointerId === activePointerId) finishDrag(moved); };
         const onLostCapture = () => finishDrag(moved);
 
-        handleDragCleanupRef.current?.();
+        handleDragCleanupRef.current?.(false);
         handleDragCleanupRef.current = cleanup;
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
@@ -319,18 +330,39 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         handleEl.addEventListener("lostpointercapture", onLostCapture);
     };
 
+    const handleItems = showHookHandles && clipDuration > 0
+        ? [
+            {
+                role: "hook" as const,
+                label: "01. Hook",
+                offset: hookOffset,
+                maxOff: hookMax,
+                leftPct: hookLeftPct,
+                widthPct: hookWidthPct,
+                onChange: onChangeHookOffset,
+                onPreview: onPreviewHook,
+            },
+            ...(rehookDuration > 0 ? [{
+                role: "rehook" as const,
+                label: "02. Re-Hook",
+                offset: rehookOffset,
+                maxOff: rehookMax,
+                leftPct: rehookLeftPct,
+                widthPct: rehookWidthPct,
+                onChange: onChangeRehookOffset,
+                onPreview: onPreviewRehook,
+            }] : []),
+        ]
+        : [];
+
+    const hasHandles = handleItems.length > 0;
+
     return (
-        <div
-            style={{
-                position: "relative",
-                width: "100%",
-                paddingBottom: showHookHandles && clipDuration > 0 ? "14px" : "0px",
-                touchAction: showHookHandles && clipDuration > 0 ? "none" : undefined,
-            }}
-        >
+        <div dir="ltr" className="tpe-main-scrubber-wrap" data-handles={hasHandles}>
             <div
                 ref={trackRef}
-                className="tpe-scrubber"
+                className="tpe-scrubber tpe-main-scrubber"
+                data-kf-lane={showKeyframesLane}
                 role="slider"
                 aria-label="Master timeline scrubber"
                 aria-orientation="horizontal"
@@ -343,26 +375,21 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 onKeyDown={(e) => {
                     const step = e.shiftKey ? 5 : 1;
                     const live = isPlaying && liveClock ? clamp(liveClock.getTime(), 0, safeDuration) : currentTime;
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        onJumpToTime(Math.min(safeDuration, live + step));
-                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        onJumpToTime(Math.max(0, live - step));
-                    } else if (e.key === 'Home') {
-                        e.preventDefault();
-                        onJumpToTime(0);
-                    } else if (e.key === 'End') {
-                        e.preventDefault();
-                        onJumpToTime(safeDuration);
-                    }
+                    let next: number | null = null;
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(safeDuration, live + step);
+                    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(0, live - step);
+                    else if (e.key === 'Home') next = 0;
+                    else if (e.key === 'End') next = safeDuration;
+                    if (next === null) return;
+                    e.preventDefault();
+                    if (Math.abs(next - live) > 0.001) onJumpToTime(next);
                 }}
                 onPointerEnter={() => {
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                 }}
                 onPointerDown={(e) => {
                     if (!isPrimaryPointer(e) || isDraggingRef.current) return;
-                    e.currentTarget.setPointerCapture(e.pointerId);
+                    safeSetPointerCapture(e.currentTarget, e.pointerId);
                     activePointerIdRef.current = e.pointerId;
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     isDraggingRef.current = true;
@@ -375,6 +402,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 }}
                 onPointerMove={(e) => {
                     if (dragTarget) return;
+                    if (!isDraggingRef.current && e.pointerType !== "mouse") return;
                     if (isDraggingRef.current && e.pointerId !== activePointerIdRef.current) return;
                     const next = timeAtClientX(e.clientX);
                     updateHoverDom(next.pct, next.time);
@@ -395,134 +423,88 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     if (e.pointerType !== "mouse") hideHoverDom();
                     onScrubEnd(next.time);
                 }}
-                onPointerCancel={(e) => {
-                    if (!isDraggingRef.current || (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current)) return;
-                    isDraggingRef.current = false;
-                    activePointerIdRef.current = null;
-                    setIsDragging(false);
-                    const finalTime = lastScrubTimeRef.current ?? currentTime;
-                    dragRectRef.current = null;
-                    lastScrubTimeRef.current = null;
-                    hideHoverDom();
-                    onScrubEnd(finalTime);
-                }}
-                onLostPointerCapture={() => {
-                    if (!isDraggingRef.current) return;
-                    isDraggingRef.current = false;
-                    activePointerIdRef.current = null;
-                    setIsDragging(false);
-                    const finalTime = lastScrubTimeRef.current ?? currentTime;
-                    dragRectRef.current = null;
-                    lastScrubTimeRef.current = null;
-                    hideHoverDom();
-                    onScrubEnd(finalTime);
-                }}
-                onMouseLeave={() => { if (!isDragging && !dragTarget) { dragRectRef.current = null; hideHoverDom(); } }}
-                style={{
-                    position: "relative",
-                    width: "100%",
-                    height: showKeyframesLane ? "38px" : "22px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "flex-end",
-                    gap: "2px",
-                    cursor: "ew-resize",
-                    touchAction: "none",
-                    userSelect: "none",
-                    transition: "height 0.14s ease",
-                }}
+                onPointerCancel={(e) => cancelTrackDrag(e.pointerId)}
+                onLostPointerCapture={() => cancelTrackDrag()}
+                onMouseLeave={() => { if (!isDraggingRef.current && !dragTarget) { dragRectRef.current = null; hideHoverDom(); } }}
             >
                 {/* Zero-render hover & drag tooltip driven via GPU translate3d ref */}
-                <div
-                    ref={hoverWrapRef}
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        visibility: "hidden",
-                        transform: "translate3d(4%, 0, 0)",
-                        willChange: "transform",
-                        pointerEvents: "none",
-                        zIndex: 8,
-                    }}
-                >
-                    <div
-                        ref={hoverPillRef}
-                        style={{
-                            position: "absolute",
-                            left: 0,
-                            top: "-20px",
-                            transform: "translateX(-50%)",
-                            padding: "1px 6px",
-                            borderRadius: "4px",
-                            background: "var(--ui-bg-popover)",
-                            border: "1px solid var(--ui-accent)",
-                            fontSize: "8.5px",
-                            fontFamily: "monospace",
-                            fontWeight: 800,
-                            color: "var(--ui-accent)",
-                            whiteSpace: "nowrap",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
-                        }}
-                    />
+                <div ref={hoverWrapRef} className="tpe-main-scrubber-hover-wrap">
+                    <div ref={hoverPillRef} className="tpe-main-scrubber-hover-pill" />
                 </div>
 
                 {/* Top Lane: Dedicated Keyframe Rail (visible when KEYFRAMES drawer is open) */}
                 {showKeyframesLane && (
-                    <div style={{ position: "relative", width: "100%", height: "14px", borderRadius: "4px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div className="tpe-main-scrubber-kf-lane">
                         <TimelineKeyframeTrack keyframes={keyframes} rangeStart={0} rangeDuration={safeDuration} currentTime={currentTime} isPlaying={isPlaying} size={10} zIndex={4} onJump={onJumpToTime} />
                     </div>
                 )}
 
                 {/* Main Lane: Segmented Angle-Card Blocks */}
-                <div style={{ position: "relative", width: "100%", height: "22px", borderRadius: "5px", background: "rgba(0,0,0,0.35)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="tpe-main-scrubber-rail">
                     <MainTimelineSegments sceneMarkers={sceneMarkers} outroPct={outroPct} activeSegIdx={activeSegIdx} isOutroActive={isOutroActive} />
 
                     {/* Hook / Re-Hook Source Clip Span Highlights (GPU translate3d + scaleX) */}
-                    {showHookHandles && clipDuration > 0 && (
-                        <>
-                            <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${hookLeftPct}%, 0, 0) scaleX(${hookWidthPct / 100})`, transformOrigin: "left center", willChange: dragTarget === "hook" ? "transform" : undefined, background: "var(--ui-accent)", opacity: 0.75, pointerEvents: "none" }} />
-                            {rehookDuration > 0 && (
-                                <div style={{ position: "absolute", left: 0, width: "100%", bottom: 0, height: "3px", transform: `translate3d(${rehookLeftPct}%, 0, 0) scaleX(${rehookWidthPct / 100})`, transformOrigin: "left center", willChange: dragTarget === "rehook" ? "transform" : undefined, background: "var(--ui-indicator)", opacity: 0.75, pointerEvents: "none" }} />
-                            )}
-                        </>
-                    )}
+                    {handleItems.map((h) => (
+                        <div
+                            key={h.role}
+                            className="tpe-main-scrubber-span"
+                            data-role={h.role}
+                            data-dragging={dragTarget === h.role}
+                            style={{ transform: `translate3d(${h.leftPct}%, 0, 0) scaleX(${h.widthPct / 100})` }}
+                        />
+                    ))}
 
                     {/* Played Progress Sweep (GPU scaleX) */}
-                    <div ref={sweepRef} style={{ position: "absolute", inset: 0, transform: `scaleX(${pct / 100})`, transformOrigin: "left center", willChange: isPlaying || isDragging ? "transform" : undefined, background: "linear-gradient(90deg, oklch(from var(--ui-accent) l c h / 0.22), oklch(from var(--ui-accent) l c h / 0.35))", pointerEvents: "none" }} />
+                    <div
+                        ref={sweepRef}
+                        className="tpe-main-scrubber-sweep"
+                        data-active={isPlaying || isDragging}
+                        style={{ transform: `scaleX(${pct / 100})` }}
+                    />
                 </div>
 
                 <TimelinePlayheadNeedle railRef={needleRailRef} pct={pct} active={isPlaying || isDragging} height={showKeyframesLane ? 42 : 26} width={2.5} zIndex={6} />
             </div>
 
-            {/* Fused draggable Hook & Re-Hook emoji handles below the timeline rail (GPU translate3d) */}
-            {showHookHandles && clipDuration > 0 && (
-                <>
-                    <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, hookLeftPct))}%, 0, 0)`, willChange: dragTarget === "hook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
-                        <button
-                            type="button"
-                            draggable={false}
-                            onPointerDown={(e) => startHandleDrag(e, "hook")}
-                            title={`Drag to move 01. Hook in-point (${formatTimecode(hookOffset)}) or click to preview`}
-                            style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-60%)", background: "transparent", border: "none", padding: "6px 0", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "hook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
-                        >
-                            <HookGlyph role="hook" />
-                        </button>
-                    </div>
-                    {rehookDuration > 0 && (
-                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "2px", height: "14px", transform: `translate3d(${Math.max(2, Math.min(98, rehookLeftPct))}%, 0, 0)`, willChange: dragTarget === "rehook" ? "transform" : undefined, pointerEvents: "none", zIndex: 6 }}>
-                            <button
-                                type="button"
-                                draggable={false}
-                                onPointerDown={(e) => startHandleDrag(e, "rehook")}
-                                title={`Drag to move 02. Re-Hook in-point (${formatTimecode(rehookOffset)}) or click to preview`}
-                                style={{ position: "absolute", left: 0, bottom: 0, transform: "translateX(-40%)", background: "transparent", border: "none", padding: "6px 0", marginBottom: "-6px", fontSize: "12px", lineHeight: 1, cursor: dragTarget === "rehook" ? "grabbing" : "grab", pointerEvents: "auto", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
-                            >
-                                <HookGlyph role="rehook" />
-                            </button>
-                        </div>
-                    )}
-                </>
-            )}
+            {/* Fused draggable Hook & Re-Hook handles below the timeline rail (GPU translate3d) */}
+            {handleItems.map((h) => (
+                <div
+                    key={h.role}
+                    className="tpe-main-scrubber-handle-rail"
+                    data-dragging={dragTarget === h.role}
+                    style={{ transform: `translate3d(${clamp(h.leftPct, 2, 98)}%, 0, 0)` }}
+                >
+                    <button
+                        type="button"
+                        draggable={false}
+                        aria-label={`${h.label} in-point at ${formatTimecode(h.offset)}. Drag or press arrow keys to adjust, Enter to preview.`}
+                        onPointerDown={(e) => startHandleDrag(e, h.role)}
+                        onKeyDown={(e) => {
+                            if (isActivationKey(e.key)) {
+                                e.preventDefault();
+                                h.onPreview?.();
+                                return;
+                            }
+                            const delta = e.shiftKey ? 1 : 0.1;
+                            if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                                e.preventDefault();
+                                const next = clamp(Math.round((h.offset + delta) * 10) / 10, 0, h.maxOff);
+                                if (next !== h.offset) h.onChange?.(next);
+                            } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+                                e.preventDefault();
+                                const next = clamp(Math.round((h.offset - delta) * 10) / 10, 0, h.maxOff);
+                                if (next !== h.offset) h.onChange?.(next);
+                            }
+                        }}
+                        title={`Drag to move ${h.label} in-point (${formatTimecode(h.offset)}) or click to preview`}
+                        className="tpe-main-scrubber-handle-btn"
+                        data-role={h.role}
+                        data-dragging={dragTarget === h.role}
+                    >
+                        <HookGlyph role={h.role} />
+                    </button>
+                </div>
+            ))}
         </div>
     );
 });

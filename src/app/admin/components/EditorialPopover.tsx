@@ -17,18 +17,6 @@ interface EditorialPopoverProps {
     ignoreSelector?: string;
 }
 
-const sharedPopoverStyle: React.CSSProperties = {
-    background: "var(--ui-bg-popover)", backdropFilter: "blur(var(--blur-md))", border: "1px solid var(--ui-border)",
-    padding: "10px", borderRadius: "var(--radius-md)", display: "flex", flexDirection: "column", gap: "8px", boxShadow: "var(--shadow-lg)",
-};
-const desktopPopoverStyle: React.CSSProperties = { ...sharedPopoverStyle, position: "absolute", zIndex: "var(--z-popover)" };
-const mobilePopoverStyle: React.CSSProperties = {
-    ...sharedPopoverStyle, position: "fixed", left: "50%", top: "58px", transform: "translateX(-50%)",
-    zIndex: 10000, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100dvh - 88px)", overflow: "auto",
-};
-const dirUpStyle: React.CSSProperties = { bottom: "100%", marginBottom: "12px" };
-const dirDownStyle: React.CSSProperties = { top: "100%", marginTop: "12px" };
-
 /** Lightweight inline/portal popover container for editorial toolbar controls. */
 export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({
     open, onClose, children, direction = "up", width = "200px", right = 0, role = "dialog", ariaLabel, ignoreSelector,
@@ -40,12 +28,12 @@ export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({
     const surface = (
         <div
             ref={ref}
+            className="tpe-editorial-popover"
             data-editorial-popover="true"
+            data-direction={direction}
             role={role}
             aria-label={ariaLabel}
-            style={isMobile
-                ? { ...mobilePopoverStyle, width }
-                : { ...desktopPopoverStyle, ...(direction === "up" ? dirUpStyle : dirDownStyle), insetInlineEnd: right, width }}
+            style={isMobile ? { inlineSize: width } : { insetInlineEnd: right, inlineSize: width }}
         >
             {children}
         </div>

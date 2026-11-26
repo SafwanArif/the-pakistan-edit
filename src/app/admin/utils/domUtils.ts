@@ -60,6 +60,14 @@ export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxO
     restoreInputSelection(el, start + syntaxOpen.length, end + syntaxOpen.length);
 };
 
+/** Safely acquires pointer capture without throwing on synthetic/cancelled touch edges. */
+export const safeSetPointerCapture = (el: Element | null, pointerId: number): void => {
+    if (!el) return;
+    try {
+        el.setPointerCapture(pointerId);
+    } catch { /* pointer already inactive or synthetic */ }
+};
+
 /** Safely releases pointer capture without throwing when capture was already lost by the browser. */
 export const safeReleasePointerCapture = (el: Element | null, pointerId: number): void => {
     if (!el) return;

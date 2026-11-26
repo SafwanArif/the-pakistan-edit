@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useState } from "react";
-import type { Draft, PostMode } from "@/types/news";
+import { getSlideCount, type Draft, type PostMode } from "@/types/news";
 import { EDITORIAL_STEPS } from "@/config/editorial";
 import { useAssetManager } from "../hooks/useAssetManager";
 import { useClickOutside } from "../hooks/useClickOutside";
@@ -9,15 +9,6 @@ import { DraftResolver } from "../utils/dataAccessors";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
 import { EditorialField } from "./EditorialField";
 import { CommandRibbonMenu } from "./CommandRibbonMenu";
-
-const stepClusterStyle: React.CSSProperties = { minInlineSize: "auto" };
-const stepLabelTextStyle: React.CSSProperties = { marginInlineEnd: "4px" };
-const FIELD_STYLES = {
-    expanded: { flex: 1, opacity: 1, pointerEvents: "auto" },
-    shrunk: { flex: 0, opacity: 0, pointerEvents: "none" },
-    category: { flex: 0.3, opacity: 1, pointerEvents: "auto" },
-    main: { flex: 1, opacity: 1, pointerEvents: "auto" },
-} satisfies Record<string, React.CSSProperties>;
 
 interface DraftFormProps {
     draft: Draft;
@@ -44,6 +35,10 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
     const handleLink = useCallback((url: string) => resolve(url, step), [resolve, step]);
     const handleClear = useCallback(() => clearAsset(step), [clearAsset, step]);
     const handleFocusField = useCallback((fieldId: string) => setFocusedField(fieldId), []);
+    const goToStep = useCallback((next: number) => {
+        setFocusedField(null);
+        void Promise.resolve(setStep(next)).catch((err) => console.error("STEP_CHANGE_ERROR:", err));
+    }, [setStep]);
     const handleToolsBlurCapture = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
         const next = e.relatedTarget;
         if ((next instanceof Node && e.currentTarget.contains(next)) || (next instanceof Element && next.closest('[data-editorial-popover="true"]'))) return;
@@ -61,7 +56,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
     if (!config) return null;
 
     const activeFocusedField = focusedField && config.fields.includes(focusedField) ? focusedField : null;
-    const isLastStep = step >= 2 + (draft.extraSlides?.length || 0);
+    const isLastStep = step >= getSlideCount(draft);
     const stepValid = config.required.every((f) => {
         if (f === "image") return !!draft.image;
         const val = DraftResolver.get(f, draft);
@@ -74,10 +69,10 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
             <div ref={headerRowRef} className="tpe-header-row" data-focused-field={activeFocusedField || undefined}>
                 <CommandRibbonMenu mode={mode} onModeChange={onModeChange} onReset={onReset} disabled={isExporting} />
 
-                <div className="tpe-step-cluster" style={stepClusterStyle}>
+                <div className="tpe-step-cluster">
                     <span className="tpe-step-number tpe-desktop-only">{step.toString().padStart(2, "0")}</span>
                     <div className="tpe-flex-row tpe-step-label">
-                        <span className="tpe-desktop-only" style={stepLabelTextStyle}>{config.label}</span>
+                        <span className="tpe-desktop-only tpe-step-label-text">{config.label}</span>
                         <span>:</span>
                     </div>
                 </div>
@@ -88,12 +83,10 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
                             const isCategoryField = f === "category" || f.includes("heading");
                             const isFocused = activeFocusedField === f;
                             const hasOtherFocused = Boolean(activeFocusedField && activeFocusedField !== f);
+                            const sizeClass = isFocused ? "tpe-field-expanded" : hasOtherFocused ? "tpe-field-shrunk" : isCategoryField ? "tpe-field-category" : "tpe-field-main";
                             return (
                                 <React.Fragment key={f}>
-                                    <div
-                                        className={`tpe-elastic-field-wrapper ${isFocused ? "tpe-field-expanded" : hasOtherFocused ? "tpe-field-shrunk" : ""}`}
-                                        style={isFocused ? FIELD_STYLES.expanded : hasOtherFocused ? FIELD_STYLES.shrunk : isCategoryField ? FIELD_STYLES.category : FIELD_STYLES.main}
-                                    >
+                                    <div className={`tpe-elastic-field-wrapper ${sizeClass}`}>
                                         <EditorialField
                                             fieldId={f}
                                             draft={draft}
@@ -115,7 +108,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
 
                 <div className="tpe-nav-cluster">
                     {step > 1 && (
-                        <button type="button" disabled={isExporting} onClick={() => { setFocusedField(null); void setStep(step - 1); }} className="tpe-nav-btn tpe-btn-gold">
+                        <button type="button" disabled={isExporting} onClick={() => goToStep(step - 1)} className="tpe-nav-btn tpe-btn-gold">
                             BACK
                         </button>
                     )}
@@ -126,9 +119,8 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
                         className={`tpe-nav-btn ${isLastStep ? "tpe-btn-primary" : "tpe-btn-gold"}`}
                         onClick={() => {
                             if (!canProceed) return;
-                            setFocusedField(null);
-                            if (isLastStep) onSubmit(draft);
-                            else void setStep(step + 1);
+                            if (isLastStep) { setFocusedField(null); onSubmit(draft); }
+                            else goToStep(step + 1);
                         }}
                     >
                         {resolving ? "..." : isLastStep ? (isExporting ? "EXPORTING..." : "EXPORT") : "NEXT"}

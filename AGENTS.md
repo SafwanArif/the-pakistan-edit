@@ -7,9 +7,9 @@
 
 ---
 
-## Locked Layers (Do Not Re-Audit or Churn)
-1. **5-Layer CSS Architecture:** Frozen. Uses `dynamic-range-limit: constrained`, `round(nearest, ..., 1px)`, `unicode-bidi: plaintext`, `.tpe-tabular-nums`, and pine (`#111c19`) / gold editorial tokens.
-2. **HTML / JSX Markup:** Frozen. Uses `colorScheme: "dark"`, `darkreader-lock`, `dir="auto"`, `translate="no"`, `crossOrigin="anonymous"`, `decoding="sync"`, `referrerPolicy="no-referrer"`, `type="text" inputMode="decimal"` (zero `<input type="number">` elements), lightweight inline popovers (no `<dialog>`/`inert`), and strict codec `accept` filters.
+## Platform & Broadcast Invariants (Preserve — Do Not Regress)
+1. **CSS Architecture (Unfrozen for Surgical Cleanup):** Preserve the 5-layer visual system, broadcast pine (`#111c19`) / gold tokens, `dynamic-range-limit: constrained`, `round(nearest, ..., 1px)`, `unicode-bidi: plaintext`, `.tpe-tabular-nums`, and 1:1 preview-to-FFmpeg card parity. **Allowed:** fixing real CSS bugs (z-index tokens, RTL logical properties, dead selectors), extracting repetitive admin-UI inline `style={{ ... }}` into clean utility/component classes, and adding CSS containment (`contain`, `content-visibility`) without changing visual appearance or export output.
+2. **HTML / JSX Invariants (Unfrozen for 2026/2027 Simplification):** Preserve `colorScheme: "dark"`, `darkreader-lock`, `dir="auto"`, `translate="no"`, `crossOrigin="anonymous"`, `decoding="sync"`, `referrerPolicy="no-referrer"`, `type="text" inputMode="decimal"` (zero `<input type="number">` elements), and strict codec `accept` filters. **Allowed:** Baseline 2026/2027 HTML primitives (`inert` for modal background locking, native `popover` where it removes JS boilerplate) and JSX de-bloating that keeps identical visuals and export fidelity.
 
 ---
 

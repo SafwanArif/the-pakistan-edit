@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
     VideoDraft,
     SUBTITLE_FONT_OPTIONS,
@@ -13,7 +14,7 @@ import {
     switchVideoAspectRatio,
     clamp,
 } from "@/types/news";
-import { useClickOutside } from "../hooks/useClickOutside";
+import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
 
 type MasterChecklistTab = "seo" | "rewards" | "psychology";
 
@@ -33,13 +34,6 @@ const TAB_META: { id: MasterChecklistTab; label: string }[] = [
     { id: "rewards", label: "CREATOR REWARDS" },
     { id: "psychology", label: "PSYCHOLOGY" },
 ];
-
-const TONE_PALETTES: Record<NonNullable<MasterCheckItem["tone"]>, { text: string; bg: string; border: string }> = {
-    green: { text: "#4ade80", bg: "rgba(34, 197, 94, 0.08)", border: "rgba(34, 197, 94, 0.25)" },
-    red: { text: "#f87171", bg: "rgba(239, 68, 68, 0.10)", border: "rgba(239, 68, 68, 0.30)" },
-    yellow: { text: "#facc15", bg: "rgba(250, 204, 21, 0.09)", border: "rgba(250, 204, 21, 0.30)" },
-    orange: { text: "#fb923c", bg: "rgba(249, 115, 22, 0.10)", border: "rgba(249, 115, 22, 0.30)" },
-};
 
 export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
     const scenes = draft.scenes || [];
@@ -209,17 +203,25 @@ export function getMasterChecklistItems(draft: VideoDraft): MasterCheckItem[] {
 interface MasterChecklistPopoverProps {
     draft: VideoDraft;
     items?: MasterCheckItem[];
+    anchorRef?: React.RefObject<HTMLElement | null>;
+    ignoreSelector?: string;
     onChange: (draft: VideoDraft) => void;
-    onClose: () => void;
+    onClose: (reason?: CloseReason) => void;
 }
 
 export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = React.memo(({
     draft,
     items: providedItems,
+    anchorRef,
+    ignoreSelector,
     onChange,
     onClose,
 }) => {
+    const uid = useId();
     const [activeTab, setActiveTab] = useState<MasterChecklistTab>("seo");
+    const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+    const popoverRef = useClickOutside(onClose, ignoreSelector, true);
+
     const items = useMemo(() => providedItems ?? getMasterChecklistItems(draft), [providedItems, draft]);
     const grouped = useMemo(() => {
         const byTab: Record<MasterChecklistTab, { items: MasterCheckItem[]; passed: number }> = {
@@ -239,70 +241,82 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
         return { byTab, totalPassed };
     }, [items]);
     const tabItems = grouped.byTab[activeTab].items;
-    const popoverRef = useRef<HTMLDivElement>(null);
 
     useLayoutEffect(() => {
-        const el = popoverRef.current;
-        const parent = el?.parentElement;
-        if (!el || !parent) return;
-        const rect = parent.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const width = elRect.width || Math.min(360, window.innerWidth - 24);
-        const height = elRect.height || 360;
-        const maxLeft = Math.max(12, window.innerWidth - width - 12);
-        const maxTop = Math.max(12, window.innerHeight - height - 12);
-        el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
-        el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
-    }, [activeTab, tabItems.length]);
+        const updatePosition = () => {
+            const el = popoverRef.current;
+            const anchor = anchorRef?.current ?? el?.parentElement;
+            if (!el || !anchor) return;
+            const rect = anchor.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            const width = elRect.width || Math.min(360, window.innerWidth - 24);
+            const height = elRect.height || 360;
+            const maxLeft = Math.max(12, window.innerWidth - width - 12);
+            const maxTop = Math.max(12, window.innerHeight - height - 12);
+            el.style.left = `${clamp(rect.left, 12, maxLeft)}px`;
+            el.style.top = `${clamp(rect.bottom + 6, 12, maxTop)}px`;
+        };
+        updatePosition();
+        window.addEventListener("resize", updatePosition);
+        window.addEventListener("scroll", updatePosition, { capture: true, passive: true });
+        return () => {
+            window.removeEventListener("resize", updatePosition);
+            window.removeEventListener("scroll", updatePosition, true);
+        };
+    }, [activeTab, tabItems.length, anchorRef, popoverRef]);
 
-    return (
+    const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {
+        let nextIdx = idx;
+        if (e.key === "ArrowRight") nextIdx = (idx + 1) % TAB_META.length;
+        else if (e.key === "ArrowLeft") nextIdx = (idx - 1 + TAB_META.length) % TAB_META.length;
+        else if (e.key === "Home") nextIdx = 0;
+        else if (e.key === "End") nextIdx = TAB_META.length - 1;
+        else return;
+        e.preventDefault();
+        setActiveTab(TAB_META[nextIdx]!.id);
+        tabRefs.current[nextIdx]?.focus();
+    };
+
+    const dialog = (
         <div
             ref={popoverRef}
             role="dialog"
             aria-label="Video Standards Checklist"
-            style={{
-                position: "fixed",
-                top: "96px",
-                left: "12px",
-                width: "min(360px, calc(100vw - 24px))",
-                maxHeight: "calc(100dvh - 24px)",
-                overflowY: "auto",
-                background: "var(--ui-bg-popover)",
-                border: "1px solid var(--ui-accent)",
-                boxShadow: "0 14px 36px rgba(0,0,0,0.85)",
-                zIndex: 90,
-                borderRadius: "8px",
-                padding: "10px",
-            }}
+            className="tpe-checklist-popover"
         >
-            <div className="tpe-flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "9px", fontWeight: 800, color: "var(--ui-accent)", letterSpacing: "0.08em" }}>
+            <div className="tpe-flex-row tpe-checklist-header">
+                <span className="tpe-checklist-title tpe-tabular-nums">
                     VIDEO STANDARDS ({grouped.totalPassed}/{items.length})
                 </span>
                 <button
                     type="button"
                     aria-label="Close Standards Checklist"
-                    onClick={onClose}
-                    style={{ background: "none", border: "none", color: "var(--ui-text-secondary)", cursor: "pointer", fontSize: "10px", padding: "0 4px" }}
+                    onClick={() => onClose("escape")}
+                    className="tpe-checklist-close"
                     title="Close Standards Checklist"
                 >
                     ✕
                 </button>
             </div>
 
-            <div className="tpe-mode-cluster" role="tablist" aria-label="Master Video Standards categories" style={{ width: "100%", marginBottom: "8px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
-                {TAB_META.map((tab) => {
+            <div className="tpe-mode-cluster tpe-checklist-tabs" role="tablist" aria-label="Master Video Standards categories">
+                {TAB_META.map((tab, idx) => {
                     const bucket = grouped.byTab[tab.id];
+                    const selected = activeTab === tab.id;
                     return (
                         <button
                             key={tab.id}
+                            ref={(el) => { tabRefs.current[idx] = el; }}
+                            id={`${uid}-tab-${tab.id}`}
                             type="button"
                             role="tab"
-                            aria-selected={activeTab === tab.id}
+                            aria-selected={selected}
+                            aria-controls={`${uid}-panel-${tab.id}`}
+                            tabIndex={selected ? 0 : -1}
                             onClick={() => setActiveTab(tab.id)}
-                            className="tpe-mode-btn"
-                            data-active={activeTab === tab.id}
-                            style={{ justifyContent: "center", padding: "5px 4px", fontSize: "8px", whiteSpace: "nowrap" }}
+                            onKeyDown={(e) => handleTabKeyDown(e, idx)}
+                            className="tpe-mode-btn tpe-checklist-tab tpe-tabular-nums"
+                            data-active={selected}
                         >
                             {tab.label} ({bucket.passed}/{bucket.items.length})
                         </button>
@@ -310,48 +324,41 @@ export const MasterChecklistPopover: React.FC<MasterChecklistPopoverProps> = Rea
                 })}
             </div>
 
-            <div className="tpe-flex-col" style={{ gap: "5px", maxHeight: "300px", overflowY: "auto" }}>
+            <div
+                id={`${uid}-panel-${activeTab}`}
+                role="tabpanel"
+                aria-labelledby={`${uid}-tab-${activeTab}`}
+                className="tpe-flex-col tpe-checklist-list"
+            >
                 {tabItems.map((item) => {
                     const tone = item.tone ?? (item.passed ? "green" : "orange");
-                    const palette = TONE_PALETTES[tone];
                     return (
-                    <div
-                        key={item.id}
-                        className="tpe-flex-row"
-                        style={{
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: "8px",
-                            padding: "5px 7px",
-                            borderRadius: "6px",
-                            background: palette.bg,
-                            border: `1px solid ${palette.border}`,
-                        }}
-                    >
-                        <div className="tpe-flex-col" style={{ gap: "1px", minWidth: 0 }}>
-                            <span style={{ fontSize: "9px", fontWeight: 700, color: palette.text }}>
-                                {item.passed ? "✓" : "•"} {item.label}
-                            </span>
-                            <span style={{ fontSize: "8px", color: "var(--ui-text-secondary)", lineHeight: 1.3 }}>
-                                {item.detail}
-                            </span>
+                        <div key={item.id} className="tpe-flex-row tpe-checklist-row" data-tone={tone}>
+                            <div className="tpe-flex-col tpe-checklist-copy">
+                                <span className="tpe-checklist-label">
+                                    {item.passed ? "✓" : "•"} {item.label}
+                                </span>
+                                <span className="tpe-checklist-detail">
+                                    {item.detail}
+                                </span>
+                            </div>
+                            {!item.passed && item.onFix && item.fixLabel && (
+                                <button
+                                    type="button"
+                                    onClick={() => onChange(item.onFix!(draft))}
+                                    className="tpe-mode-btn tpe-checklist-fix"
+                                >
+                                    {item.fixLabel}
+                                </button>
+                            )}
                         </div>
-                        {!item.passed && item.onFix && item.fixLabel && (
-                            <button
-                                type="button"
-                                onClick={() => onChange(item.onFix!(draft))}
-                                className="tpe-mode-btn"
-                                style={{ padding: "2px 6px", fontSize: "8px", flexShrink: 0 }}
-                            >
-                                {item.fixLabel}
-                            </button>
-                        )}
-                    </div>
                     );
                 })}
             </div>
         </div>
     );
+
+    return typeof document !== "undefined" ? createPortal(dialog, document.body) : dialog;
 });
 MasterChecklistPopover.displayName = "MasterChecklistPopover";
 
@@ -366,35 +373,41 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
     onChange,
     variant,
 }) => {
+    const uid = useId();
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const [isOpen, setIsOpen] = useState(false);
-    const handleClose = useCallback(() => setIsOpen(false), []);
-    const checklistRef = useClickOutside(handleClose, undefined, isOpen);
+    const handleClose = useCallback((reason?: CloseReason) => {
+        setIsOpen(false);
+        if (reason === "escape") triggerRef.current?.focus();
+    }, []);
     const items = useMemo(() => getMasterChecklistItems(draft), [draft]);
     const passed = items.filter((item) => item.passed).length;
     const isMobile = variant === "mobile";
 
     return (
-        <div ref={checklistRef} className={isMobile ? "tpe-mobile-checklist-control" : "tpe-desktop-checklist-control"} style={{ position: "relative" }}>
+        <div className={`${isMobile ? "tpe-mobile-checklist-control" : "tpe-desktop-checklist-control"} tpe-checklist-anchor`}>
             <button
+                ref={triggerRef}
                 type="button"
+                data-checklist-trigger={uid}
                 aria-expanded={isOpen}
                 aria-haspopup="dialog"
                 aria-label={`Video standards checklist: ${passed} of ${items.length} checks passed`}
                 onClick={() => setIsOpen((open) => !open)}
-                className="tpe-mode-btn"
+                className="tpe-mode-btn tpe-checklist-trigger"
+                data-variant={variant}
                 data-active={isOpen || passed === items.length}
-                style={isMobile
-                    ? { height: "20px", padding: "0 4px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "3px" }
-                    : { padding: "4px 8px", fontSize: "9px", display: "inline-flex", alignItems: "center", gap: "4px" }}
                 title={`Video standards checklist (${passed}/${items.length})`}
             >
-                <span aria-hidden="true" style={{ fontSize: "11px", lineHeight: "11px", display: "inline-flex" }}>📋</span>
-                <span style={isMobile ? { fontSize: "8px" } : undefined}>{passed}/{items.length}</span>
+                <span aria-hidden="true" className="tpe-checklist-trigger-icon">📋</span>
+                <span className="tpe-tabular-nums">{passed}/{items.length}</span>
             </button>
             {isOpen && (
                 <MasterChecklistPopover
                     draft={draft}
                     items={items}
+                    anchorRef={triggerRef}
+                    ignoreSelector={`[data-checklist-trigger="${uid}"]`}
                     onChange={onChange}
                     onClose={handleClose}
                 />
@@ -402,5 +415,4 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
         </div>
     );
 });
-
 MasterChecklistControl.displayName = "MasterChecklistControl";

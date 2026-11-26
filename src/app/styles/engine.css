@@ -15,6 +15,10 @@
   position: relative;
 }
 
+.command-ribbon > .tpe-flex-row {
+  flex: 1;
+}
+
 .sandbox-grid {
   display: flex;
   flex: 1;
@@ -34,8 +38,15 @@
 .tpe-progress-segment {
   flex: 1;
   block-size: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
   cursor: pointer;
   transition: var(--transition-color);
+
+  &[data-tone="s1"] { background: var(--ui-indicator); }
+  &[data-tone="s2"] { background: var(--ui-accent); }
+  &[data-tone="rest"] { background: var(--ui-text); }
 }
 
 .tpe-nle-split-pane {

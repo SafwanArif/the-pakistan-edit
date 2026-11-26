@@ -64,8 +64,10 @@ export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxO
 export const safeReleasePointerCapture = (el: Element | null, pointerId: number): void => {
     if (!el) return;
     try {
-        if (el.hasPointerCapture(pointerId)) {
-            el.releasePointerCapture(pointerId);
-        }
+        if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
     } catch { /* capture already released */ }
 };
+
+export const isPrimaryPointer = (e: { pointerType: string; button: number }): boolean => e.pointerType !== "mouse" || e.button === 0;
+export const isActivationKey = (key: string): boolean => key === "Enter" || key === " ";
+export const stopEventPropagation = (e: { stopPropagation: () => void }): void => e.stopPropagation();

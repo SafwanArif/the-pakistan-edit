@@ -147,19 +147,11 @@ export const createDomCaptureSession = async (
 };
 
 const assertNotAborted = (signal?: AbortSignal) => {
-    if (signal?.aborted) {
-        throw new DOMException("Export cancelled", "AbortError");
-    }
+    if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 };
 
-/**
- * Deterministic multi-platform Carousel PNG bundle exporter (`pixelRatio: 2`, cached fonts).
- */
-export const runExportEngine = async (
-    draft: Draft,
-    onStatus: (s: string | null) => void,
-    signal?: AbortSignal
-) => {
+/** Deterministic multi-platform Carousel PNG bundle exporter (`pixelRatio: 2`, cached fonts). */
+export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void, signal?: AbortSignal) => {
     assertNotAborted(signal);
     setExportStatus(onStatus, "Initializing Institutional Pipeline...");
 
@@ -170,7 +162,6 @@ export const runExportEngine = async (
     try {
         const anchorKW = getAnchorKeyword(draft.headline);
         const brandTag = "the-pakistan-edit";
-
         zip.file("seo-metadata.txt", `THE PAKISTAN EDIT - SEO BUNDLE\n\nANCHOR: ${anchorKW}\nTAG: ${brandTag}`);
 
         let count = 0;
@@ -182,32 +173,22 @@ export const runExportEngine = async (
             for (const p of platforms) {
                 for (let s = 1; s <= totalSlides; s++) {
                     assertNotAborted(signal);
-                    count++;
-                    setExportStatus(onStatus, `[${count}/${total}] Rendering ${p} S${s}...`);
+                    setExportStatus(onStatus, `[${++count}/${total}] Rendering ${p} S${s}...`);
 
-                    const blob = await session.capture(
-                        <NewsCard draft={draft} step={s} platform={p} />,
-                        {
-                            width: OMNI_CONFIG[p].width,
-                            height: OMNI_CONFIG[p].height,
-                            pixelRatio: 2,
-                            backgroundColor: "#050505",
-                            style: { transform: "none", transition: "none" },
-                            timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
-                        }
-                    );
+                    const blob = await session.capture(<NewsCard draft={draft} step={s} platform={p} />, {
+                        width: OMNI_CONFIG[p].width,
+                        height: OMNI_CONFIG[p].height,
+                        pixelRatio: 2,
+                        backgroundColor: "#050505",
+                        style: { transform: "none", transition: "none" },
+                        timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
+                    });
                     assertNotAborted(signal);
-
-                    if (!blob || blob.size < 1000) {
-                        throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
-                    }
+                    if (!blob || blob.size < 1000) throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
 
                     const platformCode = p === "instagram" ? "IG" : p === "square" ? "FB" : "TT";
-                    const slideAnchor = s === 1 ? anchorKW : (s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s-3]?.heading || "angle"));
-                    const fileStem = `${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}`.substring(0, 146);
-                    const fileName = `${fileStem}.png`;
-
-                    zip.file(fileName, blob);
+                    const slideAnchor = s === 1 ? anchorKW : s === 2 ? sanitize(draft.category) : sanitize(draft.extraSlides?.[s - 3]?.heading || "angle");
+                    zip.file(`${`${platformCode}${s}-${brandTag}-${anchorKW}-${slideAnchor}`.substring(0, 146)}.png`, blob);
                 }
             }
         } finally {
@@ -218,20 +199,14 @@ export const runExportEngine = async (
         setExportStatus(onStatus, "Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
         assertNotAborted(signal);
-        const zipSlug = sanitize(draft.headline.split(' ').slice(0, 5).join('-')) || anchorKW;
-        downloadBlob(content, `TPE-${zipSlug}.zip`);
-
+        downloadBlob(content, `TPE-${sanitize(draft.headline.split(" ").slice(0, 5).join("-")) || anchorKW}.zip`);
         setExportStatus(onStatus, "Complete! 🎉", 3000);
     } catch (e: unknown) {
         if ((e instanceof DOMException && e.name === "AbortError") || signal?.aborted) {
-            if (statusClearTimer !== null) {
-                clearTimeout(statusClearTimer);
-                statusClearTimer = null;
-            }
+            if (statusClearTimer !== null) { clearTimeout(statusClearTimer); statusClearTimer = null; }
             throw e;
         }
-        const msg = e instanceof Error ? e.message : "Export Failed";
-        setExportStatus(onStatus, `ERROR: ${msg}`);
+        setExportStatus(onStatus, `ERROR: ${e instanceof Error ? e.message : "Export Failed"}`);
         throw e;
     }
 };

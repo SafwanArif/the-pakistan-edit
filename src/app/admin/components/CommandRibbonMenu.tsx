@@ -15,40 +15,31 @@ interface CommandRibbonMenuProps {
 
 const menuShellStyle: React.CSSProperties = { position: "relative", flexShrink: 0 };
 const triggerBtnStyle: React.CSSProperties = { background: "transparent", border: "none", padding: 0 };
-const menuTrayStyle: React.CSSProperties = {
-    insetInlineStart: 0,
-    insetInlineEnd: "auto",
-    minWidth: "160px",
-    gap: "6px",
-    padding: "8px",
-};
-const menuOptionStyle: React.CSSProperties = {
-    width: "100%",
-    justifyContent: "flex-start",
-    padding: "7px 10px",
-};
+const menuTrayStyle: React.CSSProperties = { insetInlineStart: 0, insetInlineEnd: "auto", minWidth: "160px", gap: "6px", padding: "8px" };
+const menuOptionStyle: React.CSSProperties = { width: "100%", justifyContent: "flex-start", padding: "7px 10px" };
 const resetOptionStyle: React.CSSProperties = { ...menuOptionStyle, color: "var(--ui-text-dim)" };
 const confirmResetOptionStyle: React.CSSProperties = { ...menuOptionStyle, color: "var(--ui-danger)", borderColor: "var(--ui-danger)" };
 const separatorStyle: React.CSSProperties = { width: "100%", height: "1px", background: "var(--ui-border)", marginBlock: "2px" };
 const glossaryHeaderStyle: React.CSSProperties = { fontSize: "9px", fontWeight: 900, letterSpacing: "0.08em", color: "var(--ui-accent)", paddingInline: "10px", paddingBlockStart: "4px" };
 const glossaryRowStyle: React.CSSProperties = { justifyContent: "space-between", alignItems: "center", fontSize: "10px", paddingInline: "10px", gap: "8px" };
 const glossaryCodeStyle: React.CSSProperties = { fontFamily: "monospace", color: "var(--ui-text-dim)", fontSize: "9px", flexShrink: 0 };
+const gv = (s: React.CSSProperties): React.CSSProperties => ({ fontSize: "9px", textAlign: "end", ...s });
 
 const STUDIO_MODES: readonly { id: PostMode; label: string; title: string }[] = [
     { id: "carousel", label: "CAROUSEL MODE", title: "Switch to Carousel Mode" },
     { id: "video", label: "VIDEO MODE", title: "Switch to Video Mode" },
 ];
 
-const FX_GLOSSARY_ITEMS: readonly { token: string; label: string; style: React.CSSProperties }[] = [
-    { token: '==text==', label: 'Gold Text', style: { color: 'var(--ui-accent)', fontWeight: 800, fontSize: '9px', textAlign: 'end' } },
-    { token: '**text**', label: 'Bold', style: { fontWeight: 800, fontSize: '9px', textAlign: 'end' } },
-    { token: '*text*', label: 'Italic', style: { fontStyle: 'italic', color: 'var(--ui-text-dim)', fontSize: '9px', textAlign: 'end' } },
-    { token: '~~text~~', label: 'Green Text', style: { color: 'var(--ui-indicator)', fontWeight: 800, fontSize: '9px', textAlign: 'end' } },
-    { token: '^^text^^', label: 'Black Label Box', style: { background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, border: '1px solid var(--ui-border)', fontSize: '9px', textAlign: 'end' } },
-    { token: '&&text&&', label: 'White Label Box', style: { background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, fontSize: '9px', textAlign: 'end' } },
+const FX_GLOSSARY_ITEMS: readonly [token: string, label: string, style: React.CSSProperties][] = [
+    ['==text==', 'Gold Text', gv({ color: 'var(--ui-accent)', fontWeight: 800 })],
+    ['**text**', 'Bold', gv({ fontWeight: 800 })],
+    ['*text*', 'Italic', gv({ fontStyle: 'italic', color: 'var(--ui-text-dim)' })],
+    ['~~text~~', 'Green Text', gv({ color: 'var(--ui-indicator)', fontWeight: 800 })],
+    ['^^text^^', 'Black Label Box', gv({ background: '#000', color: '#fff', padding: '1px 5px', borderRadius: '2px', fontWeight: 800, border: '1px solid var(--ui-border)' })],
+    ['&&text&&', 'White Label Box', gv({ background: '#fff', color: '#050505', padding: '1px 5px', borderRadius: '2px', fontWeight: 800 })],
 ];
 
-/** Brand logo trigger and dropdown menu for studio mode switching, formatting syntax glossary, and draft reset. */
+/** Brand logo trigger and dropdown menu for studio mode switching, formatting glossary, and draft reset. */
 export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({ mode, onModeChange, onReset, disabled = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [confirmReset, setConfirmReset] = useState(false);
@@ -62,34 +53,14 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
     }, []);
 
     const menuRef = useClickOutside(handleCloseMenu, undefined, isOpen && !disabled);
-
-    const logoMotionConfig = useMemo<LogoMotionConfig>(
-        () => ({ previewNonce: animationNonce }),
-        [animationNonce]
-    );
+    const logoMotionConfig = useMemo<LogoMotionConfig>(() => ({ previewNonce: animationNonce }), [animationNonce]);
 
     const handleReset = () => {
         if (!onReset) return;
-        if (!confirmReset) {
-            setConfirmReset(true);
-            return;
-        }
+        if (!confirmReset) { setConfirmReset(true); return; }
         setConfirmReset(false);
         setIsOpen(false);
         void Promise.resolve(onReset()).catch((err) => console.error("RESET_DRAFT_ERROR:", err));
-    };
-
-    const selectMode = (nextMode: PostMode) => {
-        setConfirmReset(false);
-        setIsOpen(false);
-        if (nextMode !== mode) onModeChange(nextMode);
-    };
-
-    const handleLogoClick = () => {
-        if (disabled) return;
-        setAnimationNonce((prev) => prev + 1);
-        setConfirmReset(false);
-        setIsOpen((open) => !open);
     };
 
     const triggerLabel = isOpen ? "Close mode and draft menu" : "Open mode and draft menu";
@@ -104,28 +75,24 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                 aria-label={triggerLabel}
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
-                onClick={handleLogoClick}
+                title={triggerLabel}
                 className="tpe-logo-wrapper"
                 style={triggerBtnStyle}
-                title={triggerLabel}
+                onClick={() => {
+                    if (disabled) return;
+                    setAnimationNonce((n) => n + 1);
+                    setConfirmReset(false);
+                    setIsOpen((o) => !o);
+                }}
             >
-                <TPEVectorLogo
-                    scale={0.9}
-                    showWordmark={false}
-                    motionConfig={logoMotionConfig}
-                />
+                <TPEVectorLogo scale={0.9} showWordmark={false} motionConfig={logoMotionConfig} />
             </button>
 
             {isOpen && !disabled && (
-                <div
-                    role="menu"
-                    aria-label="Mode and draft options"
-                    className="tpe-asset-tray-expanded tpe-flex-col"
-                    style={menuTrayStyle}
-                >
+                <div role="menu" aria-label="Mode and draft options" className="tpe-asset-tray-expanded tpe-flex-col" style={menuTrayStyle}>
                     {STUDIO_MODES.map((opt) => {
                         const active = mode === opt.id;
-                        const iconStroke = active ? "#000" : "currentColor";
+                        const stroke = active ? "#000" : "currentColor";
                         return (
                             <button
                                 key={opt.id}
@@ -134,25 +101,22 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                                 aria-checked={active}
                                 data-active={active}
                                 className="tpe-mode-btn"
-                                onClick={() => selectMode(opt.id)}
                                 style={menuOptionStyle}
                                 title={opt.title}
+                                onClick={() => { setConfirmReset(false); setIsOpen(false); if (opt.id !== mode) onModeChange(opt.id); }}
                             >
-                                {opt.id === "carousel"
-                                    ? <CarouselIcon width={12} height={12} stroke={iconStroke} />
-                                    : <VideoIcon width={12} height={12} stroke={iconStroke} />}
+                                {opt.id === "carousel" ? <CarouselIcon width={12} height={12} stroke={stroke} /> : <VideoIcon width={12} height={12} stroke={stroke} />}
                                 <span>{opt.label}</span>
                             </button>
                         );
                     })}
 
                     <div role="separator" style={separatorStyle} />
-
                     <div style={glossaryHeaderStyle}>TEXT FORMATTING</div>
-                    {FX_GLOSSARY_ITEMS.map((item) => (
-                        <div key={item.token} className="tpe-flex-row" style={glossaryRowStyle}>
-                            <code style={glossaryCodeStyle}>{item.token}</code>
-                            <span style={item.style}>{item.label}</span>
+                    {FX_GLOSSARY_ITEMS.map(([token, label, style]) => (
+                        <div key={token} className="tpe-flex-row" style={glossaryRowStyle}>
+                            <code style={glossaryCodeStyle}>{token}</code>
+                            <span style={style}>{label}</span>
                         </div>
                     ))}
 
@@ -176,5 +140,4 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
         </div>
     );
 });
-
 CommandRibbonMenu.displayName = "CommandRibbonMenu";

@@ -67,24 +67,25 @@ export const resolveScrubSeekTarget = (
     return findNearestKeyframe(keyframeTimes, safe) ?? safe;
 };
 
-const VIDEO_FOLLOW_DEADBAND_SEC = 0.12;
-const VIDEO_FOLLOW_HARD_SNAP_SEC = 0.75;
-export const AUDIO_MASTER_GRACE_MS = 600;
-export const VIDEO_FOLLOW_RATE_INTERVAL_MS = 250;
-export const VIDEO_FOLLOW_SNAP_COOLDOWN_MS = 3000;
+const VIDEO_FOLLOW_DEADBAND_SEC = 0.05;
+const VIDEO_FOLLOW_HARD_SNAP_SEC = 0.5;
+export const AUDIO_MASTER_GRACE_MS = 350;
+export const VIDEO_FOLLOW_RATE_INTERVAL_MS = 180;
+export const VIDEO_FOLLOW_SNAP_COOLDOWN_MS = 1500;
 
 interface VideoFollowAdjustment {
-    mode: 'hold' | 'pull' | 'snap-video';
+    mode: 'hold' | 'pull' | 'snap-audio';
     videoPlaybackRate: number;
-    targetVideoTime?: number;
+    targetAudioTime?: number;
     driftSec: number;
 }
 
 /**
- * Computes how the muted `<video>` element gently tracks the uninterrupted companion `<audio>` master clock:
- * - `<= 120ms` drift: hold pure `1.0x` video rate.
- * - `120ms–750ms` drift: adjust ONLY `video.playbackRate` (`0.92x–1.08x`) — audio is never slowed, pitched, or cut.
- * - `> 750ms` drift: snap ONLY `video.currentTime` cleanly to `audioMasterTimeSec` (audio plays continuously).
+ * Computes how muted `<video>` tracks `<audio>` during decoupled playback:
+ * - `<= 50ms` drift: hold pure `1.0x` video rate.
+ * - `50ms–500ms` drift: adjust ONLY muted `video.playbackRate` (`0.80x–1.25x`) — audio plays untouched with zero pitch shift.
+ * - `> 500ms` persistent drift: re-lock fast `<audio>` (`<15ms` AAC seek) to the painted `videoFrameTimeSec`
+ *   instead of seeking slow 4K `<video>` while `<audio>` keeps advancing.
  */
 export const computeVideoToAudioClockAdjustment = (
     videoFrameTimeSec: number,
@@ -98,14 +99,14 @@ export const computeVideoToAudioClockAdjustment = (
     if (absDrift <= VIDEO_FOLLOW_HARD_SNAP_SEC) {
         return {
             mode: 'pull',
-            videoPlaybackRate: Math.round(clamp(1 - videoDriftSec * 0.35, 0.92, 1.08) * 1000) / 1000,
+            videoPlaybackRate: Math.round(clamp(1 - videoDriftSec * 0.85, 0.8, 1.25) * 1000) / 1000,
             driftSec: videoDriftSec,
         };
     }
     return {
-        mode: 'snap-video',
+        mode: 'snap-audio',
         videoPlaybackRate: 1,
-        targetVideoTime: Math.max(0, audioMasterTimeSec),
+        targetAudioTime: Math.max(0, videoFrameTimeSec),
         driftSec: videoDriftSec,
     };
 };
@@ -118,6 +119,7 @@ export interface AvSyncDiagSnapshot {
     lastSeekTargetSec: number;
     lastSeekDurationMs: number;
     readyStateAtPlay: number;
+    lastError: string | null;
 }
 
 export const createInitialAvSyncDiag = (): AvSyncDiagSnapshot => ({
@@ -128,4 +130,5 @@ export const createInitialAvSyncDiag = (): AvSyncDiagSnapshot => ({
     lastSeekTargetSec: 0,
     lastSeekDurationMs: 0,
     readyStateAtPlay: 0,
+    lastError: null,
 });

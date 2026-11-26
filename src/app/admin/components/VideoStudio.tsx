@@ -23,6 +23,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     const [isMobileScenesOpen, setIsMobileScenesOpen] = useState(false);
     const [isCardScrubbing, setIsCardScrubbing] = useState(false);
     const wasPlayingBeforeCardScrubRef = useRef(false);
+    const audioUnlockRef = useRef<(() => void) | null>(null);
     const exportAbortRef = useRef<AbortController | null>(null);
 
     const {
@@ -53,10 +54,24 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
         isPlayingRef.current = isPlaying;
     }, [videoDraft, isPlaying]);
 
+    const handleRegisterAudioUnlock = useCallback((unlock: (() => void) | null) => {
+        audioUnlockRef.current = unlock;
+    }, []);
+
+    const handleTogglePlay = useCallback(() => {
+        const willPlay = !isPlayingRef.current;
+        isPlayingRef.current = willPlay;
+        if (willPlay) audioUnlockRef.current?.();
+        togglePlay();
+    }, [togglePlay]);
+
     const handleCardScrubStart = useCallback(() => {
         setIsCardScrubbing(true);
         wasPlayingBeforeCardScrubRef.current = isPlayingRef.current;
-        if (isPlayingRef.current) togglePlay();
+        if (isPlayingRef.current) {
+            isPlayingRef.current = false;
+            togglePlay();
+        }
     }, [togglePlay]);
 
     const handleCardScrubEnd = useCallback((finalTime: number) => {
@@ -64,9 +79,9 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
         seekTo(finalTime);
         if (wasPlayingBeforeCardScrubRef.current) {
             wasPlayingBeforeCardScrubRef.current = false;
-            togglePlay();
+            handleTogglePlay();
         }
-    }, [seekTo, togglePlay]);
+    }, [seekTo, handleTogglePlay]);
 
     useEffect(() => () => {
         exportAbortRef.current?.abort();
@@ -187,7 +202,8 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         draft={videoDraft}
                         updateDraft={updateVideoDraft}
                         isPlaying={isPlaying}
-                        togglePlay={togglePlay}
+                        togglePlay={handleTogglePlay}
+                        onRegisterAudioUnlock={handleRegisterAudioUnlock}
                         playbackMode={playbackMode}
                         currentTime={currentTime}
                         liveClock={liveClock}

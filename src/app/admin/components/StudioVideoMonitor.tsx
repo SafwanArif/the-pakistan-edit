@@ -32,11 +32,12 @@ interface StudioVideoMonitorProps {
     isMobileScenesOpen: boolean;
     onToggleMobileScenes: () => void;
     externalIsScrubbing?: boolean;
+    onRegisterAudioUnlock?: (unlock: (() => void) | null) => void;
 }
 
 /** Program Monitor with viewport auto-fit, platform switcher, scrubber, keyframe controls, and focal tuning. */
 export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
-    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, liveClock, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate, isMobileScenesOpen, onToggleMobileScenes, externalIsScrubbing = false
+    draft, updateDraft, isPlaying, togglePlay, playbackMode = 'play-all', currentTime, liveClock, seekNonce = 0, duration, seekTo, isMuted, isLoadingStream = false, ingestStatus = null, onTimeUpdate, isMobileScenesOpen, onToggleMobileScenes, externalIsScrubbing = false, onRegisterAudioUnlock
 }) => {
     const [isScrubbing, setIsScrubbing] = useState(false);
     const effectiveIsScrubbing = isScrubbing || externalIsScrubbing;
@@ -46,13 +47,8 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     const [kfEditSide, setKfEditSide] = useState<'post' | 'pre'>('pre');
     const [starPreviewNonce, setStarPreviewNonce] = useState(0);
     const wasPlayingBeforeScrubRef = useRef(false);
-    const audioUnlockRef = useRef<(() => void) | null>(null);
     const timeInputRef = useRef<HTMLInputElement>(null);
     const telemetryBtnRef = useRef<HTMLButtonElement>(null);
-
-    const handleRegisterAudioUnlock = useCallback((unlock: (() => void) | null) => {
-        audioUnlockRef.current = unlock;
-    }, []);
 
     const dimensions = VIDEO_FORMAT_CONFIGS[draft.aspectRatio];
     const { containerRef, scale } = useFitScale(dimensions.width, dimensions.height);
@@ -149,7 +145,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     });
 
     const handleTogglePlay = useCallback(() => {
-        audioUnlockRef.current?.();
         monitorRef.current.togglePlay();
     }, []);
 
@@ -321,7 +316,6 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
     };
 
     const handleScrubberPointerDown = useCallback(() => {
-        audioUnlockRef.current?.();
         setIsScrubbing(true);
         const { isPlaying: playing, togglePlay: toggle } = monitorRef.current;
         wasPlayingBeforeScrubRef.current = playing;
@@ -453,7 +447,7 @@ export const StudioVideoMonitor: React.FC<StudioVideoMonitorProps> = ({
                 )}
                 <div style={{ width: `${Math.round(dimensions.width * scale)}px`, height: `${Math.round(dimensions.height * scale)}px`, boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14)', borderRadius: `${Math.max(8, Math.round(24 * scale))}px`, overflow: 'clip', flexShrink: 0, position: 'relative' }}>
                     <div style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !effectiveIsScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={effectiveIsScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={handleTogglePlay} onRegisterAudioUnlock={handleRegisterAudioUnlock} onTimeUpdate={onTimeUpdate} />
+                        <VideoCard draft={draft} starPreviewNonce={starPreviewNonce} pausedFramingOverride={!isPlaying && !effectiveIsScrubbing && activeKf && effectiveEditSide === 'pre' ? activeFraming : undefined} isPlaying={isPlaying} isScrubbing={effectiveIsScrubbing} playbackMode={playbackMode} currentTime={videoCardTime} liveClock={liveClock} seekNonce={seekNonce} isMuted={isCurrentlyMuted} isLoadingStream={isLoadingStream} ingestStatus={ingestStatus} onTogglePlay={handleTogglePlay} onRegisterAudioUnlock={onRegisterAudioUnlock} onTimeUpdate={onTimeUpdate} />
                     </div>
                 </div>
                 

@@ -78,8 +78,8 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
         expect(getCanPlayTimeoutMs(false)).toBe(350);
     });
 
-    it("computes video-follower clock adjustments without touching companion audio", () => {
-        expect(computeVideoToAudioClockAdjustment(37.05, 37.0)).toMatchObject({ mode: "hold", videoPlaybackRate: 1 });
+    it("computes muted-video PLL adjustments under 500ms and fast audio re-lock above 500ms", () => {
+        expect(computeVideoToAudioClockAdjustment(37.04, 37.0)).toMatchObject({ mode: "hold", videoPlaybackRate: 1 });
 
         const videoBehind = computeVideoToAudioClockAdjustment(36.7, 37.0);
         expect(videoBehind.mode).toBe("pull");
@@ -90,8 +90,8 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
         expect(videoAhead.videoPlaybackRate).toBeLessThan(1);
 
         const severe = computeVideoToAudioClockAdjustment(35.0, 37.0);
-        expect(severe.mode).toBe("snap-video");
-        expect(severe.targetVideoTime).toBe(37.0);
+        expect(severe.mode).toBe("snap-audio");
+        expect(severe.targetAudioTime).toBe(35.0);
     });
 
     it("snaps active scrub targets onto real parsed keyframes when keyframe-snap mode is active", () => {
@@ -110,6 +110,7 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
             lastSeekTargetSec: 0,
             lastSeekDurationMs: 0,
             readyStateAtPlay: 0,
+            lastError: null,
         });
     });
 });

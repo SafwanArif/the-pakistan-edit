@@ -304,7 +304,7 @@ export const VideoCard: React.FC<VideoCardProps> = React.memo(({
                 backgroundColor: (overlayOnly && !isOutro) ? 'transparent' : undefined,
             } as React.CSSProperties}
             onClick={overlayOnly ? undefined : () => {
-                unlockCompanionAudio();
+                if (!onRegisterAudioUnlock) unlockCompanionAudio();
                 onTogglePlay?.();
             }}
         >

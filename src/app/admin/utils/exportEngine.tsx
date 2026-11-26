@@ -146,12 +146,23 @@ export const createDomCaptureSession = async (
     };
 };
 
+const assertNotAborted = (signal?: AbortSignal) => {
+    if (signal?.aborted) {
+        throw new DOMException("Export cancelled", "AbortError");
+    }
+};
+
 /**
  * Deterministic multi-platform Carousel PNG bundle exporter (`pixelRatio: 2`, cached fonts).
  */
-export const runExportEngine = async (draft: Draft, onStatus: (s: string | null) => void) => {
+export const runExportEngine = async (
+    draft: Draft,
+    onStatus: (s: string | null) => void,
+    signal?: AbortSignal
+) => {
+    assertNotAborted(signal);
     setExportStatus(onStatus, "Initializing Institutional Pipeline...");
-    
+
     const totalSlides = getSlideCount(draft);
     const platforms: Platform[] = ["tiktok", "instagram", "square"];
     const zip = new JSZip();
@@ -167,8 +178,10 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         const session = await createDomCaptureSession();
 
         try {
+            assertNotAborted(signal);
             for (const p of platforms) {
                 for (let s = 1; s <= totalSlides; s++) {
+                    assertNotAborted(signal);
                     count++;
                     setExportStatus(onStatus, `[${count}/${total}] Rendering ${p} S${s}...`);
 
@@ -183,6 +196,7 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
                             timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
                         }
                     );
+                    assertNotAborted(signal);
 
                     if (!blob || blob.size < 1000) {
                         throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
@@ -200,13 +214,22 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
             session.dispose();
         }
 
+        assertNotAborted(signal);
         setExportStatus(onStatus, "Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
+        assertNotAborted(signal);
         const zipSlug = sanitize(draft.headline.split(' ').slice(0, 5).join('-')) || anchorKW;
         downloadBlob(content, `TPE-${zipSlug}.zip`);
-        
+
         setExportStatus(onStatus, "Complete! 🎉", 3000);
     } catch (e: unknown) {
+        if ((e instanceof DOMException && e.name === "AbortError") || signal?.aborted) {
+            if (statusClearTimer !== null) {
+                clearTimeout(statusClearTimer);
+                statusClearTimer = null;
+            }
+            throw e;
+        }
         const msg = e instanceof Error ? e.message : "Export Failed";
         setExportStatus(onStatus, `ERROR: ${msg}`);
         throw e;

@@ -5,7 +5,6 @@ import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
 import { safeReleasePointerCapture } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
-import { MOBILE_SCRUB_THROTTLE_MS } from "@/components/templates/VideoCard/avSyncHelpers";
 
 const cardScrubberShellStyle: React.CSSProperties = {
     position: "relative",
@@ -18,6 +17,24 @@ const cardScrubberShellStyle: React.CSSProperties = {
     gap: "1px",
 };
 
+const cardTimeRowStyle: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    lineHeight: 1.1,
+    pointerEvents: "none",
+};
+
+const cardTrackHitAreaStyle: React.CSSProperties = {
+    position: "relative",
+    width: "100%",
+    height: "13px",
+    display: "flex",
+    alignItems: "center",
+    cursor: "ew-resize",
+    touchAction: "none",
+};
+
 const cardTrackRailStyle: React.CSSProperties = {
     position: "relative",
     width: "100%",
@@ -27,10 +44,12 @@ const cardTrackRailStyle: React.CSSProperties = {
     overflow: "hidden",
 };
 
+const stopClickPropagation = (e: React.MouseEvent) => e.stopPropagation();
+
 interface CardTimelineScrubberProps {
     sceneLabel: string;
     start: number;
-    end: number;
+    end?: number;
     duration: number;
     localTime: number;
     liveClock?: LivePlaybackClock;
@@ -44,7 +63,7 @@ interface CardTimelineScrubberProps {
     onScrubEnd?: (finalTime: number) => void;
 }
 
-/** Full-width NLE-style per-card timeline scrubber with vertical playhead, fade cues, and hover/active timecode. */
+/** Full-width NLE-style per-card timeline scrubber with vertical playhead, fade cues, keyframe diamonds, and 120Hz active timecode. */
 export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.memo(({
     sceneLabel,
     start,
@@ -68,22 +87,45 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
     const dragRectRef = useRef<DOMRect | null>(null);
     const lastSentSeekRef = useRef<number | null>(null);
     const latestDragTimeRef = useRef<number | null>(null);
-    const lastMoveSeekAtRef = useRef(0);
+    const activePointerIdRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
 
-    const currentTime = start + localTime;
-    const pct = duration > 0 ? clamp((localTime / duration) * 100, 0, 100) : 0;
+    const safeStart = Number.isFinite(start) ? Math.max(0, start) : 0;
+    const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+    const resolvedEnd = end !== undefined && Number.isFinite(end) ? end : safeStart + safeDuration;
+    const maxT = Math.max(safeStart, resolvedEnd - 0.05);
+    const safeLocalTime = Number.isFinite(localTime) ? clamp(localTime, 0, safeDuration) : 0;
+    const currentTime = safeStart + safeLocalTime;
+    const pct = safeDuration > 0 ? clamp((safeLocalTime / safeDuration) * 100, 0, 100) : 0;
+    const durLabel = safeDuration.toFixed(1);
+
+    const paintDom = useCallback((loc: number, durStr: string) => {
+        const clampedLoc = clamp(loc, 0, safeDuration);
+        const nextPct = safeDuration > 0 ? clamp((clampedLoc / safeDuration) * 100, 0, 100) : 0;
+        if (fillRef.current) fillRef.current.style.transform = `scaleX(${nextPct / 100})`;
+        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
+        const labelEl = timeLabelRef.current;
+        if (labelEl) {
+            const nextLabel = `${formatTimecode(clampedLoc)} / ${durStr}s`;
+            if (labelEl.firstChild) labelEl.firstChild.nodeValue = nextLabel;
+            else labelEl.textContent = nextLabel;
+        }
+    }, [safeDuration]);
+
+    const safeLocalTimeRef = useRef(safeLocalTime);
+    useEffect(() => {
+        safeLocalTimeRef.current = safeLocalTime;
+    }, [safeLocalTime]);
 
     // Glide active scene card scrubber needle, fill bar, and timestamp at native 120Hz (0 React renders)
     useEffect(() => {
-        if (!isSceneActive || !isPlaying || isDragging || !liveClock || duration <= 0) return;
+        if (!isSceneActive || !isPlaying || isDragging || !liveClock || safeDuration <= 0) return;
         let lastPct = NaN;
         let lastLabel = "";
-        const durLabel = duration.toFixed(1);
         const applyTime = (t: number) => {
-            const loc = clamp(t - start, 0, duration);
-            const nextPct = clamp((loc / duration) * 100, 0, 100);
+            const loc = clamp(t - safeStart, 0, safeDuration);
+            const nextPct = clamp((loc / safeDuration) * 100, 0, 100);
             if (Number.isNaN(lastPct) || Math.abs(nextPct - lastPct) >= 0.02) {
                 lastPct = nextPct;
                 if (fillRef.current) fillRef.current.style.transform = `scaleX(${nextPct / 100})`;
@@ -100,41 +142,39 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
             }
         };
         applyTime(liveClock.getTime());
-        return liveClock.subscribe((frame) => applyTime(frame.time));
-    }, [isSceneActive, isPlaying, isDragging, liveClock, start, duration]);
+        const unsubscribe = liveClock.subscribe((frame) => applyTime(frame.time));
+        return () => {
+            unsubscribe();
+            // Reconcile imperatively mutated DOM back to React's committed localTime when stopping or switching scenes
+            paintDom(safeLocalTimeRef.current, durLabel);
+        };
+    }, [isSceneActive, isPlaying, isDragging, liveClock, safeStart, safeDuration, durLabel, paintDom]);
 
-    const fadeInPct = duration > 0 && fadeInDur > 0 ? clamp((fadeInDur / duration) * 100, 3, 18) : 0;
-    const fadeOutPct = duration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / duration) * 100, 3, 18) : 0;
+    const fadeInPct = safeDuration > 0 && fadeInDur > 0 ? clamp((fadeInDur / safeDuration) * 100, 3, 18) : 0;
+    const fadeOutPct = safeDuration > 0 && fadeOutDur > 0 ? clamp((fadeOutDur / safeDuration) * 100, 3, 18) : 0;
 
     const computeTimeAtClientX = (clientX: number): number | null => {
         const rect = dragRectRef.current ?? trackRef.current?.getBoundingClientRect();
-        if (!rect || duration <= 0) return null;
+        if (!rect || safeDuration <= 0) return null;
         const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-        const maxT = Math.max(start, end - 0.05);
-        const raw = start + ratio * duration;
-        return Math.round(clamp(raw, start, maxT) * 100) / 100;
+        const raw = safeStart + ratio * safeDuration;
+        return Math.round(clamp(raw, safeStart, maxT) * 100) / 100;
     };
 
-    const scrubAtClientX = (clientX: number, force = false) => {
+    const scrubAtClientX = (clientX: number) => {
         const snapped = computeTimeAtClientX(clientX);
         if (snapped === null) return;
         latestDragTimeRef.current = snapped;
-        const loc = clamp(snapped - start, 0, duration);
-        const nextPct = duration > 0 ? clamp((loc / duration) * 100, 0, 100) : 0;
-        if (fillRef.current) fillRef.current.style.transform = `scaleX(${nextPct / 100})`;
-        if (needleRailRef.current) needleRailRef.current.style.transform = `translate3d(${nextPct}%, 0, 0)`;
-        if (timeLabelRef.current) timeLabelRef.current.textContent = `${formatTimecode(loc)} / ${duration.toFixed(1)}s`;
+        paintDom(snapped - safeStart, durLabel);
 
-        const nowMs = performance.now();
-        if (!force && nowMs - lastMoveSeekAtRef.current < MOBILE_SCRUB_THROTTLE_MS) return;
         if (snapped !== lastSentSeekRef.current) {
-            lastMoveSeekAtRef.current = nowMs;
             lastSentSeekRef.current = snapped;
             onSeek(snapped);
         }
     };
 
     const finishDrag = (finalTime: number) => {
+        activePointerIdRef.current = null;
         setIsDragging(false);
         dragRectRef.current = null;
         const prevSent = lastSentSeekRef.current;
@@ -147,25 +187,24 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         }
     };
 
+    const handleCancelDrag = (e?: React.PointerEvent<HTMLDivElement>) => {
+        if (!isDraggingRef.current) return;
+        if (e && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
+        isDraggingRef.current = false;
+        finishDrag(latestDragTimeRef.current ?? currentTime);
+    };
+
     const handleJumpKeyframe = useCallback(
-        (t: number) => onSeek(Math.min(Math.max(start, t), Math.max(start, end - 0.05))),
-        [onSeek, start, end]
+        (t: number) => onSeek(clamp(t, safeStart, maxT)),
+        [onSeek, safeStart, maxT]
     );
 
     return (
         <div
-            onClick={(e) => e.stopPropagation()}
+            onClick={stopClickPropagation}
             style={cardScrubberShellStyle}
         >
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    alignItems: "center",
-                    lineHeight: 1.1,
-                    pointerEvents: "none",
-                }}
-            >
+            <div style={cardTimeRowStyle}>
                 <span
                     ref={timeLabelRef}
                     className="tpe-tabular-nums"
@@ -178,7 +217,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                         whiteSpace: "nowrap",
                     }}
                 >
-                    {`${formatTimecode(localTime)} / ${duration.toFixed(1)}s`}
+                    {`${formatTimecode(safeLocalTime)} / ${durLabel}s`}
                 </span>
             </div>
 
@@ -189,70 +228,59 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 aria-label={`${sceneLabel} timeline scrubber`}
                 aria-orientation="horizontal"
                 draggable={false}
-                aria-valuemin={start}
-                aria-valuemax={end}
+                aria-valuemin={safeStart}
+                aria-valuemax={resolvedEnd}
                 aria-valuenow={Math.round(currentTime * 10) / 10}
-                aria-valuetext={`${formatTimecode(localTime)} of ${duration.toFixed(1)}s`}
+                aria-valuetext={`${formatTimecode(safeLocalTime)} of ${durLabel}s`}
                 tabIndex={0}
                 onKeyDown={(e) => {
                     const step = e.shiftKey ? 2 : 0.5;
-                    const maxT = Math.max(start, end - 0.05);
+                    const liveCurrent = isSceneActive && isPlaying && liveClock
+                        ? clamp(liveClock.getTime(), safeStart, maxT)
+                        : currentTime;
+                    let next: number | null = null;
                     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        onSeek(Math.min(maxT, currentTime + step));
+                        next = clamp(liveCurrent + step, safeStart, maxT);
                     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        onSeek(Math.max(start, currentTime - step));
+                        next = clamp(liveCurrent - step, safeStart, maxT);
                     } else if (e.key === 'Home') {
-                        e.preventDefault();
-                        onSeek(start);
+                        next = safeStart;
                     } else if (e.key === 'End') {
+                        next = maxT;
+                    }
+                    if (next !== null) {
                         e.preventDefault();
-                        onSeek(maxT);
+                        if (Math.abs(next - liveCurrent) > 0.001) onSeek(next);
                     }
                 }}
                 onPointerDown={(e) => {
-                    e.stopPropagation();
+                    if (e.pointerType === "mouse" && e.button !== 0) return;
+                    if (isDraggingRef.current) return;
                     e.currentTarget.setPointerCapture(e.pointerId);
+                    activePointerIdRef.current = e.pointerId;
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     lastSentSeekRef.current = null;
                     latestDragTimeRef.current = null;
                     isDraggingRef.current = true;
                     setIsDragging(true);
                     onScrubStart?.();
-                    scrubAtClientX(e.clientX, true);
+                    scrubAtClientX(e.clientX);
                 }}
                 onPointerMove={(e) => {
-                    if (!isDraggingRef.current) return;
-                    scrubAtClientX(e.clientX, false);
+                    if (!isDraggingRef.current || e.pointerId !== activePointerIdRef.current) return;
+                    scrubAtClientX(e.clientX);
                 }}
                 onPointerUp={(e) => {
-                    if (!isDraggingRef.current) return;
+                    if (!isDraggingRef.current || e.pointerId !== activePointerIdRef.current) return;
                     isDraggingRef.current = false;
                     safeReleasePointerCapture(e.currentTarget, e.pointerId);
                     const finalTime = computeTimeAtClientX(e.clientX) ?? latestDragTimeRef.current ?? currentTime;
                     finishDrag(finalTime);
                 }}
-                onPointerCancel={() => {
-                    if (!isDraggingRef.current) return;
-                    isDraggingRef.current = false;
-                    finishDrag(latestDragTimeRef.current ?? currentTime);
-                }}
-                onLostPointerCapture={() => {
-                    if (!isDraggingRef.current) return;
-                    isDraggingRef.current = false;
-                    finishDrag(latestDragTimeRef.current ?? currentTime);
-                }}
-                title={`Scrub inside ${sceneLabel} (${formatTimecode(start)} – ${formatTimecode(end)})`}
-                style={{
-                    position: "relative",
-                    width: "100%",
-                    height: "13px",
-                    display: "flex",
-                    alignItems: "center",
-                    cursor: "ew-resize",
-                    touchAction: "none",
-                }}
+                onPointerCancel={handleCancelDrag}
+                onLostPointerCapture={() => handleCancelDrag()}
+                title={`Scrub inside ${sceneLabel} (${formatTimecode(safeStart)} – ${formatTimecode(resolvedEnd)})`}
+                style={cardTrackHitAreaStyle}
             >
                 {/* Full-width track rail */}
                 <div style={cardTrackRailStyle}>
@@ -279,8 +307,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 {/* Keyframe diamonds (with Focus Isolation + Paired PRE/POST reveal) */}
                 <TimelineKeyframeTrack
                     keyframes={keyframes}
-                    rangeStart={start}
-                    rangeDuration={duration}
+                    rangeStart={safeStart}
+                    rangeDuration={safeDuration}
                     currentTime={currentTime}
                     isPlaying={isPlaying}
                     onJump={handleJumpKeyframe}

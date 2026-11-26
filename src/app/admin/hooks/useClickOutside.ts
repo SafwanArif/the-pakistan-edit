@@ -1,15 +1,32 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+
+export type CloseReason = "outside" | "escape";
+
+const escapeStack: Array<() => void> = [];
+
+const handleGlobalEscape = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    const topHandler = escapeStack[escapeStack.length - 1];
+    if (topHandler) {
+        topHandler();
+    }
+};
 
 /**
- * 2027 Institutional Hook: useClickOutside
- * Standardized event listener for closing popovers and trays — attaches zero global listeners when disabled.
+ * Standardized event listener for closing popovers and trays.
+ * Attaches zero global listeners when disabled and dispatches Escape strictly LIFO
+ * so nested popovers close one layer at a time.
  */
-export const useClickOutside = (handler: () => void, ignoreSelector?: string, enabled = true) => {
+export const useClickOutside = (
+    handler: (reason?: CloseReason) => void,
+    ignoreSelector?: string,
+    enabled = true
+) => {
     const ref = useRef<HTMLDivElement>(null);
     const handlerRef = useRef(handler);
-    useEffect(() => {
+    useLayoutEffect(() => {
         handlerRef.current = handler;
-    });
+    }, [handler]);
 
     useEffect(() => {
         if (!enabled) return;
@@ -22,19 +39,28 @@ export const useClickOutside = (handler: () => void, ignoreSelector?: string, en
             if (ignoreSelector && target instanceof Element && target.closest(ignoreSelector)) {
                 return;
             }
-            handlerRef.current();
+            handlerRef.current("outside");
         };
 
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") handlerRef.current();
+        const onEscape = () => {
+            handlerRef.current("escape");
         };
 
         document.addEventListener("pointerdown", listener);
-        document.addEventListener("keydown", onKeyDown);
+        escapeStack.push(onEscape);
+        if (escapeStack.length === 1) {
+            document.addEventListener("keydown", handleGlobalEscape);
+        }
 
         return () => {
             document.removeEventListener("pointerdown", listener);
-            document.removeEventListener("keydown", onKeyDown);
+            const idx = escapeStack.indexOf(onEscape);
+            if (idx !== -1) {
+                escapeStack.splice(idx, 1);
+            }
+            if (escapeStack.length === 0) {
+                document.removeEventListener("keydown", handleGlobalEscape);
+            }
         };
     }, [ignoreSelector, enabled]);
 

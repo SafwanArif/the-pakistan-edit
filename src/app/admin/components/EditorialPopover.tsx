@@ -1,19 +1,23 @@
+"use client";
+
 import React from "react";
 import { createPortal } from "react-dom";
-import { useClickOutside } from "../hooks/useClickOutside";
+import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 
 interface EditorialPopoverProps {
     open: boolean;
-    onClose: () => void;
+    onClose: (reason?: CloseReason) => void;
     children: React.ReactNode;
     direction?: 'up' | 'down';
     width?: string;
     right?: number | string;
+    role?: 'dialog' | 'menu';
+    ariaLabel?: string;
+    ignoreSelector?: string;
 }
 
-const popoverBaseStyle: React.CSSProperties = {
-    position: 'absolute',
+const sharedPopoverStyle: React.CSSProperties = {
     background: 'var(--ui-bg-popover)',
     backdropFilter: 'blur(var(--blur-md))',
     border: '1px solid var(--ui-border)',
@@ -23,37 +27,44 @@ const popoverBaseStyle: React.CSSProperties = {
     flexDirection: 'column',
     gap: '8px',
     boxShadow: 'var(--shadow-lg)',
+};
+
+const desktopPopoverBaseStyle: React.CSSProperties = {
+    ...sharedPopoverStyle,
+    position: 'absolute',
     zIndex: 'var(--z-popover)',
 };
 
 const mobilePopoverBaseStyle: React.CSSProperties = {
+    ...sharedPopoverStyle,
     position: 'fixed',
     left: '50%',
     top: '58px',
     transform: 'translateX(-50%)',
-    background: 'var(--ui-bg-popover)',
-    backdropFilter: 'blur(var(--blur-md))',
-    border: '1px solid var(--ui-border)',
-    padding: '10px',
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    boxShadow: 'var(--shadow-lg)',
     zIndex: 10000,
     maxWidth: 'calc(100vw - 32px)',
-    maxHeight: 'calc(100vh - 88px)',
+    maxHeight: 'calc(100dvh - 88px)',
     overflow: 'auto',
 };
 
+const directionUpStyle: React.CSSProperties = { bottom: '100%', marginBottom: '12px' };
+const directionDownStyle: React.CSSProperties = { top: '100%', marginTop: '12px' };
+
 /**
- * 2027 Institutional Primitive: EditorialPopover
- * Consolidated interaction layer for all dashboard toolkits.
+ * Lightweight inline/portal popover container for editorial toolbar controls.
  */
-export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({ 
-    open, onClose, children, direction = 'up', width = '200px', right = 0 
+export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({
+    open,
+    onClose,
+    children,
+    direction = 'up',
+    width = '200px',
+    right = 0,
+    role = 'dialog',
+    ariaLabel,
+    ignoreSelector,
 }) => {
-    const ref = useClickOutside(onClose, undefined, open);
+    const ref = useClickOutside(onClose, ignoreSelector, open);
     const isMobile = useMediaQuery("(max-width: 768px)");
 
     if (!open) return null;
@@ -63,11 +74,9 @@ export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({
             <div
                 ref={ref}
                 data-editorial-popover="true"
-                role="dialog"
-                style={{
-                    ...mobilePopoverBaseStyle,
-                    width: width === 'auto' ? 'auto' : width,
-                }}
+                role={role}
+                aria-label={ariaLabel}
+                style={{ ...mobilePopoverBaseStyle, width }}
             >
                 {children}
             </div>,
@@ -76,14 +85,16 @@ export const EditorialPopover: React.FC<EditorialPopoverProps> = React.memo(({
     }
 
     return (
-        <div 
+        <div
             ref={ref}
-            role="dialog"
-            style={{ 
-                ...popoverBaseStyle,
-                ...(direction === 'up' ? { bottom: '100%', marginBottom: '12px' } : { top: '100%', marginTop: '12px' }), 
-                right: right, 
-                width: width, 
+            data-editorial-popover="true"
+            role={role}
+            aria-label={ariaLabel}
+            style={{
+                ...desktopPopoverBaseStyle,
+                ...(direction === 'up' ? directionUpStyle : directionDownStyle),
+                insetInlineEnd: right,
+                width,
             }}
         >
             {children}

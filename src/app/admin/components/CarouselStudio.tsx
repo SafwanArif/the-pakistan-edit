@@ -1,13 +1,63 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import type { Draft, PostMode } from "@/types/news";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { clamp, type Draft, type PostMode } from "@/types/news";
 import { useEditorialState } from "../hooks/useEditorialState";
 import { DraftForm } from "./DraftForm";
 import { OmniPreviewGrid } from "./OmniPreviewGrid";
 import { FocalToolkit } from "./FocalToolkit";
 import { ExportOverlay } from "./ExportOverlay";
 import { SelectionPopover } from "./SelectionPopover";
+
+const ribbonRowStyle: React.CSSProperties = { flex: 1 };
+const segmentTransparentStyle: React.CSSProperties = { background: "transparent" };
+const segmentIndicatorStyle: React.CSSProperties = { background: "var(--ui-indicator)" };
+const segmentAccentStyle: React.CSSProperties = { background: "var(--ui-accent)" };
+const segmentTextStyle: React.CSSProperties = { background: "var(--ui-text)" };
+
+const getSegmentStyle = (stepNum: number, safeStep: number): React.CSSProperties => {
+    if (safeStep < stepNum) return segmentTransparentStyle;
+    if (stepNum === 1) return segmentIndicatorStyle;
+    if (stepNum === 2) return segmentAccentStyle;
+    return segmentTextStyle;
+};
+
+interface CarouselProgressBarProps {
+    totalSteps: number;
+    safeStep: number;
+    onSelectStep: (step: number) => void;
+}
+
+const CarouselProgressBar = React.memo<CarouselProgressBarProps>(({ totalSteps, safeStep, onSelectStep }) => (
+    <div className="tpe-progress-container">
+        {Array.from({ length: totalSteps }, (_, i) => {
+            const stepNum = i + 1;
+            const isActive = safeStep === stepNum;
+            const select = () => {
+                if (!isActive) onSelectStep(stepNum);
+            };
+            return (
+                <div
+                    key={stepNum}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Go to slide ${stepNum}`}
+                    aria-current={isActive ? "step" : undefined}
+                    onClick={select}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            select();
+                        }
+                    }}
+                    className="tpe-progress-segment"
+                    style={getSegmentStyle(stepNum, safeStep)}
+                />
+            );
+        })}
+    </div>
+));
+CarouselProgressBar.displayName = "CarouselProgressBar";
 
 interface CarouselStudioProps {
     mode: PostMode;
@@ -19,8 +69,9 @@ interface CarouselStudioProps {
  * and dynamically imports `exportEngine` (`jszip` + `html-to-image`) strictly on export click.
  */
 export default function CarouselStudio({ mode, onModeChange }: CarouselStudioProps) {
-    const [exporting, setExporting] = useState<string | null>(null);
-    const isExportingRef = useRef(false);
+    const [exportStatus, setExportStatus] = useState<string | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const exportAbortRef = useRef<AbortController | null>(null);
     const {
         isMounted,
         currentStep,
@@ -35,24 +86,54 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
     } = useEditorialState();
 
     const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
-    const safeStep = Math.min(Math.max(1, currentStep), totalSteps);
+    const safeStep = Number.isFinite(currentStep) ? clamp(Math.trunc(currentStep), 1, totalSteps) : 1;
 
     useEffect(() => {
-        if (isMounted && currentStep > totalSteps) {
-            void setCurrentStep(totalSteps);
+        if (isMounted && currentStep !== safeStep) {
+            void setCurrentStep(safeStep);
         }
-    }, [isMounted, currentStep, totalSteps, setCurrentStep]);
+    }, [isMounted, currentStep, safeStep, setCurrentStep]);
+
+    useEffect(() => () => {
+        exportAbortRef.current?.abort();
+        exportAbortRef.current = null;
+    }, []);
+
+    const handleSelectStep = useCallback((stepNum: number) => {
+        void setCurrentStep(stepNum);
+    }, [setCurrentStep]);
+
+    const handleCloseExport = useCallback(() => {
+        exportAbortRef.current?.abort();
+        exportAbortRef.current = null;
+        setIsExporting(false);
+        setExportStatus(null);
+    }, []);
 
     const handleExportBatch = useCallback(async (draft: Draft) => {
-        if (isExportingRef.current) return;
-        isExportingRef.current = true;
+        if (exportAbortRef.current) return;
+        if (!draft.category.trim() || !draft.headline.trim() || !draft.image) {
+            setExportStatus("ERROR: Complete Slide 1 (category, headline, and hero photo) before exporting.");
+            return;
+        }
+        const controller = new AbortController();
+        exportAbortRef.current = controller;
+        setIsExporting(true);
+        const onStatus = (msg: string | null) => {
+            if (!controller.signal.aborted) setExportStatus(msg);
+        };
         try {
             const { runExportEngine } = await import("../utils/exportEngine");
-            await runExportEngine(draft, setExporting);
+            await runExportEngine(draft, onStatus, controller.signal);
         } catch (e) {
-            console.error("ADMIN_DASHBOARD_EXPORT_INTERCEPT:", e);
+            if (!(e instanceof DOMException && e.name === "AbortError")) {
+                console.error("CAROUSEL_EXPORT_ERROR:", e);
+            }
         } finally {
-            isExportingRef.current = false;
+            if (exportAbortRef.current === controller) {
+                exportAbortRef.current = null;
+                setIsExporting(false);
+            }
         }
     }, []);
 
@@ -61,7 +142,7 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
     return (
         <>
             <header className="command-ribbon">
-                <div className="tpe-flex-row" style={{ flex: 1 }}>
+                <div className="tpe-flex-row" style={ribbonRowStyle}>
                     <DraftForm
                         draft={activeDraft}
                         onChange={updateDraft}
@@ -69,7 +150,7 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
                         step={safeStep}
                         setStep={setCurrentStep}
                         onReset={resetState}
-                        isExporting={Boolean(exporting)}
+                        isExporting={isExporting}
                         mode={mode}
                         onModeChange={onModeChange}
                     />
@@ -77,40 +158,17 @@ export default function CarouselStudio({ mode, onModeChange }: CarouselStudioPro
             </header>
 
             {/* PROGRESS BAR */}
-            <div className="tpe-progress-container">
-                {Array.from({ length: totalSteps }).map((_, i) => {
-                    const stepNum = i + 1;
-                    const isActive = safeStep === stepNum;
-                    const segmentColor = (safeStep >= stepNum)
-                        ? (stepNum === 1 ? 'var(--ui-indicator)' : (stepNum === 2 ? 'var(--ui-accent)' : 'var(--ui-text)'))
-                        : 'transparent';
+            <CarouselProgressBar
+                totalSteps={totalSteps}
+                safeStep={safeStep}
+                onSelectStep={handleSelectStep}
+            />
 
-                    return (
-                        <div
-                            key={i}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`Go to slide ${stepNum}`}
-                            aria-current={isActive ? "step" : undefined}
-                            onClick={() => setCurrentStep(stepNum)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    setCurrentStep(stepNum);
-                                }
-                            }}
-                            className="tpe-progress-segment"
-                            data-active={isActive}
-                            style={{ background: segmentColor }}
-                        />
-                    );
-                })}
-            </div>
-
-            {exporting && (
+            {exportStatus && (
                 <ExportOverlay
-                    status={exporting}
-                    onClose={() => setExporting(null)}
+                    status={exportStatus}
+                    onClose={handleCloseExport}
+                    onCancel={handleCloseExport}
                 />
             )}
 

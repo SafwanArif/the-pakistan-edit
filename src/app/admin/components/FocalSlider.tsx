@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+"use client";
+
+import React, { useRef, useState } from "react";
 import { clamp } from "@/types/news";
 
 const sliderColStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', inlineSize: '100%', alignItems: 'center', gap: '4px' };
@@ -13,57 +15,79 @@ interface FocalSliderProps {
     max: number;
     value: number;
     field: string;
+    unit?: string;
     onChange: (field: string, val: number, min: number, max: number) => void;
 }
 
 /**
  * Controlled slider and numeric input pair for focal zoom and pan coordinates.
  */
-export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, value, field, onChange }) => {
+export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, value, field, unit, onChange }) => {
     const [textInput, setTextInput] = useState<string | null>(null);
+    const cancelEditRef = useRef(false);
+
+    const resolvedUnit = unit ?? (id === 'zoom' ? '%' : '');
+    const safeValue = Number.isFinite(value) ? clamp(Math.round(value), min, max) : min;
+    const committedText = `${safeValue}${resolvedUnit}`;
+    const displayValue = textInput !== null ? textInput : committedText;
 
     const handleInputBlur = () => {
+        if (cancelEditRef.current) {
+            cancelEditRef.current = false;
+            setTextInput(null);
+            return;
+        }
         if (textInput !== null) {
             const parsed = parseInt(textInput, 10);
             if (!Number.isNaN(parsed)) {
-                onChange(field, clamp(parsed, min, max), min, max);
+                const next = clamp(parsed, min, max);
+                if (next !== safeValue) {
+                    onChange(field, next, min, max);
+                }
             }
             setTextInput(null);
         }
     };
 
-    const displayValue = textInput !== null ? textInput : value.toString() + (id === 'zoom' ? '%' : '');
-
     return (
         <div style={sliderColStyle}>
             <span className="focal-slider-label" style={sliderLabelStyle}>{label}</span>
             <div style={sliderTrackWrapStyle}>
-                <input 
-                    className="focal-slider" 
-                    type="range" 
+                <input
+                    type="range"
                     aria-label={label}
-                    aria-valuetext={displayValue}
-                    min={min} 
-                    max={max} 
-                    value={value} 
+                    aria-valuetext={committedText}
+                    min={min}
+                    max={max}
+                    value={safeValue}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const val = parseInt(e.target.value, 10);
+                        if (Number.isNaN(val)) return;
+                        const next = clamp(val, min, max);
                         setTextInput(null);
-                        onChange(field, clamp(val, min, max), min, max);
-                    }} 
+                        if (next !== safeValue) {
+                            onChange(field, next, min, max);
+                        }
+                    }}
                 />
             </div>
-            <input 
-                className="focal-slider-value tpe-tabular-nums"
+            <input
+                className="tpe-tabular-nums"
                 type="text"
                 inputMode="numeric"
                 enterKeyHint="done"
+                autoComplete="off"
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
                 aria-label={`${label} numeric value`}
                 value={displayValue}
                 style={sliderValueInputStyle}
+                onFocus={(e: React.FocusEvent<HTMLInputElement>) => {
+                    cancelEditRef.current = false;
+                    setTextInput(String(safeValue));
+                    e.currentTarget.select();
+                }}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const val = e.target.value.replace(/[^0-9]/g, '');
                     setTextInput(val);
@@ -71,6 +95,10 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ id, label, min, max, 
                 onBlur={handleInputBlur}
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                     if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                    } else if (e.key === 'Escape') {
+                        cancelEditRef.current = true;
+                        setTextInput(null);
                         e.currentTarget.blur();
                     }
                 }}

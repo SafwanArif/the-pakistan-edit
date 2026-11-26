@@ -118,16 +118,16 @@ const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly 
 
     return (
         <div className="tpe-tool-wrap">
-            <button {...triggerProps} aria-label={`Change prefix (${prefix})`} aria-haspopup="menu" className="tpe-prefix-toggle">
+            <button {...triggerProps} aria-label={`Change prefix (${prefix})`} aria-haspopup="dialog" className="tpe-prefix-toggle">
                 {prefix}
             </button>
             {open && (
-                <EditorialPopover open={open} onClose={close} direction="down" width="200px" right="auto" role="menu" ariaLabel="Prefix options" ignoreSelector={ignoreSelector}>
+                <EditorialPopover open={open} onClose={close} direction="down" width="200px" right="auto" role="dialog" ariaLabel="Prefix options" ignoreSelector={ignoreSelector}>
                     {options.map((opt) => (
                         <button
                             key={opt}
                             type="button"
-                            role="menuitem"
+                            aria-pressed={opt === prefix}
                             className="tpe-prefix-btn"
                             onClick={(e) => {
                                 e.preventDefault();
@@ -140,6 +140,7 @@ const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly 
                     ))}
                     <input
                         type="text"
+                        dir="auto"
                         aria-label="Custom prefix"
                         enterKeyHint="done"
                         autoCapitalize="characters"
@@ -148,6 +149,11 @@ const PrefixToolbar = React.memo<PrefixToolbarPublicProps & { options: readonly 
                         placeholder="Custom..."
                         className="tpe-popover-input tpe-popover-input-mt"
                         onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                e.nativeEvent.stopImmediatePropagation();
+                                close("escape");
+                                return;
+                            }
                             if (e.key !== "Enter") return;
                             e.preventDefault();
                             const custom = normalizeEditorialPrefix(e.currentTarget.value);

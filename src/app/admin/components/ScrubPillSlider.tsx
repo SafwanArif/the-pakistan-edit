@@ -3,6 +3,7 @@
 import React, { useRef, useState } from "react";
 import { clamp } from "@/types/news";
 import { isPrimaryPointer, safeReleasePointerCapture, safeSetPointerCapture } from "../utils/domUtils";
+import { useBufferedInput } from "../hooks/useBufferedInput";
 
 interface ScrubPillSliderProps {
     label: string;
@@ -18,13 +19,16 @@ interface ScrubPillSliderProps {
     onChange: (next: number) => void;
 }
 
-/** Parses typed scrub-pill input, stripping unit suffixes (`ms`, `px`, `%`, `s`) and clamping to `[min, max]`. */
-export function parseScrubPillInput(raw: string, min: number, max: number): number | null {
+/** Parses typed scrub-pill input, stripping unit suffixes (`ms`, `px`, `%`, `s`), clamping to `[min, max]`, and snapping to `step`. */
+export function parseScrubPillInput(raw: string, min: number, max: number, step = 1): number | null {
     const cleaned = raw.trim().replace(/\s*(?:ms|px|%|s)\s*$/i, "").trim();
     if (!cleaned) return null;
     const parsed = Number(cleaned);
     if (!Number.isFinite(parsed)) return null;
-    return clamp(Math.round(parsed), min, max);
+    const clamped = clamp(parsed, min, max);
+    return step > 1
+        ? clamp(min + Math.round((clamped - min) / step) * step, min, max)
+        : Math.round(clamped);
 }
 
 /** 2026/2027 Fused Scrub-Bar: layers label, GPU-composited proportional fill track, and tabular readout in one compact pill. */
@@ -41,10 +45,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     title,
     onChange,
 }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [draftText, setDraftText] = useState("");
     const [isDragging, setIsDragging] = useState(false);
-    const cancelEditRef = useRef(false);
     const pillRef = useRef<HTMLDivElement>(null);
     const dragRef = useRef<{ pointerId: number; startX: number; startVal: number; lastEmitted: number; moved: boolean; lastShift: boolean } | null>(null);
 
@@ -54,22 +55,13 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
     const pct = clamp(((safeVal - min) / span) * 100, 0, 100);
     const pillStyle = { width, height, "--pill-accent": accentColor } as React.CSSProperties;
 
-    const restorePillFocus = () => {
-        requestAnimationFrame(() => pillRef.current?.focus());
-    };
-
-    const commitText = () => {
-        if (cancelEditRef.current) {
-            cancelEditRef.current = false;
-            setIsEditing(false);
-            return;
-        }
-        const parsed = parseScrubPillInput(draftText, min, max);
-        if (parsed !== null && parsed !== roundedVal) {
-            onChange(parsed);
-        }
-        setIsEditing(false);
-    };
+    const buffered = useBufferedInput({
+        onCommit: (raw) => {
+            const parsed = parseScrubPillInput(raw, min, max, step);
+            if (parsed !== null && parsed !== roundedVal) onChange(parsed);
+        },
+        onExit: () => { requestAnimationFrame(() => pillRef.current?.focus()); },
+    });
 
     const cancelDrag = (pointerId?: number) => {
         const state = dragRef.current;
@@ -78,7 +70,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
         setIsDragging(false);
     };
 
-    if (isEditing) {
+    if (buffered.isEditing) {
         return (
             <input
                 type="text"
@@ -91,20 +83,11 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 aria-label={`${label} numeric value`}
                 className="tpe-tabular-nums tpe-scrub-pill-input"
                 style={pillStyle}
-                value={draftText}
-                onFocus={(e) => { cancelEditRef.current = false; e.currentTarget.select(); }}
-                onChange={(e) => setDraftText(e.target.value)}
-                onBlur={commitText}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                        e.currentTarget.blur();
-                        restorePillFocus();
-                    } else if (e.key === "Escape") {
-                        cancelEditRef.current = true;
-                        setIsEditing(false);
-                        restorePillFocus();
-                    }
-                }}
+                value={buffered.draftText ?? ""}
+                onFocus={buffered.handleFocus}
+                onChange={(e) => buffered.handleChange(e.target.value)}
+                onBlur={buffered.handleBlur}
+                onKeyDown={buffered.handleKeyDown}
             />
         );
     }
@@ -159,8 +142,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 setIsDragging(false);
                 safeReleasePointerCapture(e.currentTarget, e.pointerId);
                 if (!state.moved) {
-                    setDraftText(String(roundedVal));
-                    setIsEditing(true);
+                    buffered.startEdit(String(roundedVal));
                 }
             }}
             onPointerCancel={(e) => cancelDrag(e.pointerId)}
@@ -174,8 +156,7 @@ export const ScrubPillSlider: React.FC<ScrubPillSliderProps> = React.memo(({
                 else if (e.key === "End") next = max;
                 else if (e.key === "Enter") {
                     e.preventDefault();
-                    setDraftText(String(roundedVal));
-                    setIsEditing(true);
+                    buffered.startEdit(String(roundedVal));
                     return;
                 }
                 if (next === null) return;

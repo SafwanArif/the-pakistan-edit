@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback } from "react";
 import {
     clamp,
     formatTimecode,
@@ -12,6 +12,7 @@ import {
 } from "@/types/news";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { stopEventPropagation } from "../utils/domUtils";
+import { useBufferedInput } from "../hooks/useBufferedInput";
 import { ClipOffsetTrimmer, HookGlyph } from "./ClipOffsetTrimmer";
 import { FadePresetControl, SceneChecklistPopover } from "./SceneChecklistPopover";
 import { SubtitleRowList } from "./SubtitleEditorTray";
@@ -19,37 +20,28 @@ import { CardTimelineScrubber } from "./CardTimelineScrubber";
 import { CloseIcon } from "@/components/icons/TPEIcons";
 
 const SceneDurationInput: React.FC<{ value: number; maxDur: number; onCommit: (next: number) => void }> = React.memo(({ value, maxDur, onCommit }) => {
-    const [draftText, setDraftText] = useState<string | null>(null);
-    const cancelEditRef = useRef(false);
-    const commit = (raw: string) => {
-        if (cancelEditRef.current) {
-            cancelEditRef.current = false;
-            setDraftText(null);
-            return;
-        }
-        const parsed = parseFloat(raw.trim());
-        setDraftText(null);
-        if (Number.isFinite(parsed)) {
-            const next = clamp(Math.round(parsed * 10) / 10, 2, maxDur);
-            if (next !== value) onCommit(next);
-        }
-    };
+    const buffered = useBufferedInput({
+        onCommit: (raw) => {
+            const parsed = parseFloat(raw.trim());
+            if (Number.isFinite(parsed)) {
+                const next = clamp(Math.round(parsed * 10) / 10, 2, maxDur);
+                if (next !== value) onCommit(next);
+            }
+        },
+    });
     return (
         <input
             type="text"
             inputMode="decimal"
             enterKeyHint="done"
             spellCheck={false}
-            value={draftText ?? String(value)}
+            value={buffered.draftText ?? String(value)}
             aria-label="Scene duration in seconds"
             className="tpe-tabular-nums tpe-scene-dur-input"
-            onFocus={(e) => { cancelEditRef.current = false; setDraftText(String(value)); e.currentTarget.select(); }}
-            onChange={(e) => setDraftText(e.target.value)}
-            onBlur={(e) => commit(e.currentTarget.value)}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-                else if (e.key === 'Escape') { cancelEditRef.current = true; setDraftText(null); e.currentTarget.blur(); }
-            }}
+            onFocus={(e) => buffered.handleFocus(e, String(value))}
+            onChange={(e) => buffered.handleChange(e.target.value)}
+            onBlur={buffered.handleBlur}
+            onKeyDown={buffered.handleKeyDown}
             title={`Directly enter seconds for this angle (2–${maxDur}s)`}
         />
     );
@@ -76,6 +68,7 @@ interface SceneStoryboardCardProps {
     keyframes?: VideoKeyframe[];
     localTime: number;
     currentMediaTime: number;
+    getLiveMediaTime?: () => number;
     liveClock?: LivePlaybackClock;
     isPlaying: boolean;
     rf: ResolvedSceneFade;
@@ -143,6 +136,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
     keyframes,
     localTime,
     currentMediaTime,
+    getLiveMediaTime,
     liveClock,
     isPlaying,
     rf,
@@ -222,7 +216,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                                 onClick={() => onToggleChecklist(idx)}
                                 title={checklistTitle}
                             >
-                                <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" style={{ width: '11px', height: '11px', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />
                                 </svg>
                             </button>
@@ -359,6 +353,7 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                             clipStartOffset={scene.clipStartOffset}
                             sceneDuration={scene.duration}
                             currentMediaTime={currentMediaTime}
+                            getLiveMediaTime={getLiveMediaTime}
                             isCardActive={isSceneActive}
                             onSetOffset={onSetOffset}
                         />
@@ -396,7 +391,14 @@ export const SceneStoryboardCard: React.FC<SceneStoryboardCardProps> = React.mem
                         aria-label="Scene media override URL"
                         placeholder="Override URL or upload clip/photo..."
                         value={scene.mediaUrl || ''}
-                        onChange={(e) => onUpdateScene(idx, { mediaUrl: e.target.value || undefined, mediaName: undefined })}
+                        onChange={(e) => {
+                            const nextUrl = e.target.value || undefined;
+                            onUpdateScene(idx, {
+                                mediaUrl: nextUrl,
+                                mediaName: undefined,
+                                ...(hasVideo && !nextUrl ? { mediaType: 'video' } : {}),
+                            });
+                        }}
                         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                         className="tpe-scene-broll-input"
                     />

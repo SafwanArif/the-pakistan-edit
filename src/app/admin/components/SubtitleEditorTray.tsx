@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { SubtitleSegment, SubtitleFontId, SubtitleBackdropId, SUBTITLE_FONT_OPTIONS, SUBTITLE_BACKDROP_OPTIONS, VideoDraft, formatTimecode, downloadSrtFile, timelineTimeToMediaTime, wrapMediaTime, getDefaultSubtitleFontSize, getMediaSubtitleTimelineTime, getTimelineStructure } from "@/types/news";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SubtitleSegment, SubtitleFontId, SubtitleBackdropId, SUBTITLE_FONT_OPTIONS, SUBTITLE_BACKDROP_OPTIONS, VideoDraft, clamp, formatTimecode, downloadSrtFile, timelineTimeToMediaTime, wrapMediaTime, getDefaultSubtitleFontSize, getMediaSubtitleTimelineTime, getTimelineStructure } from "@/types/news";
+import { stopEventPropagation } from "../utils/domUtils";
 import { ScrubPillSlider } from "./ScrubPillSlider";
 import { consumeNdjsonStream } from "../utils/ndjsonStream";
+
+const POSITION_OPTIONS = [['bottom', 'LOW'], ['middle', 'MID'], ['high', 'HIGH']] as const;
+const SUBTITLE_FONT_ENTRIES = Object.entries(SUBTITLE_FONT_OPTIONS) as [SubtitleFontId, { label: string }][];
+const SUBTITLE_BACKDROP_ENTRIES = Object.entries(SUBTITLE_BACKDROP_OPTIONS) as [SubtitleBackdropId, { label: string }][];
 
 /** O(N) interval-overlap resolver returning subtitles whose media window intersects `[startSec, endSec)`. */
 export const getSceneSubtitles = (draft: VideoDraft, startSec: number, endSec: number): SubtitleSegment[] => {
@@ -42,16 +47,15 @@ interface SubtitleRowListProps {
 }
 
 export const SubtitleRowList: React.FC<SubtitleRowListProps> = React.memo(({
-    segments, onUpdateText, onRemoveSeg, onSeekMedia
+    segments, onUpdateText, onRemoveSeg, onSeekMedia,
 }) => (
-    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+    <div onClick={stopEventPropagation} className="tpe-sub-list">
         {segments.map((seg) => (
-            <div key={seg.id} className="tpe-flex-row tpe-subtitle-row" style={{ alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--ui-border)' }}>
+            <div key={seg.id} className="tpe-flex-row tpe-subtitle-row tpe-sub-row">
                 <button
                     type="button"
                     onClick={() => onSeekMedia(seg.start)}
-                    className="tpe-tabular-nums"
-                    style={{ fontFamily: 'monospace', fontSize: '8.5px', fontWeight: 800, color: 'var(--ui-accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
+                    className="tpe-tabular-nums tpe-sub-time-btn"
                     title={`Jump to ${formatTimecode(seg.start)}`}
                 >
                     {formatTimecode(seg.start)}
@@ -66,14 +70,13 @@ export const SubtitleRowList: React.FC<SubtitleRowListProps> = React.memo(({
                     value={seg.text}
                     onChange={(e) => onUpdateText(seg.id, e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                    style={{ flex: 1, minWidth: 0, fontSize: '10px', color: 'var(--ui-text)', background: 'transparent', border: 'none' }}
+                    className="tpe-sub-text-input"
                 />
                 <button
                     type="button"
                     aria-label="Delete subtitle line"
                     onClick={() => onRemoveSeg(seg.id)}
-                    className="tpe-asset-btn tpe-asset-btn-danger"
-                    style={{ width: '16px', height: '16px', fontSize: '9px', padding: 0 }}
+                    className="tpe-asset-btn tpe-asset-btn-danger tpe-sub-del-btn"
                     title="Delete subtitle line"
                 >
                     ×
@@ -92,7 +95,7 @@ interface SubtitleEditorTrayProps {
 
 /** Inline speech-to-text subtitle generator and live per-line editor. */
 export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(({
-    draft, onChange, seekTo
+    draft, onChange, seekTo,
 }) => {
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [transcribeProgress, setTranscribeProgress] = useState<{ stage: string; percent: number } | null>(null);
@@ -103,19 +106,22 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
 
     const transcribeAbortRef = useRef<AbortController | null>(null);
     const latestRef = useRef({ draft, onChange, seekTo });
-    useEffect(() => {
+    useLayoutEffect(() => {
         latestRef.current = { draft, onChange, seekTo };
     });
 
-    useEffect(() => {
-        return () => transcribeAbortRef.current?.abort();
+    useEffect(() => () => {
+        transcribeAbortRef.current?.abort();
     }, []);
 
     useEffect(() => {
-        if (!isTranscribing) {
-            setElapsedSec(0);
-            return;
-        }
+        if (!transcribeAbortRef.current) return;
+        transcribeAbortRef.current.abort();
+        transcribeAbortRef.current = null;
+    }, [draft.videoUrl]);
+
+    useEffect(() => {
+        if (!isTranscribing) return;
         const startedAt = Date.now();
         const timer = setInterval(() => {
             setElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
@@ -128,13 +134,16 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
         transcribeAbortRef.current = null;
         setIsTranscribing(false);
         setTranscribeProgress(null);
+        setElapsedSec(0);
     };
 
     const handleTranscribe = async () => {
-        if (!draft.videoUrl || isTranscribing) return;
+        const requestedVideoUrl = draft.videoUrl;
+        if (!requestedVideoUrl || isTranscribing) return;
         transcribeAbortRef.current?.abort();
         const controller = new AbortController();
         transcribeAbortRef.current = controller;
+        setElapsedSec(0);
         setIsTranscribing(true);
         setTranscribeProgress({ stage: "STARTING WHISPER ENGINE...", percent: 2 });
         setErrorMsg(null);
@@ -145,7 +154,7 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                     "Content-Type": "application/json",
                     "Accept": "application/x-ndjson",
                 },
-                body: JSON.stringify({ videoUrl: draft.videoUrl }),
+                body: JSON.stringify({ videoUrl: requestedVideoUrl }),
                 signal: controller.signal,
             });
             const contentType = res.headers.get("content-type") || "";
@@ -154,11 +163,13 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                 throw new Error(errData.error || `Transcription failed (${res.status})`);
             }
 
+            let resolvedSegments: SubtitleSegment[] = [];
             if (contentType.includes("application/x-ndjson") && res.body) {
                 let finalSegments: SubtitleSegment[] | null = null;
                 await consumeNdjsonStream<{ stage?: string; percent?: number; segments?: SubtitleSegment[]; error?: string }>(
                     res,
                     (evt) => {
+                        if (controller.signal.aborted) return;
                         if (evt.error) throw new Error(evt.error);
                         if (evt.stage) {
                             setTranscribeProgress((prev) => ({
@@ -169,22 +180,33 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                         if (evt.segments) finalSegments = evt.segments;
                     }
                 );
+                if (controller.signal.aborted) return;
                 if (finalSegments === null) throw new Error("Transcription ended without subtitle output.");
-                const { draft: latestDraft, onChange: commit } = latestRef.current;
-                commit({ ...latestDraft, subtitles: finalSegments, showSubtitles: true });
+                resolvedSegments = finalSegments;
             } else {
                 const data = await res.json() as { segments?: SubtitleSegment[]; error?: string };
+                if (controller.signal.aborted) return;
                 if (data.error) throw new Error(data.error);
-                const { draft: latestDraft, onChange: commit } = latestRef.current;
-                commit({ ...latestDraft, subtitles: data.segments || [], showSubtitles: true });
+                resolvedSegments = data.segments || [];
+            }
+
+            const { draft: latestDraft, onChange: commit } = latestRef.current;
+            if (controller.signal.aborted || latestDraft.videoUrl !== requestedVideoUrl) return;
+            commit({ ...latestDraft, subtitles: resolvedSegments, showSubtitles: true });
+            if (resolvedSegments.length === 0) {
+                setErrorMsg("No speech detected in audio track.");
             }
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') return;
+            if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
             setErrorMsg(err instanceof Error ? err.message : "Transcription failed");
         } finally {
             if (transcribeAbortRef.current === controller) {
-                setIsTranscribing(false);
-                setTranscribeProgress(null);
+                transcribeAbortRef.current = null;
+                if (!controller.signal.aborted) {
+                    setIsTranscribing(false);
+                    setTranscribeProgress(null);
+                    setElapsedSec(0);
+                }
             }
         }
     };
@@ -206,25 +228,25 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
         commit({ ...latestDraft, subtitles: allSubs.filter((s) => s.id !== id) });
     }, []);
 
+    const handleFontSizeChange = useCallback((v: number) => {
+        const { draft: latestDraft, onChange: commit } = latestRef.current;
+        const currentSize = latestDraft.subtitleFontSize ?? getDefaultSubtitleFontSize(latestDraft.aspectRatio);
+        if (v !== currentSize) commit({ ...latestDraft, subtitleFontSize: v });
+    }, []);
+
     const ccSize = draft.subtitleFontSize ?? getDefaultSubtitleFontSize(draft.aspectRatio);
 
     return (
-        <div
-            className="tpe-flex-col"
-            style={{ gap: '6px', width: '100%' }}
-        >
+        <div className="tpe-flex-col tpe-sub-tray">
             {/* Compact Studio Capsule Strip matching Keyframes toolbar */}
-            <div className="tpe-flex-row" style={{ justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="tpe-flex-row tpe-sub-strip">
                 <div className="tpe-nested-action-row tpe-nested-capsule">
                     <button
                         type="button"
                         disabled={!draft.videoUrl || isTranscribing}
                         onClick={() => void handleTranscribe()}
-                        className="tpe-mode-btn tpe-nested-action"
-                        style={{
-                            background: isTranscribing ? 'oklch(from var(--ui-accent) l c h / 0.14)' : 'transparent',
-                            color: isTranscribing ? 'var(--ui-accent)' : 'var(--ui-text)',
-                        }}
+                        className="tpe-mode-btn tpe-nested-action tpe-tabular-nums tpe-sub-gen-btn"
+                        data-busy={isTranscribing}
                         title="Detect speech with local Whisper and generate editable subtitles"
                     >
                         {isTranscribing
@@ -235,22 +257,17 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
 
                 {subtitles.length > 0 && (
                     <>
-                        <div className="tpe-mode-cluster" style={{ padding: '1px', gap: '1px' }} title="Lower-third vertical placement">
-                            {([['bottom', 'LOW'], ['middle', 'MID'], ['high', 'HIGH']] as const).map(([pos, lbl]) => {
+                        <div role="group" aria-label="Subtitle vertical position" className="tpe-mode-cluster tpe-sub-cluster" title="Lower-third vertical placement">
+                            {POSITION_OPTIONS.map(([pos, lbl]) => {
                                 const active = (draft.subtitlePosition || 'bottom') === pos;
                                 return (
                                     <button
                                         key={pos}
                                         type="button"
                                         aria-pressed={active}
-                                        onClick={() => onChange({ ...draft, subtitlePosition: pos })}
-                                        className="tpe-mode-btn"
-                                        style={{
-                                            padding: '2px 6px', fontSize: '7.5px',
-                                            background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-                                            color: active ? '#fff' : 'var(--ui-text-dim)',
-                                            boxShadow: 'none',
-                                        }}
+                                        onClick={() => { if (!active) onChange({ ...draft, subtitlePosition: pos }); }}
+                                        className="tpe-mode-btn tpe-sub-pos-btn"
+                                        data-active={active}
                                     >
                                         {lbl}
                                     </button>
@@ -265,8 +282,8 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             onChange={(e) => onChange({ ...draft, subtitleFont: e.target.value as SubtitleFontId })}
                             className="tpe-select"
                         >
-                            {(Object.entries(SUBTITLE_FONT_OPTIONS) as [SubtitleFontId, { label: string }][]).map(([id, opt]) => (
-                                <option key={id} value={id} style={{ background: '#111', color: '#fff' }}>{opt.label}</option>
+                            {SUBTITLE_FONT_ENTRIES.map(([id, opt]) => (
+                                <option key={id} value={id} className="tpe-sub-select-opt">{opt.label}</option>
                             ))}
                         </select>
 
@@ -277,8 +294,8 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             onChange={(e) => onChange({ ...draft, subtitleBackdrop: e.target.value as SubtitleBackdropId })}
                             className="tpe-select"
                         >
-                            {(Object.entries(SUBTITLE_BACKDROP_OPTIONS) as [SubtitleBackdropId, { label: string }][]).map(([id, opt]) => (
-                                <option key={id} value={id} style={{ background: '#111', color: '#fff' }}>{opt.label}</option>
+                            {SUBTITLE_BACKDROP_ENTRIES.map(([id, opt]) => (
+                                <option key={id} value={id} className="tpe-sub-select-opt">{opt.label}</option>
                             ))}
                         </select>
 
@@ -292,20 +309,16 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             width="88px"
                             height="20px"
                             title="Drag or click to set caption font size (18–56px)"
-                            onChange={(v) => onChange({ ...draft, subtitleFontSize: v })}
+                            onChange={handleFontSizeChange}
                         />
 
-                        <div className="tpe-mode-cluster" style={{ padding: '1px', gap: '2px', alignItems: 'center' }}>
+                        <div className="tpe-mode-cluster tpe-sub-action-cluster">
                             <button
                                 type="button"
+                                aria-pressed={showSubtitles}
                                 onClick={() => onChange({ ...draft, showSubtitles: !showSubtitles })}
-                                className="tpe-mode-btn"
-                                style={{
-                                    padding: '2px 6px', fontSize: '8px',
-                                    background: showSubtitles ? 'oklch(from var(--ui-accent) l c h / 0.16)' : 'transparent',
-                                    color: showSubtitles ? 'var(--ui-accent)' : 'var(--ui-text-dim)',
-                                    boxShadow: 'none',
-                                }}
+                                className="tpe-mode-btn tpe-sub-cc-btn"
+                                data-active={showSubtitles}
                                 title="Toggle captions on/off globally"
                             >
                                 CC: {showSubtitles ? "ON" : "OFF"}
@@ -317,13 +330,12 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                                         void navigator.clipboard?.writeText(subtitles.map((s) => s.text).join(' '))?.catch(() => {});
                                     } catch { /* clipboard unavailable on insecure LAN origins */ }
                                 }}
-                                className="tpe-mode-btn"
-                                style={{ padding: '2px 6px', fontSize: '8px', boxShadow: 'none' }}
+                                className="tpe-mode-btn tpe-sub-util-btn"
                                 title="Copy full transcript text"
                             >
                                 COPY
                             </button>
-                            <button type="button" onClick={() => downloadSrtFile(draft)} className="tpe-mode-btn" style={{ padding: '2px 6px', fontSize: '8px', boxShadow: 'none' }} title="Download .SRT file">
+                            <button type="button" onClick={() => downloadSrtFile(draft)} className="tpe-mode-btn tpe-sub-util-btn" title="Download .SRT file">
                                 .SRT
                             </button>
                         </div>
@@ -332,26 +344,18 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
             </div>
 
             {isTranscribing && transcribeProgress && (
-                <div
-                    role="status"
-                    aria-live="polite"
-                    className="tpe-deck-surface tpe-flex-col"
-                    style={{ gap: '5px', padding: '7px 10px' }}
-                >
-                    <div className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '8.5px', fontWeight: 900, letterSpacing: '0.07em', color: 'var(--ui-accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {transcribeProgress.stage}
-                        </span>
-                        <div className="tpe-flex-row tpe-tabular-nums" style={{ alignItems: 'center', gap: '6px', flexShrink: 0, fontSize: '8.5px', fontFamily: 'monospace', fontWeight: 800 }}>
-                            <span style={{ color: 'var(--ui-text)' }}>{transcribeProgress.percent}%</span>
-                            <span style={{ color: 'var(--ui-text-dim)' }}>
+                <div role="status" aria-live="polite" className="tpe-deck-surface tpe-flex-col tpe-sub-progress-card">
+                    <div className="tpe-flex-row tpe-sub-progress-head">
+                        <span className="tpe-sub-progress-stage">{transcribeProgress.stage}</span>
+                        <div className="tpe-flex-row tpe-tabular-nums tpe-sub-progress-meta">
+                            <span className="tpe-sub-progress-pct">{transcribeProgress.percent}%</span>
+                            <span className="tpe-sub-progress-elapsed">
                                 {Math.floor(elapsedSec / 60)}:{String(elapsedSec % 60).padStart(2, '0')}
                             </span>
                             <button
                                 type="button"
                                 onClick={handleCancelTranscribe}
-                                className="tpe-mode-btn"
-                                style={{ padding: '1px 5px', fontSize: '7.5px', color: 'var(--ui-danger)' }}
+                                className="tpe-mode-btn tpe-sub-cancel-btn"
                                 title="Cancel transcription"
                             >
                                 CANCEL
@@ -364,25 +368,19 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={transcribeProgress.percent}
-                        style={{ width: '100%', height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}
+                        aria-valuetext={`${transcribeProgress.percent}% — ${transcribeProgress.stage}`}
+                        className="tpe-sub-progress-track"
                     >
                         <div
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                background: 'var(--ui-accent)',
-                                boxShadow: '0 0 10px oklch(from var(--ui-accent) l c h / 0.6)',
-                                transform: `scaleX(${Math.max(0.02, Math.min(1, transcribeProgress.percent / 100))})`,
-                                transformOrigin: 'left center',
-                                transition: 'transform 0.25s ease-out',
-                            }}
+                            className="tpe-sub-progress-fill"
+                            style={{ transform: `scaleX(${clamp(transcribeProgress.percent / 100, 0.02, 1)})` }}
                         />
                     </div>
                 </div>
             )}
 
             {errorMsg && (
-                <div style={{ fontSize: '9px', color: 'var(--ui-danger)', lineHeight: 1.35, padding: '5px 8px', borderRadius: '6px', background: 'rgba(255,60,60,0.08)', border: '1px solid rgba(255,60,60,0.25)' }}>
+                <div role="alert" className="tpe-sub-error">
                     {errorMsg}
                 </div>
             )}

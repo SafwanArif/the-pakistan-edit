@@ -31,6 +31,14 @@ const FX_GLOSSARY_ITEMS: readonly [token: string, label: string, fx: string][] =
 export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({ mode, onModeChange, onReset, disabled = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [confirmReset, setConfirmReset] = useState(false);
+    const [prevDisabled, setPrevDisabled] = useState(disabled);
+    if (disabled !== prevDisabled) {
+        setPrevDisabled(disabled);
+        if (disabled && (isOpen || confirmReset)) {
+            setIsOpen(false);
+            setConfirmReset(false);
+        }
+    }
     const [animationNonce, setAnimationNonce] = useState(0);
     const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -40,7 +48,8 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
         if (reason === "escape") triggerRef.current?.focus();
     }, []);
 
-    const menuRef = useClickOutside(handleCloseMenu, undefined, isOpen && !disabled);
+    const effectiveOpen = isOpen && !disabled;
+    const menuRef = useClickOutside(handleCloseMenu, undefined, effectiveOpen);
     const logoMotionConfig = useMemo<LogoMotionConfig>(() => ({ previewNonce: animationNonce }), [animationNonce]);
 
     const handleReset = () => {
@@ -52,7 +61,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
         void Promise.resolve(onReset()).catch((err) => console.error("RESET_DRAFT_ERROR:", err));
     };
 
-    const triggerLabel = isOpen ? "Close mode and draft menu" : "Open mode and draft menu";
+    const triggerLabel = effectiveOpen ? "Close mode and draft menu" : "Open mode and draft menu";
     const modeLabel = mode === "carousel" ? "CAROUSEL" : "VIDEO";
 
     return (
@@ -62,7 +71,7 @@ export const CommandRibbonMenu: React.FC<CommandRibbonMenuProps> = React.memo(({
                 type="button"
                 disabled={disabled}
                 aria-label={triggerLabel}
-                aria-expanded={isOpen}
+                aria-expanded={effectiveOpen}
                 aria-haspopup="menu"
                 title={triggerLabel}
                 className="tpe-logo-wrapper tpe-ribbon-trigger"

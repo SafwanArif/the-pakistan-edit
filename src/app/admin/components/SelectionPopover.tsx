@@ -1,14 +1,25 @@
-import React, { useCallback, useEffect, useRef } from "react";
+"use client";
+
+import React, { useCallback, useLayoutEffect, useRef } from "react";
+import { Draft, VideoDraft, PostMode, clamp } from "@/types/news";
 import { useEditorialSelection } from "../hooks/useEditorialSelection";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { DraftResolver, VideoDraftResolver } from "../utils/dataAccessors";
 import { FormatButton } from "./EditorialTools";
-import { Draft, VideoDraft, PostMode } from "@/types/news";
 
 const BOLD_EFFECT_STYLE: React.CSSProperties = { fontWeight: 800 };
 const ITALIC_EFFECT_STYLE: React.CSSProperties = { fontStyle: 'italic' };
 const LABEL_BOX_EFFECT_STYLE: React.CSSProperties = { background: '#000', padding: '2px 6px', borderRadius: '3px', fontWeight: 700, border: '1px solid var(--ui-border)' };
 const WHITE_BOX_EFFECT_STYLE: React.CSSProperties = { background: '#fff', padding: '2px 6px', borderRadius: '3px', fontWeight: 700 };
+
+const FORMAT_BUTTONS = [
+    { label: "GOLD", syntax: "==", color: "var(--ui-accent)", effectStyle: BOLD_EFFECT_STYLE },
+    { label: "BOLD", syntax: "**", color: "var(--ui-text)", effectStyle: BOLD_EFFECT_STYLE },
+    { label: "ITALIC", syntax: "*", color: "var(--ui-text-dim)", effectStyle: ITALIC_EFFECT_STYLE },
+    { label: "GREEN", syntax: "~~", color: "var(--ui-indicator)", effectStyle: BOLD_EFFECT_STYLE },
+    { label: "LABEL BOX", syntax: "^^", color: "#fff", effectStyle: LABEL_BOX_EFFECT_STYLE },
+    { label: "WHITE BOX", syntax: "&&", color: "#050505", effectStyle: WHITE_BOX_EFFECT_STYLE },
+] as const;
 
 interface SelectionPopoverProps {
     postMode: PostMode;
@@ -42,7 +53,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
         activeSceneTime,
         fieldId: selection?.fieldId ?? "",
     });
-    useEffect(() => {
+    useLayoutEffect(() => {
         stateRef.current = {
             postMode,
             carouselDraft,
@@ -70,11 +81,10 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     if (!selection) return null;
 
     const isVideo = postMode === 'video' || selection.fieldId.startsWith('video-');
-
     const val = isVideo
         ? (videoDraft ? VideoDraftResolver.get(selection.fieldId, videoDraft, activeSceneTime) : "")
         : (carouselDraft ? (DraftResolver.get(selection.fieldId, carouselDraft) as string) : "");
-    
+
     const inCommandRibbon = selection.ribbonBottom !== null;
     const flipBelow = inCommandRibbon || selection.y < 64;
     const skyboxTop = inCommandRibbon
@@ -83,30 +93,31 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = React.memo(({
     const skyboxLeft = isMobile
         ? '50%'
         : (typeof window !== 'undefined'
-            ? Math.min(Math.max(selection.x, 180), window.innerWidth - 180)
+            ? clamp(selection.x, 180, Math.max(180, window.innerWidth - 180))
             : selection.x);
 
     return (
-        <div 
+        <div
+            role="toolbar"
+            aria-label="Text formatting"
             data-editorial-popover="true"
-            className="tpe-selection-popover"
-            style={{ 
-                position: 'fixed',
-                left: skyboxLeft, 
-                top: skyboxTop,
-                transform: flipBelow ? 'translateX(-50%)' : 'translate(-50%, -100%)',
-                pointerEvents: 'auto',
-                userSelect: 'none',
-                marginTop: flipBelow ? '0' : '-8px',
-                zIndex: 9999
-            }}
+            data-flip={flipBelow ? "below" : "above"}
+            className="tpe-selection-popover tpe-selection-popover-layer"
+            style={{ left: skyboxLeft, top: skyboxTop }}
         >
-            <FormatButton label="GOLD" syntaxOpen="==" syntaxClose="==" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-accent)" effectStyle={BOLD_EFFECT_STYLE} />
-            <FormatButton label="BOLD" syntaxOpen="**" syntaxClose="**" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text)" effectStyle={BOLD_EFFECT_STYLE} />
-            <FormatButton label="ITALIC" syntaxOpen="*" syntaxClose="*" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-text-dim)" effectStyle={ITALIC_EFFECT_STYLE} />
-            <FormatButton label="GREEN" syntaxOpen="~~" syntaxClose="~~" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="var(--ui-indicator)" effectStyle={BOLD_EFFECT_STYLE} />
-            <FormatButton label="LABEL BOX" syntaxOpen="^^" syntaxClose="^^" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#fff" effectStyle={LABEL_BOX_EFFECT_STYLE} />
-            <FormatButton label="WHITE BOX" syntaxOpen="&&" syntaxClose="&&" fieldId={selection.fieldId} value={val} onUpdate={handleUpdate} color="#050505" effectStyle={WHITE_BOX_EFFECT_STYLE} />
+            {FORMAT_BUTTONS.map((btn) => (
+                <FormatButton
+                    key={btn.label}
+                    label={btn.label}
+                    syntaxOpen={btn.syntax}
+                    syntaxClose={btn.syntax}
+                    fieldId={selection.fieldId}
+                    value={val}
+                    onUpdate={handleUpdate}
+                    color={btn.color}
+                    effectStyle={btn.effectStyle}
+                />
+            ))}
         </div>
     );
 });

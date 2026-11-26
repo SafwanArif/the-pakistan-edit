@@ -73,9 +73,10 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
     onPreviewStar,
     onJumpCue,
 }) => {
-    const wordmarkOn = draft.motionWordmark !== false;
-    const textOn = draft.motionText !== false;
-    const logoOn = draft.enableLogo !== false;
+    const masterMotionOn = draft.enableMotion !== false;
+    const wordmarkOn = masterMotionOn && draft.motionWordmark !== false;
+    const textOn = masterMotionOn && draft.motionText !== false;
+    const logoOn = masterMotionOn && draft.enableLogo !== false;
     const [activeAsset, setActiveAsset] = useState<MotionAssetTab | null>(null);
     const addCueBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -197,9 +198,9 @@ export const MotionControlDeck: React.FC<MotionControlDeckProps> = React.memo(({
         const nextLogo = channel === 'logo' ? !logoOn : logoOn;
         onUpdateDraft({
             ...draft,
-            ...(channel === 'wordmark' ? { motionWordmark: nextWordmark } : {}),
-            ...(channel === 'text' ? { motionText: nextText } : {}),
-            ...(channel === 'logo' ? { enableLogo: nextLogo } : {}),
+            motionWordmark: nextWordmark,
+            motionText: nextText,
+            enableLogo: nextLogo,
             enableMotion: nextWordmark || nextText || nextLogo,
         });
     };

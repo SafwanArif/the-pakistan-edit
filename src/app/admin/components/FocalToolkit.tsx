@@ -2,7 +2,6 @@
 
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Draft, clamp } from "@/types/news";
-import { revokeBlobUrl } from "@/utils/idUtils";
 import { DraftResolver, getEffectiveSlideAsset } from "../utils/dataAccessors";
 import { FocalSlider } from "./FocalSlider";
 import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
@@ -58,8 +57,11 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
         const s = stateRef.current;
         const newSlides = [...(s.activeDraft.extraSlides || [])];
         newSlides.push({ heading: '', content: '', sourceName: '', sourcePrefix: 'SOURCE:' });
-        s.updateDraft({ ...s.activeDraft, extraSlides: newSlides });
-        void Promise.resolve(s.setStep(2 + newSlides.length)).catch((err) => console.error("FOCAL_STEP_ERROR:", err));
+        const nextDraft = { ...s.activeDraft, extraSlides: newSlides };
+        const nextStep = 2 + newSlides.length;
+        stateRef.current = { ...s, activeDraft: nextDraft, currentStep: nextStep };
+        s.updateDraft(nextDraft);
+        void Promise.resolve(s.setStep(nextStep)).catch((err) => console.error("FOCAL_STEP_ERROR:", err));
     }, []);
 
     const handleRemoveAngle = useCallback((e: React.MouseEvent) => {
@@ -71,7 +73,6 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
         slides.splice(index, 1);
         let nextSlideAssets = s.activeDraft.slideAssets;
         if (s.activeDraft.slideAssets) {
-            revokeBlobUrl(s.activeDraft.slideAssets[s.currentStep]?.image);
             const rebuilt: NonNullable<Draft["slideAssets"]> = {};
             for (const [key, val] of Object.entries(s.activeDraft.slideAssets)) {
                 const num = Number(key);
@@ -80,8 +81,11 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
             }
             nextSlideAssets = rebuilt;
         }
-        s.updateDraft({ ...s.activeDraft, extraSlides: slides, slideAssets: nextSlideAssets });
-        void Promise.resolve(s.setStep(s.currentStep - 1)).catch((err) => console.error("FOCAL_STEP_ERROR:", err));
+        const nextDraft = { ...s.activeDraft, extraSlides: slides, slideAssets: nextSlideAssets };
+        const nextStep = s.currentStep - 1;
+        stateRef.current = { ...s, activeDraft: nextDraft, currentStep: nextStep };
+        s.updateDraft(nextDraft);
+        void Promise.resolve(s.setStep(nextStep)).catch((err) => console.error("FOCAL_STEP_ERROR:", err));
     }, []);
 
     const handleCycleSnap = useCallback(() => {
@@ -164,10 +168,10 @@ export const FocalToolkit: React.FC<FocalToolkitProps> = React.memo(({
             {isExpanded && hasImage && (
                 <div role="dialog" aria-label="Focal controls" className="tpe-flex-col tpe-glass-panel tpe-hud-container tpe-focal-hud-panel">
                     <div className="tpe-hud-grid">
-                        <FocalSlider id="zoom" label="ZOOM" min={10} max={800} value={asset.imageZoom ?? 100} field="imageZoom" unit="%" onChange={handleSliderChange} />
-                        <FocalSlider id="posX" label="PAN X" min={0} max={100} value={asset.imagePosX ?? 50} field="imagePosX" onChange={handleSliderChange} />
-                        <FocalSlider id="posY" label="PAN Y" min={0} max={100} value={asset.imagePosY ?? 50} field="imagePosY" onChange={handleSliderChange} />
-                        <FocalSlider id="posY_sq" label="PAN Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY ?? 50} field="imagePosY_Square" onChange={handleSliderChange} />
+                        <FocalSlider label="ZOOM" min={10} max={800} value={asset.imageZoom ?? 100} field="imageZoom" unit="%" onChange={handleSliderChange} />
+                        <FocalSlider label="PAN X" min={0} max={100} value={asset.imagePosX ?? 50} field="imagePosX" onChange={handleSliderChange} />
+                        <FocalSlider label="PAN Y" min={0} max={100} value={asset.imagePosY ?? 50} field="imagePosY" onChange={handleSliderChange} />
+                        <FocalSlider label="PAN Y (FB)" min={0} max={100} value={asset.imagePosY_Square ?? asset.imagePosY ?? 50} field="imagePosY_Square" onChange={handleSliderChange} />
 
                         <div className="tpe-flex-row tpe-focal-snap-wrap">
                             <button

@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useCallback, useMemo, useState } from "react";
-import { getSlideCount, type Draft, type PostMode } from "@/types/news";
+import type { Draft, PostMode } from "@/types/news";
 import { EDITORIAL_STEPS } from "@/config/editorial";
 import { useAssetManager } from "../hooks/useAssetManager";
-import { useClickOutside } from "../hooks/useClickOutside";
+import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
 import { DraftResolver } from "../utils/dataAccessors";
 import { UnifiedAssetToolbar } from "./UnifiedAssetToolbar";
 import { EditorialField } from "./EditorialField";
@@ -28,7 +28,12 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
 }) => {
     const { resolving, resolve, ingestFile, clearAsset } = useAssetManager(draft, onChange);
     const [focusedField, setFocusedField] = useState<string | null>(null);
-    const clearFocusedField = useCallback(() => setFocusedField(null), []);
+    const clearFocusedField = useCallback((reason?: CloseReason) => {
+        setFocusedField(null);
+        if (reason === "escape" && document.activeElement instanceof HTMLElement && document.activeElement.closest(".tpe-header-tools")) {
+            document.activeElement.blur();
+        }
+    }, []);
     const headerRowRef = useClickOutside(clearFocusedField, '[data-editorial-popover="true"]', focusedField !== null);
 
     const handleUpload = useCallback((file: File) => ingestFile(file, step), [ingestFile, step]);
@@ -56,7 +61,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
     if (!config) return null;
 
     const activeFocusedField = focusedField && config.fields.includes(focusedField) ? focusedField : null;
-    const isLastStep = step >= getSlideCount(draft);
+    const isLastStep = step >= 2 + (draft.extraSlides?.length || 0);
     const stepValid = config.required.every((f) => {
         if (f === "image") return !!draft.image;
         const val = DraftResolver.get(f, draft);
@@ -97,7 +102,7 @@ export const DraftForm: React.FC<DraftFormProps> = React.memo(({
                                             onFocusField={handleFocusField}
                                         />
                                     </div>
-                                    {i === 0 && config.fields.length > 1 && !activeFocusedField && <span className="tpe-separator-pipe">|</span>}
+                                    {i === 0 && config.fields.length > 1 && !activeFocusedField && <span aria-hidden="true" className="tpe-separator-pipe">|</span>}
                                 </React.Fragment>
                             );
                         })}

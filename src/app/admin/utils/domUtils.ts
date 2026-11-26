@@ -79,3 +79,13 @@ export const safeReleasePointerCapture = (el: Element | null, pointerId: number)
 export const isPrimaryPointer = (e: { pointerType: string; button: number }): boolean => e.pointerType !== "mouse" || e.button === 0;
 export const isActivationKey = (key: string): boolean => key === "Enter" || key === " ";
 export const stopEventPropagation = (e: { stopPropagation: () => void }): void => e.stopPropagation();
+
+/** Validates media URLs before clearing/replacing loaded studio assets (rejects javascript: and garbage text). */
+export const isSafeMediaUrl = (raw: string, allowDataOrBlob = false): boolean => {
+    const trimmed = raw.trim();
+    if (!trimmed) return false;
+    if (/^https?:\/\/\S+$/i.test(trimmed)) return true;
+    if (/^\/(?!\/)\S+$/.test(trimmed)) return true;
+    if (allowDataOrBlob && (/^data:image\/[a-z0-9.+-]+;base64,/i.test(trimmed) || /^blob:/i.test(trimmed))) return true;
+    return false;
+};

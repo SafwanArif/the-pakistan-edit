@@ -385,7 +385,7 @@ export const MasterChecklistControl: React.FC<MasterChecklistControlProps> = Rea
     const isMobile = variant === "mobile";
 
     return (
-        <div className={`${isMobile ? "tpe-mobile-checklist-control" : "tpe-desktop-checklist-control"} tpe-checklist-anchor`}>
+        <div className={isMobile ? "tpe-checklist-anchor" : "tpe-desktop-checklist-control tpe-checklist-anchor"}>
             <button
                 ref={triggerRef}
                 type="button"

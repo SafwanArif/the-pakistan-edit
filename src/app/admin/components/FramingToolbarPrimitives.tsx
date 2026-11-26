@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef } from "react";
 import { formatPreciseTimecode, parseTimeInput } from "@/types/news";
+import { useBufferedInput } from "../hooks/useBufferedInput";
 
 export const CONTAIN_ZOOM_OPTIONS = [
     { label: 'CONTAIN', val: 0, title: 'Contain: preserve the full 4:5 frame (0%)' },
@@ -65,17 +66,18 @@ export const KeyframeTimeChip: React.FC<{
     onCommitTime?: (nextTime: number) => void;
     onNudgeTime?: (deltaFrames: number) => void;
 }> = React.memo(({ prefix, time, active, accentColor, title, onSelect, onCommitTime, onNudgeTime }) => {
-    const [editingText, setEditingText] = useState<string | null>(null);
-    const cancelEditRef = useRef(false);
     const timeBtnRef = useRef<HTMLButtonElement>(null);
-
-    const restoreFocus = () => {
-        requestAnimationFrame(() => timeBtnRef.current?.focus());
-    };
+    const buffered = useBufferedInput({
+        onCommit: (raw) => {
+            const parsed = parseTimeInput(raw);
+            if (parsed !== null && Math.abs(parsed - time) > 0.0001) onCommitTime?.(parsed);
+        },
+        onExit: () => { requestAnimationFrame(() => timeBtnRef.current?.focus()); },
+    });
 
     const accentVar = { "--chip-accent": accentColor } as React.CSSProperties;
 
-    if (editingText !== null && onCommitTime) {
+    if (buffered.isEditing && onCommitTime) {
         return (
             <input
                 type="text"
@@ -88,29 +90,11 @@ export const KeyframeTimeChip: React.FC<{
                 aria-label={`${prefix} timestamp`}
                 className="tpe-tabular-nums tpe-kf-chip-input"
                 style={accentVar}
-                value={editingText}
-                onFocus={(e) => { cancelEditRef.current = false; e.currentTarget.select(); }}
-                onChange={(e) => setEditingText(e.target.value)}
-                onBlur={() => {
-                    if (cancelEditRef.current) {
-                        cancelEditRef.current = false;
-                        setEditingText(null);
-                        return;
-                    }
-                    const parsed = parseTimeInput(editingText);
-                    if (parsed !== null && Math.abs(parsed - time) > 0.0001) onCommitTime(parsed);
-                    setEditingText(null);
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                        e.currentTarget.blur();
-                        restoreFocus();
-                    } else if (e.key === 'Escape') {
-                        cancelEditRef.current = true;
-                        setEditingText(null);
-                        restoreFocus();
-                    }
-                }}
+                value={buffered.draftText ?? ""}
+                onFocus={buffered.handleFocus}
+                onChange={(e) => buffered.handleChange(e.target.value)}
+                onBlur={buffered.handleBlur}
+                onKeyDown={buffered.handleKeyDown}
             />
         );
     }
@@ -138,7 +122,7 @@ export const KeyframeTimeChip: React.FC<{
                     ref={timeBtnRef}
                     type="button"
                     aria-label={`Edit ${prefix} timestamp`}
-                    onClick={() => setEditingText(formatted)}
+                    onClick={() => buffered.startEdit(formatted)}
                     title="Click to edit timestamp"
                     className="tpe-kf-chip-time"
                 >

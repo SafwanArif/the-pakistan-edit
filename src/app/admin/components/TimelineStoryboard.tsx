@@ -3,9 +3,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { VideoDraft, TimelineScene, timelineTimeToMediaTime, wrapMediaTime, getSceneBoundaries, getSceneRoleColor, resolveSceneFade, setSceneClipStartOffset, getTimelineStructure, clamp } from "@/types/news";
 import { generateShortId, revokeBlobUrl } from "@/utils/idUtils";
-import { useClickOutside } from "../hooks/useClickOutside";
+import { useClickOutside, type CloseReason } from "../hooks/useClickOutside";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { canUseServerIngest } from "../utils/serverCapabilities";
+import { canUseServerIngest, deleteServerCachedVideo } from "../utils/serverCapabilities";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 import { getSceneSubtitles } from "./SubtitleEditorTray";
 import { MasterChecklistControl } from "./MasterChecklistPopover";
@@ -35,16 +35,15 @@ interface PlaybackModeControlProps {
     variant: 'mobile' | 'desktop';
 }
 
-const PlaybackModeControl: React.FC<PlaybackModeControlProps> = ({ playbackMode, onTogglePlaybackMode, variant }) => (
-    <div className={`tpe-mode-cluster tpe-${variant}-playback-mode`} role="group" aria-label="Playback mode" style={{ padding: '2px', gap: '2px' }}>
+const PlaybackModeControl: React.FC<PlaybackModeControlProps> = React.memo(({ playbackMode, onTogglePlaybackMode, variant }) => (
+    <div className={`tpe-mode-cluster tpe-${variant}-playback-mode tpe-playback-mode`} role="group" aria-label="Playback mode">
         <button
             type="button"
             aria-pressed={playbackMode === 'play-all'}
             aria-label="Play All: play straight through all angle cards"
             onClick={() => { if (playbackMode !== 'play-all') onTogglePlaybackMode(); }}
-            className="tpe-mode-btn"
+            className="tpe-mode-btn tpe-playback-mode-btn"
             data-active={playbackMode === 'play-all'}
-            style={{ width: '22px', height: '20px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             title="Play All: play straight through all angle cards"
         >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 4l10 8-10 8V4zm12 1h2v14h-2V5z" /></svg>
@@ -54,15 +53,15 @@ const PlaybackModeControl: React.FC<PlaybackModeControlProps> = ({ playbackMode,
             aria-pressed={playbackMode === 'loop-angle'}
             aria-label="Loop Angle: repeat only the active angle card"
             onClick={() => { if (playbackMode !== 'loop-angle') onTogglePlaybackMode(); }}
-            className="tpe-mode-btn"
+            className="tpe-mode-btn tpe-playback-mode-btn"
             data-active={playbackMode === 'loop-angle'}
-            style={{ width: '22px', height: '20px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             title="Loop Angle: repeat only the active angle card"
         >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>
         </button>
     </div>
-);
+));
+PlaybackModeControl.displayName = "PlaybackModeControl";
 
 /** Maps a subtitle segment's media start time inside a scene card to a clamped timeline seek target. */
 export function resolveSceneSubtitleSeekTime(
@@ -88,28 +87,45 @@ export function resolveSceneSubtitleSeekTime(
 
 /** Left-pane scene storyboard inspector with 60s monetisation pacing and cold-open hook extractor. */
 export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(({
-    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, onScrubStart, onScrubMove, onScrubEnd, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer
+    draft, onChange, currentTime, liveClock, isPlaying = false, seekTo, onScrubStart, onScrubMove, onScrubEnd, playbackMode = 'play-all', onTogglePlaybackMode, isMobileDrawerOpen, onCloseMobileDrawer,
 }) => {
     const isMobileViewport = useMediaQuery("(max-width: 900px)");
-    const [openChecklistIdx, setOpenChecklistIdx] = useState<number | null>(null);
-    const [openSubSceneIdx, setOpenSubSceneIdx] = useState<number | null>(null);
+    const [openChecklistSceneId, setOpenChecklistSceneId] = useState<string | null>(null);
+    const [openSubSceneId, setOpenSubSceneId] = useState<string | null>(null);
     const [drawerSceneIndex, setDrawerSceneIndex] = useState<number | null>(null);
     const [sceneUploadWarning, setSceneUploadWarning] = useState<string | null>(null);
-    const checklistRef = useClickOutside(() => setOpenChecklistIdx(null), undefined, openChecklistIdx !== null);
-    const handleCloseDrawer = useCallback(() => {
-        setDrawerSceneIndex(null);
-        onCloseMobileDrawer();
-    }, [onCloseMobileDrawer]);
-    const mobileDrawerRef = useClickOutside(handleCloseDrawer, '[data-mobile-scenes-trigger="true"]', isMobileDrawerOpen);
-    const mobileSceneRackRef = useRef<HTMLDivElement>(null);
-    const suppressScrollSeekRef = useRef(false);
+    const closeChecklist = useCallback((reason?: CloseReason) => {
+        setOpenChecklistSceneId(null);
+        if (reason === "escape") {
+            const btn = document.querySelector('.tpe-scene-checklist-btn[data-active="true"]') as HTMLElement | null;
+            btn?.focus();
+        }
+    }, []);
+    const checklistRef = useClickOutside(closeChecklist, undefined, openChecklistSceneId !== null);
     const carouselSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const offsetSeekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const suppressScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleCloseDrawer = useCallback((reason?: CloseReason) => {
+        if (carouselSeekTimeoutRef.current !== null) {
+            clearTimeout(carouselSeekTimeoutRef.current);
+            carouselSeekTimeoutRef.current = null;
+        }
+        setDrawerSceneIndex(null);
+        onCloseMobileDrawer();
+        if (reason === "escape") {
+            requestAnimationFrame(() => {
+                (document.querySelector('[data-mobile-scenes-trigger="true"]') as HTMLElement | null)?.focus();
+            });
+        }
+    }, [onCloseMobileDrawer]);
+    const mobileDrawerRef = useClickOutside(handleCloseDrawer, '[data-mobile-scenes-trigger="true"], .tpe-checklist-popover', isMobileDrawerOpen);
+    const mobileSceneRackRef = useRef<HTMLDivElement>(null);
+    const suppressScrollSeekRef = useRef(false);
     const scenes = useMemo(() => draft.scenes || [], [draft.scenes]);
     const carouselItemCount = scenes.length + (draft.enableOutro ? 1 : 0);
 
     const sceneBoundaries = useMemo(() => getSceneBoundaries(scenes), [scenes]);
-    const { hasReHook, storyIdx: setupIdx, preStoryDur, storyOffset } = useMemo(() => getTimelineStructure(scenes), [scenes]);
+    const { hasReHook, storyIdx, preStoryDur, storyOffset } = useMemo(() => getTimelineStructure(scenes), [scenes]);
     const sceneSubtitlesList = useMemo(
         () => sceneBoundaries.map((b) => (draft.subtitles?.length ? getSceneSubtitles(draft, b.start, b.end) : [])),
         [draft, sceneBoundaries]
@@ -135,17 +151,33 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         maxCarouselIndex
     );
     const mobileSceneIndexRef = useRef(mobileSceneIndex);
-    useEffect(() => {
+    const currentTimeRef = useRef(currentTime);
+    const draftRef = useRef(draft);
+    const sceneBoundariesRef = useRef(sceneBoundaries);
+    const structRef = useRef({ preStoryDur, storyOffset });
+    useLayoutEffect(() => {
         mobileSceneIndexRef.current = mobileSceneIndex;
-    }, [mobileSceneIndex]);
+        currentTimeRef.current = currentTime;
+        draftRef.current = draft;
+        sceneBoundariesRef.current = sceneBoundaries;
+        structRef.current = { preStoryDur, storyOffset };
+    });
+
+    const getLiveMediaTime = useCallback(() => {
+        const liveT = liveClock ? liveClock.getTime() : currentTimeRef.current;
+        return Math.round(timelineTimeToMediaTime(draftRef.current, liveT) * 10) / 10;
+    }, [liveClock]);
 
     useEffect(() => {
         const rack = mobileSceneRackRef.current;
-        if (isMobileDrawerOpen && rack?.clientWidth) {
-            suppressScrollSeekRef.current = true;
-            rack.scrollTo({ left: mobileSceneIndexRef.current * rack.clientWidth, behavior: 'auto' });
-            requestAnimationFrame(() => { suppressScrollSeekRef.current = false; });
-        }
+        if (!isMobileDrawerOpen || !rack?.clientWidth) return;
+        suppressScrollSeekRef.current = true;
+        rack.scrollTo({ left: mobileSceneIndexRef.current * rack.clientWidth, behavior: 'auto' });
+        const rafId = requestAnimationFrame(() => { suppressScrollSeekRef.current = false; });
+        return () => {
+            cancelAnimationFrame(rafId);
+            suppressScrollSeekRef.current = false;
+        };
     }, [carouselItemCount, isMobileDrawerOpen]);
 
     useLayoutEffect(() => {
@@ -177,6 +209,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     useEffect(() => () => {
         if (carouselSeekTimeoutRef.current !== null) clearTimeout(carouselSeekTimeoutRef.current);
         if (offsetSeekTimeoutRef.current !== null) clearTimeout(offsetSeekTimeoutRef.current);
+        if (suppressScrollTimerRef.current !== null) clearTimeout(suppressScrollTimerRef.current);
     }, []);
 
     const handleMobileSceneScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
@@ -185,10 +218,11 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         const nextIndex = clamp(Math.round(rack.scrollLeft / rack.clientWidth), 0, carouselItemCount - 1);
         const prevIndex = mobileSceneIndexRef.current;
         mobileSceneIndexRef.current = nextIndex;
-        setDrawerSceneIndex((current) => current === nextIndex ? current : nextIndex);
+        setDrawerSceneIndex((current) => (current === nextIndex ? current : nextIndex));
         if (suppressScrollSeekRef.current || nextIndex === prevIndex) return;
         if (carouselSeekTimeoutRef.current !== null) clearTimeout(carouselSeekTimeoutRef.current);
         carouselSeekTimeoutRef.current = setTimeout(() => {
+            carouselSeekTimeoutRef.current = null;
             if (nextIndex < scenes.length) {
                 const bounds = sceneBoundaries[nextIndex];
                 if (bounds) seekTo(bounds.start);
@@ -198,29 +232,39 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
         }, 140);
     }, [carouselItemCount, draft.enableOutro, outroStart, sceneBoundaries, scenes.length, seekTo]);
 
-    const draftRef = useRef(draft);
-    const sceneBoundariesRef = useRef(sceneBoundaries);
-    const structRef = useRef({ preStoryDur, storyOffset });
-    useEffect(() => {
-        draftRef.current = draft;
-        sceneBoundariesRef.current = sceneBoundaries;
-        structRef.current = { preStoryDur, storyOffset };
-    });
+    const releaseSceneMedia = (mediaUrl?: string) => {
+        revokeBlobUrl(mediaUrl);
+        deleteServerCachedVideo(mediaUrl);
+    };
 
     const updateScene = useCallback((index: number, patch: Partial<TimelineScene>) => {
         const curDraft = draftRef.current;
         const updated = [...(curDraft.scenes || [])];
         const prev = updated[index];
         if (!prev) return;
-        if ('mediaUrl' in patch && patch.mediaUrl !== prev.mediaUrl) revokeBlobUrl(prev.mediaUrl);
+        if ('mediaUrl' in patch && patch.mediaUrl !== prev.mediaUrl) releaseSceneMedia(prev.mediaUrl);
         updated[index] = { ...prev, ...patch };
         onChange({ ...curDraft, scenes: updated });
     }, [onChange]);
 
+    const updateSceneById = useCallback((sceneId: string, patch: Partial<TimelineScene>): boolean => {
+        const curScenes = draftRef.current.scenes || [];
+        const liveIdx = curScenes.findIndex((s) => s.id === sceneId);
+        if (liveIdx < 0) return false;
+        updateScene(liveIdx, patch);
+        return true;
+    }, [updateScene]);
+
     const handleDeleteScene = useCallback((index: number) => {
         const curDraft = draftRef.current;
         const curScenes = curDraft.scenes || [];
-        revokeBlobUrl(curScenes[index]?.mediaUrl);
+        const removed = curScenes[index];
+        if (curScenes.length <= 1 || !removed) return;
+        releaseSceneMedia(removed.mediaUrl);
+        ingestAbortsRef.current.get(removed.id)?.abort();
+        ingestAbortsRef.current.delete(removed.id);
+        setOpenChecklistSceneId((prev) => (prev === removed.id ? null : prev));
+        setOpenSubSceneId((prev) => (prev === removed.id ? null : prev));
         onChange({ ...curDraft, scenes: curScenes.filter((_, i) => i !== index) });
     }, [onChange]);
 
@@ -264,7 +308,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
 
     const handleAddReHook = useCallback(() => {
         const curDraft = draftRef.current;
-        const updated = [...(curDraft.scenes || [])];
+        const curScenes = curDraft.scenes || [];
+        if (getTimelineStructure(curScenes).hasReHook) return;
+        const updated = [...curScenes];
         updated.splice(1, 0, { id: `rehook-${generateShortId()}`, title: "WAIT — HERE IS ==THE REAL SHIFT==", subtitle: "The overlooked turning point right before the full picture emerged.", duration: 4, mediaType: 'video', shareHookText: true });
         onChange({ ...curDraft, scenes: updated });
     }, [onChange]);
@@ -275,17 +321,22 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     }, [seekTo]);
 
     const handleToggleChecklist = useCallback((idx: number) => {
-        setOpenChecklistIdx((prev) => (prev === idx ? null : idx));
+        const sceneId = draftRef.current.scenes?.[idx]?.id;
+        if (!sceneId) return;
+        setOpenChecklistSceneId((prev) => (prev === sceneId ? null : sceneId));
     }, []);
 
     const handleToggleSubs = useCallback((idx: number) => {
-        setOpenSubSceneIdx((prev) => (prev === idx ? null : idx));
+        const sceneId = draftRef.current.scenes?.[idx]?.id;
+        if (!sceneId) return;
+        setOpenSubSceneId((prev) => (prev === sceneId ? null : sceneId));
     }, []);
 
-    const ingestAbortRef = useRef<AbortController | null>(null);
-
-    useEffect(() => {
-        return () => ingestAbortRef.current?.abort();
+    const ingestAbortsRef = useRef<Map<string, AbortController>>(new Map());
+    useEffect(() => () => {
+        const aborts = ingestAbortsRef.current;
+        aborts.forEach((ctrl) => ctrl.abort());
+        aborts.clear();
     }, []);
 
     const handleUpdateSubtitleText = useCallback((id: string, text: string) => {
@@ -312,43 +363,87 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
     }, [seekTo]);
 
     const handleSceneMediaUpload = useCallback(async (idx: number, file: File) => {
-        revokeBlobUrl(draftRef.current.scenes?.[idx]?.mediaUrl);
-        if (file.type.startsWith('image/')) {
-            updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'image', mediaName: file.name });
-            return;
-        }
-        ingestAbortRef.current?.abort();
-        const controller = new AbortController();
-        ingestAbortRef.current = controller;
+        const targetSceneId = draftRef.current.scenes?.[idx]?.id;
+        if (!targetSceneId) return;
+        ingestAbortsRef.current.get(targetSceneId)?.abort();
+        ingestAbortsRef.current.delete(targetSceneId);
         setSceneUploadWarning(null);
-        if (!(await canUseServerIngest())) {
-            if (controller.signal.aborted) return;
-            updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'video', mediaName: file.name });
+        if (file.type.startsWith('image/')) {
+            const imgUrl = URL.createObjectURL(file);
+            if (!updateSceneById(targetSceneId, { mediaUrl: imgUrl, mediaType: 'image', mediaName: file.name })) {
+                revokeBlobUrl(imgUrl);
+            }
             return;
         }
+        const controller = new AbortController();
+        ingestAbortsRef.current.set(targetSceneId, controller);
         try {
+            if (!(await canUseServerIngest())) {
+                if (controller.signal.aborted) return;
+                const localUrl = URL.createObjectURL(file);
+                if (!updateSceneById(targetSceneId, { mediaUrl: localUrl, mediaType: 'video', mediaName: file.name })) {
+                    revokeBlobUrl(localUrl);
+                }
+                return;
+            }
             const formData = new FormData();
             formData.append('file', file, file.name);
             const res = await fetch('/api/video/ingest', { method: 'POST', body: formData, signal: controller.signal });
+            if (controller.signal.aborted) return;
             if (res.ok) {
                 const { url } = await res.json() as { url: string };
-                updateScene(idx, { mediaUrl: url, mediaType: 'video', mediaName: file.name });
+                if (controller.signal.aborted) {
+                    deleteServerCachedVideo(url);
+                    return;
+                }
+                if (!updateSceneById(targetSceneId, { mediaUrl: url, mediaType: 'video', mediaName: file.name })) {
+                    deleteServerCachedVideo(url);
+                }
                 return;
             }
             setSceneUploadWarning(`Server ingest failed (${res.status}) for ${file.name} — previewing local copy.`);
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') return;
+            if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
             setSceneUploadWarning(`Server ingest unavailable for ${file.name} — previewing local copy.`);
+        } finally {
+            if (ingestAbortsRef.current.get(targetSceneId) === controller) {
+                ingestAbortsRef.current.delete(targetSceneId);
+            }
         }
-        updateScene(idx, { mediaUrl: URL.createObjectURL(file), mediaType: 'video', mediaName: file.name });
-    }, [updateScene]);
+        if (controller.signal.aborted) return;
+        const localUrl = URL.createObjectURL(file);
+        if (!updateSceneById(targetSceneId, { mediaUrl: localUrl, mediaType: 'video', mediaName: file.name })) {
+            revokeBlobUrl(localUrl);
+        }
+    }, [updateSceneById]);
 
     const handleMobileSceneNavigate = useCallback((direction: -1 | 1) => {
         const rack = mobileSceneRackRef.current;
         if (!rack || carouselItemCount === 0) return;
-        const nextIndex = clamp(mobileSceneIndex + direction, 0, carouselItemCount - 1);
+        const nextIndex = clamp(mobileSceneIndexRef.current + direction, 0, carouselItemCount - 1);
+        if (nextIndex === mobileSceneIndexRef.current) return;
+        if (carouselSeekTimeoutRef.current !== null) {
+            clearTimeout(carouselSeekTimeoutRef.current);
+            carouselSeekTimeoutRef.current = null;
+        }
+        suppressScrollSeekRef.current = true;
+        if (suppressScrollTimerRef.current !== null) clearTimeout(suppressScrollTimerRef.current);
+        suppressScrollTimerRef.current = setTimeout(() => {
+            suppressScrollTimerRef.current = null;
+            suppressScrollSeekRef.current = false;
+        }, 350);
+        mobileSceneIndexRef.current = nextIndex;
+        setDrawerSceneIndex(nextIndex);
         rack.scrollTo({ left: nextIndex * rack.clientWidth, behavior: 'smooth' });
-    }, [carouselItemCount, mobileSceneIndex]);
+        const curScenes = draftRef.current.scenes || [];
+        if (nextIndex < curScenes.length) {
+            const bounds = sceneBoundariesRef.current[nextIndex];
+            if (bounds) seekTo(bounds.start);
+        } else if (draftRef.current.enableOutro) {
+            const endTime = sceneBoundariesRef.current[sceneBoundariesRef.current.length - 1]?.end ?? 0;
+            seekTo(endTime);
+        }
+    }, [carouselItemCount, seekTo]);
 
     const hasVideo = Boolean(draft.videoUrl);
     const hasSubtitles = Boolean(draft.subtitles?.length);
@@ -363,7 +458,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                     className="tpe-mobile-scenes-backdrop"
                     aria-hidden="true"
                     tabIndex={-1}
-                    onClick={handleCloseDrawer}
+                    onClick={() => handleCloseDrawer()}
                 />
             )}
             <aside
@@ -372,17 +467,13 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                 role={isMobileDrawerOpen ? "region" : undefined}
                 aria-label={isMobileDrawerOpen ? "Scenes drawer" : "Timeline Storyboard"}
                 data-mobile-open={isMobileDrawerOpen}
-                className="tpe-flex-col tpe-storyboard-pane"
-                style={{
-                    gap: '12px',
-                    flexShrink: 0,
-                }}
+                className="tpe-flex-col tpe-storyboard-pane tpe-storyboard-aside"
             >
                 <div className="tpe-mobile-scenes-header">
-                    <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '8px' }}>
-                        <div className="tpe-flex-col" style={{ gap: '1px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: 900, color: 'var(--ui-accent)', letterSpacing: '0.08em' }}>SCENES</span>
-                            <span aria-live="polite" style={{ fontSize: '8px', fontWeight: 800, color: 'var(--ui-text-dim)', letterSpacing: '0.06em' }}>
+                    <div className="tpe-flex-row tpe-storyboard-head-left">
+                        <div className="tpe-flex-col tpe-storyboard-title-col">
+                            <span className="tpe-storyboard-title">SCENES</span>
+                            <span aria-live="polite" className="tpe-storyboard-counter tpe-tabular-nums">
                                 {carouselItemCount > 0 ? `SCENE ${mobileSceneIndex + 1} OF ${carouselItemCount}` : 'NO SCENES'}
                             </span>
                         </div>
@@ -395,20 +486,20 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                         )}
                         {isMobileViewport && <MasterChecklistControl variant="mobile" draft={draft} onChange={onChange} />}
                     </div>
-                    <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '6px' }}>
+                    <div className="tpe-flex-row tpe-storyboard-nav-right">
                         <button type="button" aria-label="Previous card" disabled={mobileSceneIndex <= 0} onClick={() => handleMobileSceneNavigate(-1)} className="tpe-cycle-arrow" title="Previous card">
                             <ChevronLeftIcon />
                         </button>
                         <button type="button" aria-label="Next card" disabled={mobileSceneIndex >= carouselItemCount - 1} onClick={() => handleMobileSceneNavigate(1)} className="tpe-cycle-arrow" title="Next card">
                             <ChevronRightIcon />
                         </button>
-                        <button type="button" aria-label="Close Scenes drawer" onClick={handleCloseDrawer} className="tpe-asset-btn" style={{ width: '26px', height: '26px', fontSize: '16px' }} title="Close Scenes drawer">×</button>
+                        <button type="button" aria-label="Close Scenes drawer" onClick={() => handleCloseDrawer("escape")} className="tpe-asset-btn tpe-storyboard-close" title="Close Scenes drawer">×</button>
                     </div>
                 </div>
 
                 {/* Timeline Control HUD */}
-                <div className="tpe-flex-col tpe-storyboard-timeline-hud" style={{ gap: '8px', borderBlockEnd: '1px solid var(--ui-border)', paddingBlockEnd: '12px' }}>
-                    <div className="tpe-flex-row" style={{ alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="tpe-flex-col tpe-storyboard-timeline-hud tpe-storyboard-hud">
+                    <div className="tpe-flex-row tpe-storyboard-hud-row">
                         {onTogglePlaybackMode && (
                             <PlaybackModeControl
                                 playbackMode={playbackMode}
@@ -422,9 +513,9 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
 
                 {/* Scene Storyboard Rack */}
                 {sceneUploadWarning && (
-                    <div role="status" className="tpe-flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '5px 8px', borderRadius: '6px', background: 'rgba(250, 204, 21, 0.1)', border: '1px solid rgba(250, 204, 21, 0.35)', color: '#facc15', fontSize: '9px' }}>
+                    <div role="status" aria-live="polite" className="tpe-flex-row tpe-storyboard-warn">
                         <span>{sceneUploadWarning}</span>
-                        <button type="button" aria-label="Dismiss warning" onClick={() => setSceneUploadWarning(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', padding: '0 2px' }}>×</button>
+                        <button type="button" aria-label="Dismiss warning" onClick={() => setSceneUploadWarning(null)} className="tpe-storyboard-warn-close">×</button>
                     </div>
                 )}
                 <div
@@ -439,7 +530,7 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                         const bounds = sceneBoundaries[idx];
                         const isSceneActive = Boolean(bounds && currentTime >= bounds.start && currentTime < bounds.end);
                         const isReHook = idx === 1 && hasReHook;
-                        const isSetup = idx === setupIdx;
+                        const isSetup = idx === storyIdx;
                         const sceneLabel = idx === 0
                             ? "01. THE HOOK"
                             : (isReHook ? "02. RE-HOOK" : (isSetup ? `${String(idx + 1).padStart(2, '0')}. THE STORY` : `${String(idx + 1).padStart(2, '0')}. ANGLE`));
@@ -449,17 +540,17 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                         const localTime = bounds
                             ? (isSceneActive ? clamp(currentTime - bounds.start, 0, scene.duration) : (currentTime >= bounds.end ? scene.duration : 0))
                             : 0;
-                        const isChecklistOpen = openChecklistIdx === idx;
+                        const isChecklistOpen = openChecklistSceneId === scene.id;
                         return (
                             <SceneStoryboardCard
-                                key={`${scene.id}-${idx}`}
+                                key={scene.id || idx}
                                 idx={idx}
                                 scene={scene}
                                 sceneLabel={sceneLabel}
                                 roleColor={roleColor}
                                 carouselItemCount={carouselItemCount}
                                 canDelete={scenes.length > 1}
-                                bounds={bounds ? { start: bounds.start, end: bounds.end } : undefined}
+                                bounds={bounds}
                                 isSceneActive={isSceneActive}
                                 isReHook={isReHook}
                                 isSetup={isSetup}
@@ -472,12 +563,13 @@ export const TimelineStoryboard: React.FC<TimelineStoryboardProps> = React.memo(
                                 keyframes={draft.keyframes}
                                 localTime={localTime}
                                 currentMediaTime={scene.clipStartOffset !== undefined ? 0 : currentMediaTime}
+                                getLiveMediaTime={getLiveMediaTime}
                                 liveClock={liveClock}
                                 isPlaying={isPlaying}
                                 rf={rf}
                                 cardSubs={cardSubs}
                                 isChecklistOpen={isChecklistOpen}
-                                isSubsOpen={openSubSceneIdx === idx}
+                                isSubsOpen={openSubSceneId === scene.id}
                                 checklistRef={isChecklistOpen ? checklistRef : undefined}
                                 checklistDraft={isChecklistOpen ? draft : undefined}
                                 onSeekTo={seekTo}

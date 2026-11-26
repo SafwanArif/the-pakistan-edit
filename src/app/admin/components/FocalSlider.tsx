@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React from "react";
 import { clamp } from "@/types/news";
+import { useBufferedInput } from "../hooks/useBufferedInput";
 
 interface FocalSliderProps {
-    id: string;
     label: string;
     min: number;
     max: number;
@@ -16,9 +16,6 @@ interface FocalSliderProps {
 
 /** Controlled slider and numeric input pair for focal zoom and pan coordinates. */
 export const FocalSlider = React.memo<FocalSliderProps>(({ label, min, max, value, field, unit = "", onChange }) => {
-    const [textInput, setTextInput] = useState<string | null>(null);
-    const cancelEditRef = useRef(false);
-
     const safeValue = Number.isFinite(value) ? clamp(Math.round(value), min, max) : min;
     const committedText = `${safeValue}${unit}`;
     const commitNumeric = (raw: string) => {
@@ -27,6 +24,11 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ label, min, max, valu
         const next = clamp(parsed, min, max);
         if (next !== safeValue) onChange(field, next, min, max);
     };
+    const buffered = useBufferedInput({
+        onCommit: commitNumeric,
+        sanitize: (raw) => raw.replace(/[^0-9]/g, ""),
+        deferSelect: true,
+    });
 
     return (
         <div className="tpe-focal-slider">
@@ -39,7 +41,7 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ label, min, max, valu
                     min={min}
                     max={max}
                     value={safeValue}
-                    onChange={(e) => { setTextInput(null); commitNumeric(e.target.value); }}
+                    onChange={(e) => { buffered.clearEdit(); commitNumeric(e.target.value); }}
                 />
             </div>
             <input
@@ -52,18 +54,11 @@ export const FocalSlider = React.memo<FocalSliderProps>(({ label, min, max, valu
                 autoCorrect="off"
                 autoCapitalize="off"
                 aria-label={`${label} numeric value`}
-                value={textInput ?? committedText}
-                onFocus={(e) => { cancelEditRef.current = false; setTextInput(String(safeValue)); e.currentTarget.select(); }}
-                onChange={(e) => setTextInput(e.target.value.replace(/[^0-9]/g, ""))}
-                onBlur={() => {
-                    if (cancelEditRef.current) { cancelEditRef.current = false; setTextInput(null); return; }
-                    if (textInput !== null) commitNumeric(textInput);
-                    setTextInput(null);
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                    else if (e.key === "Escape") { cancelEditRef.current = true; setTextInput(null); e.currentTarget.blur(); }
-                }}
+                value={buffered.draftText ?? committedText}
+                onFocus={(e) => buffered.handleFocus(e, String(safeValue))}
+                onChange={(e) => buffered.handleChange(e.target.value)}
+                onBlur={buffered.handleBlur}
+                onKeyDown={buffered.handleKeyDown}
             />
         </div>
     );

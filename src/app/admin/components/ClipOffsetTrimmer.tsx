@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React from "react";
 import Image from "next/image";
 import { formatTimecode, parseTimeInput } from "@/types/news";
 import { stopEventPropagation } from "../utils/domUtils";
+import { useBufferedInput } from "../hooks/useBufferedInput";
 
 type NudgeSpec = readonly [label: string, delta: number];
 const NEG_NUDGES: readonly NudgeSpec[] = [['-1s', -1], ['-.1', -0.1]];
@@ -29,19 +30,25 @@ interface ClipOffsetTrimmerProps {
     clipStartOffset?: number;
     sceneDuration: number;
     currentMediaTime: number;
+    getLiveMediaTime?: () => number;
     isCardActive?: boolean;
     onSetOffset: (sceneIdx: number, nextOffset?: number, snapToStart?: boolean) => void;
 }
 
 /** Precision clip start-point trimmer for 01. The Hook, 02. Re-Hook, and 03. The Story. */
 export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
-    sceneIdx, mode, clipStartOffset, sceneDuration, currentMediaTime, isCardActive = false, onSetOffset,
+    sceneIdx, mode, clipStartOffset, sceneDuration, currentMediaTime, getLiveMediaTime, isCardActive = false, onSetOffset,
 }) => {
     const hasOffset = typeof clipStartOffset === "number" && Number.isFinite(clipStartOffset);
     const safeOffset = hasOffset ? Math.max(0, clipStartOffset) : 0;
     const isHook = mode !== 'setup';
-    const [draftText, setDraftText] = useState<string | null>(null);
-    const cancelEditRef = useRef(false);
+    const buffered = useBufferedInput({
+        resetKey: `${sceneIdx}:${hasOffset}`,
+        onCommit: (raw) => {
+            const parsed = parseTimeInput(raw);
+            if (parsed !== null && Math.abs(parsed - safeOffset) > 0.001) onSetOffset(sceneIdx, parsed, true);
+        },
+    });
 
     const renderNudges = (nudges: readonly NudgeSpec[]) =>
         nudges.map(([label, delta]) => (
@@ -71,7 +78,7 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                         aria-label="Reset clip start offset to 00:00.0"
                         title="Reset to clip start (00:00.0)"
                         className="tpe-asset-btn tpe-offset-reset"
-                        onClick={() => { cancelEditRef.current = false; setDraftText(null); onSetOffset(sceneIdx, undefined, true); }}
+                        onClick={() => { buffered.clearEdit(); onSetOffset(sceneIdx, undefined, true); }}
                     >
                         ↺
                     </button>
@@ -93,21 +100,11 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                             aria-label="Clip start offset timecode"
                             title="Type seconds (e.g. 19.7) or MM:SS.d (e.g. 00:19.7)"
                             className="tpe-tabular-nums tpe-offset-input"
-                            value={draftText ?? formatTimecode(safeOffset)}
-                            onFocus={(e) => { cancelEditRef.current = false; setDraftText(formatTimecode(safeOffset)); e.currentTarget.select(); }}
-                            onChange={(e) => setDraftText(e.target.value)}
-                            onBlur={() => {
-                                if (cancelEditRef.current) { cancelEditRef.current = false; setDraftText(null); return; }
-                                if (draftText !== null) {
-                                    const parsed = parseTimeInput(draftText);
-                                    if (parsed !== null && Math.abs(parsed - safeOffset) > 0.001) onSetOffset(sceneIdx, parsed, true);
-                                }
-                                setDraftText(null);
-                            }}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') e.currentTarget.blur();
-                                else if (e.key === 'Escape') { cancelEditRef.current = true; setDraftText(null); e.currentTarget.blur(); }
-                            }}
+                            value={buffered.draftText ?? formatTimecode(safeOffset)}
+                            onFocus={(e) => buffered.handleFocus(e, formatTimecode(safeOffset))}
+                            onChange={(e) => buffered.handleChange(e.target.value)}
+                            onBlur={buffered.handleBlur}
+                            onKeyDown={buffered.handleKeyDown}
                         />
                         {renderNudges(POS_NUDGES)}
                     </div>
@@ -115,9 +112,12 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
                     <>
                         <button
                             type="button"
-                            className="tpe-nav-btn tpe-offset-set-btn"
+                            className="tpe-nav-btn tpe-tabular-nums tpe-offset-set-btn"
                             title="Capture the current monitor timestamp as the start point"
-                            onClick={() => onSetOffset(sceneIdx, Number.isFinite(currentMediaTime) ? currentMediaTime : 0, true)}
+                            onClick={() => {
+                                const liveT = getLiveMediaTime ? getLiveMediaTime() : currentMediaTime;
+                                onSetOffset(sceneIdx, Number.isFinite(liveT) ? liveT : 0, true);
+                            }}
                         >
                             🎯 {MODE_LABELS[mode].cta} ({formatTimecode(currentMediaTime)})
                         </button>
@@ -127,7 +127,7 @@ export const ClipOffsetTrimmer: React.FC<ClipOffsetTrimmerProps> = React.memo(({
             </div>
 
             {hasOffset && (
-                <div className="tpe-offset-summary">
+                <div className="tpe-offset-summary tpe-tabular-nums">
                     {isHook ? 'Hook clip:' : 'Starts at:'} <strong>{formatTimecode(safeOffset)}</strong>
                     {isHook && <> → <strong>{formatTimecode(safeOffset + sceneDuration)}</strong></>}
                 </div>

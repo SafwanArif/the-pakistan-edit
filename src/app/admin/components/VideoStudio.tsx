@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { PostMode, getTotalVideoDuration, getActiveSceneAtTime } from "@/types/news";
 import { useVideoDraftState } from "../hooks/useVideoDraftState";
+import { setExportStatus } from "../utils/exportEngine";
 import { VideoDraftForm } from "./VideoDraftForm";
 import { StudioVideoMonitor } from "./StudioVideoMonitor";
 import { TimelineStoryboard } from "./TimelineStoryboard";
@@ -19,11 +20,13 @@ interface VideoStudioProps {
  * playback when Video mode is active, and loads `videoExportEngine` strictly on export click.
  */
 export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
-    const [exporting, setExporting] = useState<string | null>(null);
+    const [exportStatus, setExportStatusState] = useState<string | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
     const [isMobileScenesOpen, setIsMobileScenesOpen] = useState(false);
     const [isCardScrubbing, setIsCardScrubbing] = useState(false);
     const [cardScrubTime, setCardScrubTime] = useState<number | null>(null);
     const wasPlayingBeforeCardScrubRef = useRef(false);
+    const isCardScrubbingRef = useRef(false);
     const audioUnlockRef = useRef<(() => void) | null>(null);
     const exportAbortRef = useRef<AbortController | null>(null);
 
@@ -51,10 +54,11 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
 
     const videoDraftRef = useRef(videoDraft);
     const isPlayingRef = useRef(isPlaying);
-    useEffect(() => {
+    useLayoutEffect(() => {
         videoDraftRef.current = videoDraft;
         isPlayingRef.current = isPlaying;
-    }, [videoDraft, isPlaying]);
+        isCardScrubbingRef.current = isCardScrubbing;
+    });
 
     const handleRegisterAudioUnlock = useCallback((unlock: (() => void) | null) => {
         audioUnlockRef.current = unlock;
@@ -68,6 +72,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     }, [togglePlay]);
 
     const handleCardScrubStart = useCallback(() => {
+        isCardScrubbingRef.current = true;
         setIsCardScrubbing(true);
         wasPlayingBeforeCardScrubRef.current = isPlayingRef.current;
         if (isPlayingRef.current) {
@@ -77,12 +82,13 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     }, [togglePlay]);
 
     const handleCardScrubEnd = useCallback((finalTime: number) => {
+        isCardScrubbingRef.current = false;
         setCardScrubTime(null);
         setIsCardScrubbing(false);
         seekTo(finalTime);
         if (wasPlayingBeforeCardScrubRef.current) {
             wasPlayingBeforeCardScrubRef.current = false;
-            handleTogglePlay();
+            if (!isPlayingRef.current) handleTogglePlay();
         }
     }, [seekTo, handleTogglePlay]);
 
@@ -90,51 +96,64 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
         exportAbortRef.current?.abort();
     }, []);
 
+    const handleCloseExport = useCallback(() => {
+        setExportStatus(setExportStatusState, null);
+    }, []);
+
     const handleCancelExport = useCallback(() => {
         exportAbortRef.current?.abort();
         exportAbortRef.current = null;
-        setExporting(null);
+        setIsExporting(false);
+        setExportStatus(setExportStatusState, null);
     }, []);
 
-    const handleExportVideoOverlay = useCallback(async () => {
+    const runExport = useCallback(async (kind: 'overlay' | 'mp4') => {
         exportAbortRef.current?.abort();
         const controller = new AbortController();
         exportAbortRef.current = controller;
+        setIsExporting(true);
         const onStatus = (msg: string | null) => {
-            if (!controller.signal.aborted) setExporting(msg);
+            if (!controller.signal.aborted) setExportStatusState(msg);
         };
         try {
-            const { runVideoOverlayExport } = await import("../utils/videoExportEngine");
-            await runVideoOverlayExport(videoDraftRef.current, onStatus, controller.signal);
-        } catch (e) {
-            console.error("ADMIN_VIDEO_OVERLAY_EXPORT_INTERCEPT:", e);
+            const mod = await import("../utils/videoExportEngine");
+            if (kind === 'overlay') {
+                await mod.runVideoOverlayExport(videoDraftRef.current, onStatus, controller.signal);
+            } else {
+                await mod.runVideoMP4Export(videoDraftRef.current, onStatus, controller.signal);
+            }
+        } catch (err) {
+            console.error(kind === 'overlay' ? "VIDEO_OVERLAY_EXPORT_ERROR:" : "VIDEO_MP4_EXPORT_ERROR:", err);
+            if (!controller.signal.aborted) {
+                setExportStatus(onStatus, `Export Error: ${err instanceof Error ? err.message : "Export failed"}`, 4000);
+            }
         } finally {
-            if (exportAbortRef.current === controller) exportAbortRef.current = null;
+            if (exportAbortRef.current === controller) {
+                exportAbortRef.current = null;
+                setIsExporting(false);
+            }
         }
     }, []);
 
-    const handleExportVideoMP4 = useCallback(async () => {
-        exportAbortRef.current?.abort();
-        const controller = new AbortController();
-        exportAbortRef.current = controller;
-        const onStatus = (msg: string | null) => {
-            if (!controller.signal.aborted) setExporting(msg);
-        };
-        try {
-            const { runVideoMP4Export } = await import("../utils/videoExportEngine");
-            await runVideoMP4Export(videoDraftRef.current, onStatus, controller.signal);
-        } catch (e) {
-            console.error("ADMIN_VIDEO_MP4_EXPORT_INTERCEPT:", e);
-        } finally {
-            if (exportAbortRef.current === controller) exportAbortRef.current = null;
-        }
-    }, []);
+    const handleExportVideoOverlay = useCallback(() => void runExport('overlay'), [runExport]);
+    const handleExportVideoMP4 = useCallback(() => void runExport('mp4'), [runExport]);
 
     const handleTogglePlaybackMode = useCallback(() => {
         setPlaybackMode((m) => (m === 'play-all' ? 'loop-angle' : 'play-all'));
     }, [setPlaybackMode]);
     const handleToggleMobileScenes = useCallback(() => setIsMobileScenesOpen((open) => !open), []);
-    const handleCloseMobileScenes = useCallback(() => setIsMobileScenesOpen(false), []);
+    const handleCloseMobileScenes = useCallback(() => {
+        setIsMobileScenesOpen(false);
+        if (isCardScrubbingRef.current) {
+            isCardScrubbingRef.current = false;
+            setCardScrubTime(null);
+            setIsCardScrubbing(false);
+            if (wasPlayingBeforeCardScrubRef.current) {
+                wasPlayingBeforeCardScrubRef.current = false;
+                if (!isPlayingRef.current) handleTogglePlay();
+            }
+        }
+    }, [handleTogglePlay]);
 
     const activeVideoScene = useMemo(
         () => getActiveSceneAtTime(videoDraft, currentTime),
@@ -150,13 +169,15 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
     }, [videoDraft.scenes, activeVideoScene.sceneIndex, activeVideoScene.isOutro]);
 
     const totalVideoDuration = useMemo(() => getTotalVideoDuration(videoDraft), [videoDraft]);
+    const activeCompanionAudioUrl = videoDraft.videoUrl?.startsWith("blob:") ? companionAudioUrl : undefined;
+    const isOverlayOpen = Boolean(exportStatus);
 
     if (!isMounted) return null;
 
     return (
         <>
-            <header className="command-ribbon">
-                <div className="tpe-flex-row" style={{ flex: 1 }}>
+            <header className="command-ribbon" inert={isOverlayOpen}>
+                <div className="tpe-flex-row">
                     <VideoDraftForm
                         draft={videoDraft}
                         onChange={updateVideoDraft}
@@ -165,7 +186,7 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         onClearVideo={clearVideo}
                         onReset={resetVideoDraft}
                         onUploadVideo={ingestVideoBlob}
-                        isExporting={!!exporting}
+                        isExporting={isExporting}
                         mode={mode}
                         onModeChange={onModeChange}
                         activeSceneIndex={activeVideoScene.sceneIndex}
@@ -174,17 +195,17 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                 </div>
             </header>
 
-            {exporting && (
+            {exportStatus && (
                 <ExportOverlay
-                    status={exporting}
-                    onClose={() => setExporting(null)}
+                    status={exportStatus}
+                    onClose={handleCloseExport}
                     onCancel={handleCancelExport}
                 />
             )}
 
-            <main className="sandbox-grid">
+            <main className="sandbox-grid" inert={isOverlayOpen}>
                 <div className="tpe-nle-split-pane">
-                    {/* 🏛️ LEFT PANE: Dedicated Timeline Storyboard & Production Inspector */}
+                    {/* Left Pane: Dedicated Timeline Storyboard & Production Inspector */}
                     <TimelineStoryboard
                         draft={videoDraft}
                         onChange={updateVideoDraft}
@@ -201,10 +222,10 @@ export default function VideoStudio({ mode, onModeChange }: VideoStudioProps) {
                         onCloseMobileDrawer={handleCloseMobileScenes}
                     />
 
-                    {/* 🏛️ RIGHT PANE: Focused Program Monitor with Platform Switcher & Docked Transport */}
+                    {/* Right Pane: Focused Program Monitor with Platform Switcher & Docked Transport */}
                     <StudioVideoMonitor
                         draft={videoDraft}
-                        companionAudioUrl={companionAudioUrl}
+                        companionAudioUrl={activeCompanionAudioUrl}
                         updateDraft={updateVideoDraft}
                         isPlaying={isPlaying}
                         togglePlay={handleTogglePlay}

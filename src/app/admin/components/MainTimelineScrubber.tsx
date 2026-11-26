@@ -31,7 +31,7 @@ const MainTimelineSegments = React.memo<{
             const displayLabel = !isNarrow ? m.label : (segW >= 1.2 ? m.shortLabel : undefined);
             return (
                 <div
-                    key={`${m.id}-${idx}`}
+                    key={m.id || idx}
                     className="tpe-main-scrubber-seg"
                     data-active={idx === activeSegIdx}
                     data-divider={idx < sceneMarkers.length - 1 || outroPct > 0}
@@ -142,6 +142,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     const lastScrubTimeRef = useRef<number | null>(null);
     const activePointerIdRef = useRef<number | null>(null);
     const isDraggingRef = useRef(false);
+    const dragTargetRef = useRef<"hook" | "rehook" | null>(null);
     const handleDragCleanupRef = useRef<((notifyEnd?: boolean) => void) | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragTarget, setDragTarget] = useState<"hook" | "rehook" | null>(null);
@@ -245,7 +246,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
         ? -1
         : sceneMarkers.findIndex((m, idx) => {
             const nextPct = sceneMarkers[idx + 1]?.percent ?? (outroPct > 0 ? 100 - outroPct : 100);
-            return pct >= m.percent && pct < nextPct;
+            return pct >= m.percent && (pct < nextPct || (outroPct === 0 && idx === sceneMarkers.length - 1 && pct === 100));
         });
 
     const cancelTrackDrag = (pointerId?: number) => {
@@ -262,12 +263,13 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
     };
 
     const startHandleDrag = (e: React.PointerEvent<HTMLButtonElement>, target: "hook" | "rehook") => {
-        if (!isPrimaryPointer(e) || dragTarget) return;
+        if (!isPrimaryPointer(e) || dragTargetRef.current || isDraggingRef.current) return;
         e.stopPropagation();
         e.preventDefault();
         const handleEl = e.currentTarget;
         const activePointerId = e.pointerId;
         safeSetPointerCapture(handleEl, activePointerId);
+        dragTargetRef.current = target;
         setDragTarget(target);
         onHookDragStart?.();
         const startX = e.clientX;
@@ -297,6 +299,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
             window.removeEventListener("pointercancel", onCancel);
             handleEl.removeEventListener("lostpointercapture", onLostCapture);
             handleDragCleanupRef.current = null;
+            dragTargetRef.current = null;
             if (notifyEnd && !finished) {
                 finished = true;
                 onHookDragEnd?.(target, moved);
@@ -388,7 +391,7 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                 }}
                 onPointerDown={(e) => {
-                    if (!isPrimaryPointer(e) || isDraggingRef.current) return;
+                    if (!isPrimaryPointer(e) || isDraggingRef.current || dragTargetRef.current) return;
                     safeSetPointerCapture(e.currentTarget, e.pointerId);
                     activePointerIdRef.current = e.pointerId;
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
@@ -476,22 +479,30 @@ export const MainTimelineScrubber: React.FC<MainTimelineScrubberProps> = React.m
                 >
                     <button
                         type="button"
+                        role="slider"
+                        aria-valuemin={0}
+                        aria-valuemax={Math.round(h.maxOff * 10) / 10}
+                        aria-valuenow={Math.round(h.offset * 10) / 10}
+                        aria-valuetext={formatTimecode(h.offset)}
                         draggable={false}
                         aria-label={`${h.label} in-point at ${formatTimecode(h.offset)}. Drag or press arrow keys to adjust, Enter to preview.`}
                         onPointerDown={(e) => startHandleDrag(e, h.role)}
                         onKeyDown={(e) => {
                             if (isActivationKey(e.key)) {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 h.onPreview?.();
                                 return;
                             }
                             const delta = e.shiftKey ? 1 : 0.1;
                             if (e.key === "ArrowRight" || e.key === "ArrowUp") {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 const next = clamp(Math.round((h.offset + delta) * 10) / 10, 0, h.maxOff);
                                 if (next !== h.offset) h.onChange?.(next);
                             } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 const next = clamp(Math.round((h.offset - delta) * 10) / 10, 0, h.maxOff);
                                 if (next !== h.offset) h.onChange?.(next);
                             }

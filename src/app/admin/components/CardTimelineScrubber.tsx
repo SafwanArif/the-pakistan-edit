@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
 import { TimelineKeyframeTrack, TimelinePlayheadNeedle } from "./TimelineMarkers";
-import { isPrimaryPointer, safeReleasePointerCapture, stopEventPropagation } from "../utils/domUtils";
+import { isPrimaryPointer, safeReleasePointerCapture, safeSetPointerCapture, stopEventPropagation } from "../utils/domUtils";
 import type { LivePlaybackClock } from "../utils/livePlaybackClock";
 
 interface CardTimelineScrubberProps {
@@ -68,8 +68,18 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         }
     }, [safeDuration, durLabel]);
 
-    const safeLocalTimeRef = useRef(safeLocalTime);
-    useEffect(() => { safeLocalTimeRef.current = safeLocalTime; }, [safeLocalTime]);
+    const latestRef = useRef({ safeLocalTime, currentTime, onScrubEnd });
+    useLayoutEffect(() => {
+        latestRef.current = { safeLocalTime, currentTime, onScrubEnd };
+    });
+
+    useEffect(() => () => {
+        if (isDraggingRef.current) {
+            isDraggingRef.current = false;
+            activePointerIdRef.current = null;
+            latestRef.current.onScrubEnd?.(latestDragTimeRef.current ?? latestRef.current.currentTime);
+        }
+    }, []);
 
     // Glide active scene card scrubber needle, fill bar, and timestamp at native 120Hz (0 React renders)
     useEffect(() => {
@@ -79,7 +89,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
         const unsubscribe = liveClock.subscribe((frame) => paintDom(frame.time - safeStart, lastState));
         return () => {
             unsubscribe();
-            paintDom(safeLocalTimeRef.current);
+            if (!isDraggingRef.current) paintDom(latestRef.current.safeLocalTime);
         };
     }, [isSceneActive, isPlaying, isDragging, liveClock, safeStart, safeDuration, paintDom]);
 
@@ -158,7 +168,7 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                 }}
                 onPointerDown={(e) => {
                     if (!isPrimaryPointer(e) || isDraggingRef.current) return;
-                    e.currentTarget.setPointerCapture(e.pointerId);
+                    safeSetPointerCapture(e.currentTarget, e.pointerId);
                     activePointerIdRef.current = e.pointerId;
                     dragRectRef.current = trackRef.current?.getBoundingClientRect() ?? null;
                     lastSentSeekRef.current = null;
@@ -188,7 +198,8 @@ export const CardTimelineScrubber: React.FC<CardTimelineScrubberProps> = React.m
                         ref={fillRef}
                         className="tpe-card-scrubber-fill"
                         data-active={isSceneActive}
-                        style={{ transform: `scaleX(${pct / 100})`, willChange: (isSceneActive && isPlaying) || isDragging ? "transform" : undefined }}
+                        data-live={(isSceneActive && isPlaying) || isDragging}
+                        style={{ transform: `scaleX(${pct / 100})` }}
                     />
                 </div>
                 <TimelineKeyframeTrack keyframes={keyframes} rangeStart={safeStart} rangeDuration={safeDuration} currentTime={currentTime} isPlaying={isPlaying} onJump={handleJumpKeyframe} />

@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { clamp, getSlideCount, type Draft, type PostMode } from "@/types/news";
+import { clamp, type Draft, type PostMode } from "@/types/news";
 import { useEditorialState } from "../hooks/useEditorialState";
+import { setExportStatus as setManagedExportStatus } from "../utils/exportEngine";
 import { DraftForm } from "./DraftForm";
 import { OmniPreviewGrid } from "./OmniPreviewGrid";
 import { FocalToolkit } from "./FocalToolkit";
@@ -40,11 +41,13 @@ export default function CarouselStudio({ mode, onModeChange }: { mode: PostMode;
     const exportAbortRef = useRef<AbortController | null>(null);
     const { isMounted, currentStep, setCurrentStep, activeDraft, updateDraft, resetState, undo, redo, canUndo, canRedo } = useEditorialState();
 
-    const totalSteps = getSlideCount(activeDraft);
+    const totalSteps = 2 + (activeDraft.extraSlides?.length || 0);
     const safeStep = Number.isFinite(currentStep) ? clamp(Math.trunc(currentStep), 1, totalSteps) : 1;
 
     useEffect(() => {
-        if (isMounted && currentStep !== safeStep) void setCurrentStep(safeStep);
+        if (isMounted && currentStep !== safeStep) {
+            void Promise.resolve(setCurrentStep(safeStep)).catch((err) => console.error("STEP_HEAL_ERROR:", err));
+        }
     }, [isMounted, currentStep, safeStep, setCurrentStep]);
 
     useEffect(() => () => {
@@ -52,13 +55,15 @@ export default function CarouselStudio({ mode, onModeChange }: { mode: PostMode;
         exportAbortRef.current = null;
     }, []);
 
-    const handleSelectStep = useCallback((stepNum: number) => { void setCurrentStep(stepNum); }, [setCurrentStep]);
+    const handleSelectStep = useCallback((stepNum: number) => {
+        void Promise.resolve(setCurrentStep(stepNum)).catch((err) => console.error("STEP_SELECT_ERROR:", err));
+    }, [setCurrentStep]);
 
     const handleCloseExport = useCallback(() => {
         exportAbortRef.current?.abort();
         exportAbortRef.current = null;
         setIsExporting(false);
-        setExportStatus(null);
+        setManagedExportStatus(setExportStatus, null);
     }, []);
 
     const handleExportBatch = useCallback(async (draft: Draft) => {
@@ -70,11 +75,17 @@ export default function CarouselStudio({ mode, onModeChange }: { mode: PostMode;
         const controller = new AbortController();
         exportAbortRef.current = controller;
         setIsExporting(true);
+        const onStatus = (msg: string | null) => { if (!controller.signal.aborted) setExportStatus(msg); };
         try {
             const { runExportEngine } = await import("../utils/exportEngine");
-            await runExportEngine(draft, (msg) => { if (!controller.signal.aborted) setExportStatus(msg); }, controller.signal);
+            await runExportEngine(draft, onStatus, controller.signal);
         } catch (e) {
-            if (!(e instanceof DOMException && e.name === "AbortError")) console.error("CAROUSEL_EXPORT_ERROR:", e);
+            if (!(e instanceof DOMException && e.name === "AbortError")) {
+                console.error("CAROUSEL_EXPORT_ERROR:", e);
+                if (!controller.signal.aborted) {
+                    setManagedExportStatus(onStatus, `Export Error: ${e instanceof Error ? e.message : "Export failed"}`, 4000);
+                }
+            }
         } finally {
             if (exportAbortRef.current === controller) {
                 exportAbortRef.current = null;

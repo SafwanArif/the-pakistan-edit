@@ -2,31 +2,7 @@
 
 import React from "react";
 import { VideoKeyframe, formatTimecode, clamp } from "@/types/news";
-
-const pairConnectorBaseStyle: React.CSSProperties = {
-    position: "absolute",
-    top: "50%",
-    height: "2px",
-    transform: "translateY(-50%)",
-    background: "linear-gradient(90deg, var(--ui-pre), var(--ui-accent))",
-    boxShadow: "0 0 6px oklch(from var(--ui-accent) l c h / 0.55)",
-    pointerEvents: "none",
-};
-
-const playheadRailBaseStyle: React.CSSProperties = {
-    position: "absolute",
-    inset: 0,
-    pointerEvents: "none",
-};
-
-const playheadNeedleBaseStyle: React.CSSProperties = {
-    position: "absolute",
-    left: 0,
-    top: "50%",
-    transform: "translate(-50%, -50%)",
-    borderRadius: "2px",
-    transition: "height 0.12s ease",
-};
+import { isActivationKey, isPrimaryPointer } from "../utils/domUtils";
 
 interface TimelineKeyframeDiamondProps {
     kf: VideoKeyframe;
@@ -67,46 +43,33 @@ const TimelineKeyframeDiamond: React.FC<TimelineKeyframeDiamondProps> = React.me
                 ? `Cut Keyframe at ${formatTimecode(displayTime)}${pre ? ` • Pre${pre.time !== undefined && pre.time < kf.time ? ` @${formatTimecode(pre.time)}` : ''} ${Math.round(pre.zoom)}%/${Math.round(pre.posX)}% →` : ' • Hold →'} Post ${Math.round(kf.zoom)}%/${Math.round(kf.posX)}%`
                 : `Keyframe at ${formatTimecode(displayTime)} • Zoom ${Math.round(kf.zoom)}% • Pan ${Math.round(kf.posX)}%`;
 
-    const background = variant === 'pre'
-        ? (isAtPlayhead ? "#ffffff" : "var(--ui-pre)")
-        : variant === 'post'
-            ? (isAtPlayhead ? "#ffffff" : "var(--ui-accent)")
-            : isCut
-                ? (isAtPlayhead
-                    ? "linear-gradient(135deg, var(--ui-pre) 48%, #ffffff 52%)"
-                    : "linear-gradient(135deg, color-mix(in oklch, var(--ui-pre) 90%, transparent) 48%, var(--ui-accent) 52%)")
-                : (isAtPlayhead ? "#fff" : "var(--ui-accent)");
+    const cssVariant = variant === 'split' && isCut ? 'split-cut' : variant;
+    const safePct = Number.isFinite(pct) ? clamp(pct, 0, 100) : 0;
 
     return (
         <button
             type="button"
             onPointerDown={(e) => {
+                if (!isPrimaryPointer(e)) return;
+                e.stopPropagation();
+                onJump(jumpTime, jumpSide);
+            }}
+            onKeyDown={(e) => {
+                if (!isActivationKey(e.key)) return;
+                e.preventDefault();
                 e.stopPropagation();
                 onJump(jumpTime, jumpSide);
             }}
             title={title}
             aria-label={title}
-            style={{
-                position: "absolute",
-                left: `${pct}%`,
-                top: "50%",
-                transform: `translate(-50%, -50%) rotate(45deg) scale(${isAtPlayhead ? 1.2 : 1})`,
-                width: `${size}px`,
-                height: `${size}px`,
-                padding: 0,
-                borderRadius: "1.5px",
-                background,
-                border: `1.5px solid ${isAtPlayhead ? (variant === 'pre' ? "var(--ui-pre)" : "var(--ui-accent)") : "#0a0d0c"}`,
-                boxShadow: isAtPlayhead ? `0 0 8px ${variant === 'pre' ? "var(--ui-pre)" : "var(--ui-accent)"}` : "0 0 4px oklch(from var(--ui-accent) l c h / 0.55)",
-                opacity: dimmed ? 0.42 : 1,
-                cursor: "pointer",
-                transition: "transform 0.12s ease, opacity 0.15s ease, background-color 0.12s ease",
-                zIndex,
-            }}
+            className="tpe-kf-diamond"
+            data-variant={cssVariant}
+            data-active={isAtPlayhead}
+            data-dimmed={dimmed}
+            style={{ left: `${safePct}%`, width: `${size}px`, height: `${size}px`, zIndex }}
         />
     );
 });
-
 TimelineKeyframeDiamond.displayName = "TimelineKeyframeDiamond";
 
 interface TimelineKeyframeTrackProps {
@@ -128,6 +91,10 @@ const isKeyframeInRange = (kf: VideoKeyframe, rangeStart: number, rangeEnd: numb
     return (earliest >= rangeStart && earliest <= rangeEnd) || (kf.time >= rangeStart && kf.time <= rangeEnd);
 };
 
+const isKeyframeFocusedAt = (kf: VideoKeyframe, currentTime: number): boolean =>
+    Math.abs(kf.time - currentTime) <= 0.06
+    || (kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(kf.pre.time - currentTime) <= 0.06);
+
 const getFocusedKeyframeKey = (
     keyframes: VideoKeyframe[],
     rangeStart: number,
@@ -136,14 +103,9 @@ const getFocusedKeyframeKey = (
     isPlaying = false
 ): string => {
     if (isPlaying) return "";
-    const rangeEnd = rangeStart + Math.max(0.1, rangeDuration);
-    const kf = keyframes.find((k) =>
-        isKeyframeInRange(k, rangeStart, rangeEnd)
-        && (
-            Math.abs(k.time - currentTime) <= 0.06
-            || (k.easing === 'snap' && k.pre?.time !== undefined && Math.abs(k.pre.time - currentTime) <= 0.06)
-        )
-    );
+    const safeDur = Number.isFinite(rangeDuration) ? Math.max(0.1, rangeDuration) : 0.1;
+    const rangeEnd = rangeStart + safeDur;
+    const kf = keyframes.find((k) => isKeyframeInRange(k, rangeStart, rangeEnd) && isKeyframeFocusedAt(k, currentTime));
     if (!kf) return "";
     const atPost = Math.abs(currentTime - kf.time) <= 0.06 ? 1 : 0;
     const atPre = kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(currentTime - kf.pre.time) <= 0.06 ? 1 : 0;
@@ -161,16 +123,12 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
     zIndex = 2,
     onJump,
 }) => {
-    const safeDur = Math.max(0.1, rangeDuration);
+    const safeDur = Number.isFinite(rangeDuration) ? Math.max(0.1, rangeDuration) : 0.1;
     const rangeEnd = rangeStart + safeDur;
-    const toPct = (t: number) => clamp(((t - rangeStart) / safeDur) * 100, 0, 100);
+    const toPct = (t: number) => Number.isFinite(t) ? clamp(((t - rangeStart) / safeDur) * 100, 0, 100) : 0;
 
     const visibleKeyframes = keyframes.filter((kf) => isKeyframeInRange(kf, rangeStart, rangeEnd));
-
-    const focusedKf = isPlaying ? undefined : visibleKeyframes.find((kf) =>
-        Math.abs(kf.time - currentTime) <= 0.06
-        || (kf.easing === 'snap' && kf.pre?.time !== undefined && Math.abs(kf.pre.time - currentTime) <= 0.06)
-    );
+    const focusedKf = isPlaying ? undefined : visibleKeyframes.find((kf) => isKeyframeFocusedAt(kf, currentTime));
 
     return (
         <>
@@ -186,12 +144,9 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
                     return (
                         <React.Fragment key={kf.id}>
                             <div
-                                style={{
-                                    ...pairConnectorBaseStyle,
-                                    left: `${prePct}%`,
-                                    width: `${Math.max(0, postPct - prePct)}%`,
-                                    zIndex,
-                                }}
+                                aria-hidden="true"
+                                className="tpe-kf-connector"
+                                style={{ left: `${prePct}%`, width: `${Math.max(0, postPct - prePct)}%`, zIndex }}
                             />
                             <TimelineKeyframeDiamond
                                 kf={kf}
@@ -253,7 +208,6 @@ export const TimelineKeyframeTrack: React.FC<TimelineKeyframeTrackProps> = React
     && getFocusedKeyframeKey(prev.keyframes, prev.rangeStart, prev.rangeDuration, prev.currentTime, Boolean(prev.isPlaying))
         === getFocusedKeyframeKey(next.keyframes, next.rangeStart, next.rangeDuration, next.currentTime, Boolean(next.isPlaying))
 );
-
 TimelineKeyframeTrack.displayName = "TimelineKeyframeTrack";
 
 interface TimelinePlayheadNeedleProps {
@@ -273,26 +227,22 @@ export const TimelinePlayheadNeedle: React.FC<TimelinePlayheadNeedleProps> = Rea
     width = 2,
     zIndex = 5,
     railRef,
-}) => (
-    <div
-        ref={railRef}
-        style={{
-            ...playheadRailBaseStyle,
-            transform: `translate3d(${pct}%, 0, 0)`,
-            willChange: active ? "transform" : undefined,
-            zIndex,
-        }}
-    >
+}) => {
+    const safePct = Number.isFinite(pct) ? clamp(pct, 0, 100) : 0;
+    return (
         <div
-            style={{
-                ...playheadNeedleBaseStyle,
-                width: `${width}px`,
-                height: `${height}px`,
-                background: active ? "#fff" : "var(--ui-accent)",
-                boxShadow: active ? "0 0 8px var(--ui-accent)" : "none",
-            }}
-        />
-    </div>
-));
-
+            ref={railRef}
+            aria-hidden="true"
+            className="tpe-playhead-rail"
+            data-active={active}
+            style={{ transform: `translate3d(${safePct}%, 0, 0)`, zIndex }}
+        >
+            <div
+                className="tpe-playhead-needle"
+                data-active={active}
+                style={{ width: `${width}px`, height: `${height}px` }}
+            />
+        </div>
+    );
+});
 TimelinePlayheadNeedle.displayName = "TimelinePlayheadNeedle";

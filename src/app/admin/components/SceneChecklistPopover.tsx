@@ -261,8 +261,8 @@ export const SceneChecklistPopover: React.FC<SceneChecklistPopoverProps> = React
             <div className="tpe-scene-checklist-title tpe-tabular-nums">
                 {checklistTitle} ({checks.filter((c) => c.ok).length}/{checks.length})
             </div>
-            {checks.map((c, idx) => (
-                <div key={idx} className="tpe-flex-row tpe-scene-checklist-row" data-ok={c.ok}>
+            {checks.map((c) => (
+                <div key={c.label} className="tpe-flex-row tpe-scene-checklist-row" data-ok={c.ok}>
                     <span>{c.ok ? '✓' : '○'} {c.label}</span>
                     {!c.ok && c.fix && (
                         <button type="button" onClick={c.fix} className="tpe-asset-btn tpe-scene-checklist-fix">

@@ -9,11 +9,12 @@ export default function LandingLogo() {
   return (
     <button
       type="button"
+      translate="no"
       className="tpe-landing-logo-button"
       aria-label="Replay The Pakistan Edit logo animation"
       onClick={() => setReplayCount((count) => count + 1)}
     >
-      <TPEVectorLogo key={replayCount} scale={1.8} animateWordmark />
+      <TPEVectorLogo key={replayCount} scale={1.8} animateWordmark decorative />
     </button>
   );
 }

@@ -1,20 +1,19 @@
 import { VideoDraft, getTimelineStructure } from "@/types/news";
+import { safeSetMediaTime } from "./mediaAsyncHelpers";
 
-/** Returns true when a timeline has non-contiguous clip offsets (Hook/Re-Hook/Story jumps) that benefit from a pre-parked standby deck. */
-const hasNonContiguousVideoCuts = (draft: VideoDraft): boolean => {
+/**
+ * Enables the pre-parked standby deck on desktop for non-contiguous Hook/Re-Hook/Story cuts while keeping
+ * mobile/touch devices on a single warm `<video>` decoder so the mobile OS audio sink avoids cold-unmute swap delay.
+ */
+export const shouldUseStandbyDeck = (draft: VideoDraft, isCompactOrTouch: boolean): boolean => {
+    if (isCompactOrTouch) return false;
     const { hasReHook, hookOffset, rehookOffset, storyOffset } = getTimelineStructure(draft.scenes || []);
     return hasReHook || hookOffset > 0 || rehookOffset > 0 || storyOffset > 0;
 };
 
-/**
- * Enables the pre-parked standby deck on desktop for 0ms cuts while keeping mobile/touch devices
- * on a single warm `<video>` decoder so the mobile OS audio sink never suffers cold-unmute swap delay.
- */
-export const shouldUseStandbyDeck = (draft: VideoDraft, isCompactOrTouch: boolean): boolean =>
-    !isCompactOrTouch && hasNonContiguousVideoCuts(draft);
-
 /** Safely clamps/wraps a source-media seek timestamp inside `[0, duration - 0.01]`. */
 export const clampMediaTarget = (targetMediaTime: number, duration: number): number => {
+    if (!Number.isFinite(targetMediaTime) || targetMediaTime <= 0) return 0;
     const vDur = Number.isFinite(duration) && duration > 0.05 ? duration : 10;
     return targetMediaTime >= vDur ? Math.max(0, vDur - 0.01) : Math.max(0, targetMediaTime % vDur);
 };
@@ -25,13 +24,10 @@ export const getNextCutMediaTarget = (
     activeTime: number,
     isLoopAngle: boolean
 ): number => {
+    const safeActiveTime = Number.isFinite(activeTime) ? Math.max(0, activeTime) : 0;
     const { hasReHook, hookDur, preStoryDur, hookOffset, rehookOffset, storyOffset } = getTimelineStructure(draft.scenes || []);
-    if (activeTime < hookDur) {
-        return isLoopAngle ? hookOffset : (hasReHook ? rehookOffset : storyOffset);
-    }
-    if (hasReHook && activeTime < preStoryDur) {
-        return isLoopAngle ? rehookOffset : storyOffset;
-    }
+    if (safeActiveTime < hookDur) return isLoopAngle ? hookOffset : (hasReHook ? rehookOffset : storyOffset);
+    if (hasReHook && safeActiveTime < preStoryDur) return isLoopAngle ? rehookOffset : storyOffset;
     return hookOffset;
 };
 
@@ -42,7 +38,7 @@ export const preParkStandbyDeck = (standby: HTMLVideoElement | null, targetMedia
     standby.muted = true;
     if (!standby.paused) standby.pause();
     if (!standby.seeking && Math.abs(standby.currentTime - clamped) > 0.04) {
-        standby.currentTime = clamped;
+        safeSetMediaTime(standby, clamped);
     }
 };
 

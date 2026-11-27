@@ -1104,6 +1104,9 @@ describe("Deep-Clean Merger Regressions (Ingest Metadata, Logo Motion & Aspect M
         expect(shouldUseStandbyDeck(cutDraft, true)).toBe(false);
         expect(clampMediaTarget(105, 100)).toBe(99.99);
         expect(clampMediaTarget(19.6, 100)).toBeCloseTo(19.6, 5);
+        expect(clampMediaTarget(Number.NaN, 100)).toBe(0);
+        expect(clampMediaTarget(-5, 100)).toBe(0);
+        expect(clampMediaTarget(Number.POSITIVE_INFINITY, 100)).toBe(0);
 
         // Single-pass evaluateSceneTransition returns identical frozen object mid-scene (zero allocation)
         const midA = evaluateSceneTransition(cutDraft, 20);

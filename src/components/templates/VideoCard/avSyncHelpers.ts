@@ -1,22 +1,15 @@
 /**
  * Pure playback/seek synchronization decision helpers for `useVideoElementSync`.
- * Keeps the single-coordinator state machine, real keyframe scrubbing, and audio-master
- * video-follower lock math directly unit-testable.
+ * Keeps the single-coordinator state machine, boundary cuts, keyframe scrubbing,
+ * and audio-master video-follower lock math directly unit-testable.
  */
-import type { PlaybackSyncProfile } from "@/types/news";
-import { clamp } from "@/types/news";
+import { clamp, getTimelineStructure, type PlaybackSyncProfile, type VideoDraft } from "@/types/news";
 import { findNearestKeyframe } from "@/app/admin/utils/clientMediaInspector";
 
 /** Explicit single-source playback engine state shared across `useVideoElementSync`, `useCompanionAudioLock`, and `useSmoothFramingLoop`. */
 export type PlaybackEngineState = 'idle' | 'seeking' | 'priming' | 'playing' | 'buffering';
 
-type PlaybackSyncAction =
-    | 'outro'
-    | 'scrub'
-    | 'pause-seek'
-    | 'start-play'
-    | 'explicit-play-seek'
-    | 'noop';
+type PlaybackSyncAction = 'outro' | 'scrub' | 'pause-seek' | 'start-play' | 'explicit-play-seek' | 'noop';
 
 interface PlaybackSyncTransitionInput {
     isOutro: boolean;
@@ -27,33 +20,45 @@ interface PlaybackSyncTransitionInput {
     isExplicitSeek: boolean;
 }
 
-/**
- * Classifies each React commit into strictly ONE `<video>` sync action so scrub releases
- * never issue competing duplicate seeks and discrete-gated Story playback never snaps backward
- * to a frozen `currentTime` prop.
- */
-export const resolvePlaybackSyncAction = ({
-    isOutro,
-    isScrubbing,
-    isPlaying,
-    wasPlaying,
-    wasScrubbing,
-    isExplicitSeek,
-}: PlaybackSyncTransitionInput): PlaybackSyncAction => {
-    if (isOutro) return 'outro';
-    if (isScrubbing) return 'scrub';
-    if (!isPlaying) return 'pause-seek';
-    if (!wasPlaying || wasScrubbing) return 'start-play';
-    if (isExplicitSeek) return 'explicit-play-seek';
+/** Classifies each React commit into strictly ONE `<video>` sync action so scrub releases never double-seek. */
+export const resolvePlaybackSyncAction = (input: PlaybackSyncTransitionInput): PlaybackSyncAction => {
+    if (input.isOutro) return 'outro';
+    if (input.isScrubbing) return 'scrub';
+    if (!input.isPlaying) return 'pause-seek';
+    if (!input.wasPlaying || input.wasScrubbing) return 'start-play';
+    if (input.isExplicitSeek) return 'explicit-play-seek';
     return 'noop';
 };
 
-/**
- * Returns the `canplay` priming ceiling before playback starts:
- * - Desktop HTTP 206 streams settle rapidly (`350ms`).
- * - Mobile / `blob:` streams (e.g. 4K AV1 5s-GOP) receive up to `2500ms` so the decoder
- *   finishes buffering future frames (`readyState >= 3`) before the audio clock begins.
- */
+export type BoundaryCutDecision =
+    | { kind: 'transition'; nextTimelineTime: number; targetMediaTime: number }
+    | { kind: 'realign'; targetMediaTime: number }
+    | null;
+
+/** Evaluates Hook / Re-Hook / Story non-contiguous boundary transitions & Story underflow guards. */
+export const resolveBoundaryCut = (
+    draft: VideoDraft,
+    activeTime: number,
+    mediaTime: number,
+    isLoop: boolean
+): BoundaryCutDecision => {
+    const { hasReHook, hookDur, rehookDur, preStoryDur, hookOffset, rehookOffset, storyOffset } = getTimelineStructure(draft.scenes || []);
+    if (hasReHook && activeTime < hookDur && mediaTime >= hookOffset + hookDur - 0.022) {
+        return { kind: 'transition', nextTimelineTime: isLoop ? 0 : hookDur, targetMediaTime: isLoop ? hookOffset : rehookOffset };
+    }
+    if (hasReHook && activeTime >= hookDur && activeTime < preStoryDur && mediaTime >= rehookOffset + rehookDur - 0.022) {
+        return { kind: 'transition', nextTimelineTime: isLoop ? hookDur : preStoryDur, targetMediaTime: isLoop ? rehookOffset : storyOffset };
+    }
+    if (!hasReHook && (hookOffset > 0 || storyOffset > 0) && activeTime < hookDur && mediaTime >= hookOffset + hookDur - 0.022) {
+        return { kind: 'transition', nextTimelineTime: isLoop ? 0 : hookDur, targetMediaTime: isLoop ? hookOffset : storyOffset };
+    }
+    if (storyOffset > 0 && activeTime >= preStoryDur && mediaTime < storyOffset - 0.15) {
+        return { kind: 'realign', targetMediaTime: storyOffset };
+    }
+    return null;
+};
+
+/** `canplay` priming ceiling: 350ms desktop HTTP 206 vs 2500ms mobile/`blob:` long-GOP decoders. */
 export const getCanPlayTimeoutMs = (isMobileOrBlob: boolean): number => (isMobileOrBlob ? 2500 : 350);
 
 /** Active-drag mobile/`blob:` scrub throttle interval (ms) to avoid backlogging long-GOP hardware decoders. */
@@ -66,8 +71,7 @@ export const resolveScrubSeekTarget = (
     useKeyframeSnap: boolean
 ): number => {
     const safe = Math.max(0, Number.isFinite(targetSec) ? targetSec : 0);
-    if (!useKeyframeSnap) return safe;
-    return findNearestKeyframe(keyframeTimes, safe) ?? safe;
+    return useKeyframeSnap ? (findNearestKeyframe(keyframeTimes, safe) ?? safe) : safe;
 };
 
 const VIDEO_FOLLOW_DEADBAND_SEC = 0.05;
@@ -83,35 +87,21 @@ interface VideoFollowAdjustment {
     driftSec: number;
 }
 
-/**
- * Computes how muted `<video>` tracks `<audio>` during decoupled playback:
- * - `<= 50ms` drift: hold pure `1.0x` video rate.
- * - `50ms–500ms` drift: adjust ONLY muted `video.playbackRate` (`0.80x–1.25x`) — audio plays untouched with zero pitch shift.
- * - `> 500ms` persistent drift: re-lock fast `<audio>` (`<15ms` AAC seek) to the painted `videoFrameTimeSec`
- *   instead of seeking slow 4K `<video>` while `<audio>` keeps advancing.
- */
+/** Computes muted `<video>` tracking against `<audio>`: hold `<= 50ms`, rate-pull `50–500ms`, relock `> 500ms`. */
 export const computeVideoToAudioClockAdjustment = (
     videoFrameTimeSec: number,
     audioMasterTimeSec: number
 ): VideoFollowAdjustment => {
+    if (!Number.isFinite(videoFrameTimeSec) || !Number.isFinite(audioMasterTimeSec)) {
+        return { mode: 'hold', videoPlaybackRate: 1, driftSec: 0 };
+    }
     const videoDriftSec = videoFrameTimeSec - audioMasterTimeSec;
     const absDrift = Math.abs(videoDriftSec);
-    if (absDrift <= VIDEO_FOLLOW_DEADBAND_SEC) {
-        return { mode: 'hold', videoPlaybackRate: 1, driftSec: videoDriftSec };
-    }
+    if (absDrift <= VIDEO_FOLLOW_DEADBAND_SEC) return { mode: 'hold', videoPlaybackRate: 1, driftSec: videoDriftSec };
     if (absDrift <= VIDEO_FOLLOW_HARD_SNAP_SEC) {
-        return {
-            mode: 'pull',
-            videoPlaybackRate: Math.round(clamp(1 - videoDriftSec * 0.85, 0.8, 1.25) * 1000) / 1000,
-            driftSec: videoDriftSec,
-        };
+        return { mode: 'pull', videoPlaybackRate: Math.round(clamp(1 - videoDriftSec * 0.85, 0.8, 1.25) * 1000) / 1000, driftSec: videoDriftSec };
     }
-    return {
-        mode: 'snap-audio',
-        videoPlaybackRate: 1,
-        targetAudioTime: Math.max(0, videoFrameTimeSec),
-        driftSec: videoDriftSec,
-    };
+    return { mode: 'snap-audio', videoPlaybackRate: 1, targetAudioTime: Math.max(0, videoFrameTimeSec), driftSec: videoDriftSec };
 };
 
 export interface AvSyncDiagSnapshot {

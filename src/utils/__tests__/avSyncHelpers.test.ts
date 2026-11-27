@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultVideoDraft } from "../../types/news";
 import {
     computeVideoToAudioClockAdjustment,
     createInitialAvSyncDiag,
     getCanPlayTimeoutMs,
+    resolveBoundaryCut,
     resolvePlaybackSyncAction,
     resolveScrubSeekTarget,
 } from "../../components/templates/VideoCard/avSyncHelpers";
@@ -92,6 +94,10 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
         const severe = computeVideoToAudioClockAdjustment(35.0, 37.0);
         expect(severe.mode).toBe("snap-audio");
         expect(severe.targetAudioTime).toBe(35.0);
+
+        // Non-finite inputs must hold safely rather than snapping audio to NaN (P175)
+        expect(computeVideoToAudioClockAdjustment(Number.NaN, 37.0)).toEqual({ mode: "hold", videoPlaybackRate: 1, driftSec: 0 });
+        expect(computeVideoToAudioClockAdjustment(35.0, Number.POSITIVE_INFINITY)).toEqual({ mode: "hold", videoPlaybackRate: 1, driftSec: 0 });
     });
 
     it("snaps active scrub targets onto real parsed keyframes when keyframe-snap mode is active", () => {
@@ -115,5 +121,23 @@ describe("avSyncHelpers — single-coordinator playback sync & audio-master foll
             audioSnaps: 0,
             lastError: null,
         });
+    });
+
+    it("resolves Hook/Re-Hook/Story boundary transitions, loop-angle wraps, and Story underflow realignments (P212)", () => {
+        const draft = createDefaultVideoDraft();
+        draft.scenes = [
+            { id: "scene-1", title: "H", subtitle: "", duration: 4, clipStartOffset: 20 },
+            { id: "rehook-1", title: "R", subtitle: "", duration: 3, clipStartOffset: 35 },
+            { id: "scene-2", title: "S", subtitle: "", duration: 20, clipStartOffset: 10 },
+        ];
+        // Hook -> Re-Hook in play-all vs loop-angle
+        expect(resolveBoundaryCut(draft, 3.9, 23.99, false)).toEqual({ kind: "transition", nextTimelineTime: 4, targetMediaTime: 35 });
+        expect(resolveBoundaryCut(draft, 3.9, 23.99, true)).toEqual({ kind: "transition", nextTimelineTime: 0, targetMediaTime: 20 });
+        // Re-Hook -> Story
+        expect(resolveBoundaryCut(draft, 6.9, 37.99, false)).toEqual({ kind: "transition", nextTimelineTime: 7, targetMediaTime: 10 });
+        expect(resolveBoundaryCut(draft, 6.9, 37.99, true)).toEqual({ kind: "transition", nextTimelineTime: 4, targetMediaTime: 35 });
+        // Story underflow realign & mid-scene null
+        expect(resolveBoundaryCut(draft, 8, 9.5, false)).toEqual({ kind: "realign", targetMediaTime: 10 });
+        expect(resolveBoundaryCut(draft, 8, 12.0, false)).toBeNull();
     });
 });

@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import { DEFAULT_OUTRO_CTA } from "@/types/news";
 import { TPEVectorLogo, type LogoMotionConfig } from "../TPEVectorLogo";
@@ -32,6 +34,8 @@ const CTA_BASE_STYLE: React.CSSProperties = {
     textTransform: 'uppercase',
     maxWidth: '900px',
 };
+const CTA_STYLE_916: React.CSSProperties = { ...CTA_BASE_STYLE, fontSize: '42px' };
+const CTA_STYLE_STD: React.CSSProperties = { ...CTA_BASE_STYLE, fontSize: '32px' };
 
 const HANDLE_STYLE: React.CSSProperties = {
     fontSize: '22px',
@@ -54,23 +58,16 @@ const BADGE_STYLE: React.CSSProperties = {
 
 /** Branded 5-second outro end-card rendered at the end of a video timeline. */
 export const VideoOutroCard: React.FC<VideoOutroCardProps> = React.memo(({ outroCta, is916, enableMotion = true, motionConfig }) => (
-    <div
-        className={`tpe-full-absolute tpe-flex-col${enableMotion ? ' tpe-kinetic-in' : ''}`}
-        style={OUTRO_CONTAINER_STYLE}
-    >
-        <div style={LOGO_WRAP_STYLE}>
+    <div className={`tpe-full-absolute tpe-flex-col${enableMotion ? ' tpe-kinetic-in' : ''}`} style={OUTRO_CONTAINER_STYLE}>
+        <div translate="no" style={LOGO_WRAP_STYLE}>
             <TPEVectorLogo scale={2.5} showWordmark={true} animateWordmark={enableMotion} motionConfig={motionConfig} />
         </div>
-        <div style={DIVIDER_STYLE} />
-        <div style={{ ...CTA_BASE_STYLE, fontSize: is916 ? '42px' : '32px' }}>
+        <div aria-hidden="true" style={DIVIDER_STYLE} />
+        <div dir="auto" style={is916 ? CTA_STYLE_916 : CTA_STYLE_STD}>
             <HighlightedText text={outroCta || DEFAULT_OUTRO_CTA} />
         </div>
-        <div style={HANDLE_STYLE}>
-            @THEPAKISTANEDIT
-        </div>
-        <div style={BADGE_STYLE}>
-            INSTITUTIONAL CONTENT ENGINE // VERIFIED
-        </div>
+        <div translate="no" style={HANDLE_STYLE}>@THEPAKISTANEDIT</div>
+        <div translate="no" style={BADGE_STYLE}>INSTITUTIONAL CONTENT ENGINE // VERIFIED</div>
     </div>
 ));
 

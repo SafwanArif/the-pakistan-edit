@@ -68,6 +68,29 @@ describe("mediaAsyncHelpers — AbortSignal-scoped media synchronization", () =>
         // Outside 45ms -> seeks and awaits seeked
         expect(await seekMediaElement(fakeEl, 37.5, { signal: ac.signal })).toBe(true);
         expect(currentTime).toBe(37.5);
+
+        // Non-finite seek target returns false without mutating currentTime (P175)
+        expect(await seekMediaElement(fakeEl, Number.NaN, { signal: ac.signal })).toBe(false);
+        expect(await seekMediaElement(fakeEl, Number.POSITIVE_INFINITY, { signal: ac.signal })).toBe(false);
+        expect(currentTime).toBe(37.5);
+    });
+
+    it("falls back to video.currentTime when rVFC reports a non-finite mediaTime (P175)", async () => {
+        const target = new EventTarget();
+        const fakeVideo = Object.assign(target, {
+            paused: false,
+            seeking: false,
+            readyState: 4,
+            currentTime: 14.25,
+            requestVideoFrameCallback: (cb: VideoFrameRequestCallback) => {
+                queueMicrotask(() => cb(0, { mediaTime: Number.NaN } as VideoFrameCallbackMetadata));
+                return 7;
+            },
+            cancelVideoFrameCallback: () => {},
+        }) as unknown as HTMLVideoElement;
+
+        const ac = new AbortController();
+        expect(await waitForNextVideoFrame(fakeVideo, { signal: ac.signal, timeoutMs: 200 })).toBe(14.25);
     });
 
     it("cancels requestVideoFrameCallback on AbortSignal abort and refuses blind launch when readyState < 3", async () => {

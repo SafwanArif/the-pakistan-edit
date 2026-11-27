@@ -1,50 +1,39 @@
-import { useMemo } from 'react';
-import { Draft } from '@/types/news';
-import { getEffectiveSlideAsset } from '../utils/dataAccessors';
+"use client";
 
-/**
- * 2027 Institutional Standard: useNewsCardState
- * Centralized logic for resolving the display state of a NewsCard.
- * Clean separation of prefixes and text.
- */
-export const useNewsCardState = (draft: Draft, step: number) => {
-    return useMemo(() => {
-        const asset = getEffectiveSlideAsset(step, draft);
-        
-        // 1. Resolve Narrative Content
-        let heading = "";
-        let content = "";
-        let sourcePrefix = "";
-        let sourceText = "";
+import { useMemo } from "react";
+import type { Draft } from "@/types/news";
+import { getEffectiveSlideAsset } from "../utils/dataAccessors";
 
-        if (step === 1) {
-            heading = draft.headline;
-            content = "";
-            sourcePrefix = "";
-            sourceText = "";
-        } else if (step === 2) {
-            heading = "";
-            content = draft.summary || "";
-            sourcePrefix = draft.sourcePrefix || "SOURCE:";
-            sourceText = draft.sourceName || "";
-        } else {
-            const index = step - 3;
-            const extra = draft.extraSlides?.[index];
-            heading = extra?.heading || draft.category;
-            content = extra?.content || "";
-            sourcePrefix = extra?.sourcePrefix || "SOURCE:";
-            sourceText = extra?.sourceName || "";
-        }
-
-        return {
-            heading,
-            content,
-            sourcePrefix,
-            sourceText,
+/** Resolves normalized headline, body, credit, and asset display state for a Carousel slide. */
+export const useNewsCardState = (draft: Draft, step: number) =>
+    useMemo(() => {
+        const safeStep = Number.isFinite(step) ? Math.max(1, Math.trunc(step)) : 1;
+        const asset = getEffectiveSlideAsset(safeStep, draft);
+        const shared = {
             photoPrefix: asset.creditPrefix || "PHOTO:",
             photoText: asset.imageCredit || "",
             asset,
-            type: step === 1 ? 'bulletin' as const : 'narrative' as const
+            type: safeStep === 1 ? ("bulletin" as const) : ("narrative" as const),
+        };
+
+        if (safeStep === 1) {
+            return { heading: draft.headline, content: "", sourcePrefix: "", sourceText: "", ...shared };
+        }
+        if (safeStep === 2) {
+            return {
+                heading: "",
+                content: draft.summary || "",
+                sourcePrefix: draft.sourcePrefix || "SOURCE:",
+                sourceText: draft.sourceName || "",
+                ...shared,
+            };
+        }
+        const extra = draft.extraSlides?.[safeStep - 3];
+        return {
+            heading: extra?.heading || draft.category,
+            content: extra?.content || "",
+            sourcePrefix: extra?.sourcePrefix || "SOURCE:",
+            sourceText: extra?.sourceName || "",
+            ...shared,
         };
     }, [draft, step]);
-};

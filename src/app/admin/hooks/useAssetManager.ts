@@ -1,110 +1,141 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Draft } from '@/types/news';
-import { revokeBlobUrl } from '@/utils/idUtils';
-import { DraftResolver } from '../utils/dataAccessors';
+"use client";
 
-// Session cache for proxied remote image dimensions
-const ASSET_CACHE: Record<string, { image: string, w: number, h: number }> = {};
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import type { Draft } from "@/types/news";
+import { revokeBlobUrl } from "@/utils/idUtils";
+import { DraftResolver } from "../utils/dataAccessors";
+import { isSafeMediaUrl } from "../utils/domUtils";
+
+const MAX_CACHE_ENTRIES = 64;
+const ASSET_CACHE = new Map<string, { image: string; w: number; h: number }>();
+
+const DEFAULT_IMAGE_FRAMING = {
+    imageZoom: 100,
+    snapMode: "height" as const,
+    imagePosX: 50,
+    imagePosY: 50,
+};
+
+const cacheAsset = (url: string, entry: { image: string; w: number; h: number }) => {
+    if (ASSET_CACHE.size >= MAX_CACHE_ENTRIES && !ASSET_CACHE.has(url)) {
+        const oldest = ASSET_CACHE.keys().next().value;
+        if (oldest !== undefined) ASSET_CACHE.delete(oldest);
+    }
+    ASSET_CACHE.set(url, entry);
+};
 
 /**
  * Manages Carousel slide asset ingestion, remote proxy dimension resolution, and clearing.
+ * Never revokes previous `blob:` URLs mid-session so `useEditorialState`'s Undo stack stays intact (`P72`).
  */
 export const useAssetManager = (draft: Draft, onChange: (d: Draft) => void) => {
     const [resolving, setResolving] = useState(false);
-    const activeRequests = useRef<Set<string>>(new Set());
+    const activeRequests = useRef(new Set<string>());
+    const inFlightImages = useRef(new Set<HTMLImageElement>());
+    const slideGenRef = useRef(new Map<number, number>());
+    const isMountedRef = useRef(true);
     const draftRef = useRef(draft);
     const onChangeRef = useRef(onChange);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         draftRef.current = draft;
         onChangeRef.current = onChange;
-    }, [draft, onChange]);
+    });
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        const images = inFlightImages.current;
+        return () => {
+            isMountedRef.current = false;
+            images.forEach((img) => { img.onload = null; img.onerror = null; img.src = ""; });
+            images.clear();
+        };
+    }, []);
+
+    const bumpSlideGen = (slideNum: number): number => {
+        const next = (slideGenRef.current.get(slideNum) ?? 0) + 1;
+        slideGenRef.current.set(slideNum, next);
+        return next;
+    };
+
+    const applySlidePatch = (slideNum: number, image: string, imageWidth: number, imageHeight: number) => {
+        onChangeRef.current(DraftResolver.patchSlide(slideNum, { image, imageWidth, imageHeight, ...DEFAULT_IMAGE_FRAMING }, draftRef.current));
+    };
+
+    const loadImageDimensions = (src: string): Promise<{ w: number; h: number } | null> =>
+        new Promise((resolveImg) => {
+            const img = new Image();
+            inFlightImages.current.add(img);
+            const done = (dims: { w: number; h: number } | null) => {
+                img.onload = null;
+                img.onerror = null;
+                inFlightImages.current.delete(img);
+                resolveImg(dims);
+            };
+            img.onload = () => done({ w: img.naturalWidth || img.width || 1080, h: img.naturalHeight || img.height || 1350 });
+            img.onerror = () => done(null);
+            img.src = src;
+        });
 
     /** Proxies a remote image URL and records its natural dimensions. */
     const resolve = useCallback((url: string, slideNum: number) => {
-        if (!url || !url.startsWith('http') || url.startsWith('/api/proxy') || activeRequests.current.has(url)) return;
+        if (!url || url.startsWith("/api/proxy") || !isSafeMediaUrl(url, false)) return;
 
-        if (ASSET_CACHE[url]) {
-            const cached = ASSET_CACHE[url];
-            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
-                image: cached.image, imageWidth: cached.w, imageHeight: cached.h,
-                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
-            }, draftRef.current));
+        const cached = ASSET_CACHE.get(url);
+        if (cached) {
+            bumpSlideGen(slideNum);
+            applySlidePatch(slideNum, cached.image, cached.w, cached.h);
             return;
         }
 
-        activeRequests.current.add(url); 
+        const reqKey = `${slideNum}:${url}`;
+        if (activeRequests.current.has(reqKey)) return;
+        const gen = bumpSlideGen(slideNum);
+        activeRequests.current.add(reqKey);
         setResolving(true);
 
         const proxied = `/api/proxy/asset?url=${encodeURIComponent(url)}`;
-        const img = new Image();
-        
-        img.onload = () => {
-            const w = img.naturalWidth || 1080;
-            const h = img.naturalHeight || 1350;
-            ASSET_CACHE[url] = { image: proxied, w, h };
-
-            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
-                image: proxied, imageWidth: w, imageHeight: h,
-                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
-            }, draftRef.current));
-            
-            setResolving(false); 
-            activeRequests.current.delete(url);
-        };
-
-        img.onerror = () => { 
-            setResolving(false); 
-            activeRequests.current.delete(url); 
-        };
-        
-        img.src = proxied;
+        void loadImageDimensions(proxied).then((dims) => {
+            activeRequests.current.delete(reqKey);
+            if (isMountedRef.current) setResolving(activeRequests.current.size > 0);
+            if (!dims) return;
+            cacheAsset(url, { image: proxied, ...dims });
+            if (isMountedRef.current && slideGenRef.current.get(slideNum) === gen) {
+                applySlidePatch(slideNum, proxied, dims.w, dims.h);
+            }
+        });
     }, []);
 
     /** Reads a local image upload losslessly via Object URL and records natural dimensions. */
     const ingestFile = useCallback((file: File, slideNum: number) => {
-        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
-        if (typeof prevUrl === 'string') revokeBlobUrl(prevUrl);
+        if (!file || file.size === 0) return;
+        const gen = bumpSlideGen(slideNum);
         const objectUrl = URL.createObjectURL(file);
-        const applyImage = (w: number, h: number) => {
-            onChangeRef.current(DraftResolver.patchSlide(slideNum, {
-                image: objectUrl, imageWidth: w, imageHeight: h,
-                imageZoom: 100, snapMode: 'height', imagePosX: 50, imagePosY: 50,
-            }, draftRef.current));
+
+        const applyOrRevoke = (dims: { w: number; h: number } | null) => {
+            if (!dims || !isMountedRef.current || slideGenRef.current.get(slideNum) !== gen) {
+                revokeBlobUrl(objectUrl);
+                return;
+            }
+            applySlidePatch(slideNum, objectUrl, dims.w || 1080, dims.h || 1350);
         };
 
-        if (typeof createImageBitmap === 'function') {
-            void createImageBitmap(file).then((bitmap) => {
-                try {
-                    applyImage(bitmap.width, bitmap.height);
-                } finally {
-                    bitmap.close();
-                }
-            }).catch(() => {
-                const img = new Image();
-                img.onload = () => applyImage(img.naturalWidth || img.width, img.naturalHeight || img.height);
-                img.src = objectUrl;
-            });
+        if (typeof createImageBitmap === "function") {
+            void createImageBitmap(file)
+                .then((bitmap) => {
+                    try { applyOrRevoke({ w: bitmap.width, h: bitmap.height }); }
+                    finally { bitmap.close(); }
+                })
+                .catch(() => loadImageDimensions(objectUrl).then(applyOrRevoke));
             return;
         }
-        const img = new Image();
-        img.onload = () => applyImage(img.naturalWidth || img.width, img.naturalHeight || img.height);
-        img.src = objectUrl;
+        void loadImageDimensions(objectUrl).then(applyOrRevoke);
     }, []);
 
-    /** Resets image and focal framing fields on a slide to defaults and revokes any object URL. */
+    /** Resets image and focal framing fields on a slide to defaults. */
     const clearAsset = useCallback((slideNum: number) => {
-        const prevUrl = DraftResolver.get(`slide-${slideNum}-image`, draftRef.current);
-        if (typeof prevUrl === 'string') revokeBlobUrl(prevUrl);
-        onChangeRef.current(DraftResolver.patchSlide(slideNum, {
-            image: '',
-            imageWidth: 0,
-            imageHeight: 0,
-            imageZoom: 100,
-            imagePosX: 50,
-            imagePosY: 50,
-            snapMode: 'height',
-        }, draftRef.current));
+        bumpSlideGen(slideNum);
+        applySlidePatch(slideNum, "", 0, 0);
     }, []);
 
     return { resolving, resolve, ingestFile, clearAsset };

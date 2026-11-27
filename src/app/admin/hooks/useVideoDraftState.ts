@@ -1,25 +1,21 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+"use client";
+
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import {
     VideoDraft,
     VideoAspectRatio,
     createDefaultVideoDraft,
-    getTotalVideoDuration,
     calculatePsychologyPacedScenes,
-    getSceneBoundaries,
-    getTimelineStructure,
-    getActiveSceneAtTime,
-    findSubtitleAtMediaTime,
-    wrapMediaTime,
     type SourceFrameIndex,
     type SourceMediaInfo,
-} from '@/types/news';
-import { revokeBlobUrl } from '@/utils/idUtils';
-import { del, get, set } from 'idb-keyval';
-import { useDebouncedIdbSave } from './useDebouncedIdbSave';
-import { canUseServerIngest, deleteServerCachedVideo } from '../utils/serverCapabilities';
-import { createLivePlaybackClock } from '../utils/livePlaybackClock';
-import { extractAudioM4aBlob, extractKeyframeTimesFromFrameIndex, inspectVideoBlob } from '../utils/clientMediaInspector';
-import { STORAGE_KEYS } from '../utils/storageKeys';
+} from "@/types/news";
+import { revokeBlobUrl } from "@/utils/idUtils";
+import { del, get, set } from "idb-keyval";
+import { useDebouncedIdbSave } from "./useDebouncedIdbSave";
+import { useVideoPlaybackClock } from "./useVideoPlaybackClock";
+import { canUseServerIngest, deleteServerCachedVideo } from "../utils/serverCapabilities";
+import { extractAudioM4aBlob, extractKeyframeTimesFromFrameIndex, inspectVideoBlob } from "../utils/clientMediaInspector";
+import { STORAGE_KEYS } from "../utils/storageKeys";
 import {
     inferAspectRatioFromDimensions,
     normalizeHydratedVideoDraft,
@@ -28,21 +24,44 @@ import {
     revokeDraftBlobUrls,
     toPersistableDraft,
     uploadWithTelemetry,
-} from '../utils/videoIngestHelpers';
+} from "../utils/videoIngestHelpers";
 
 export { normalizeHydratedVideoDraft, probeVideoMetadata, resetClipBoundFields };
 
+const validDuration = (d?: number | null): number | undefined =>
+    typeof d === "number" && Number.isFinite(d) && d > 0 ? d : undefined;
+
+const releaseVideoSource = (url?: string) => {
+    if (!url) return;
+    if (url.startsWith("blob:")) revokeBlobUrl(url);
+    else deleteServerCachedVideo(url);
+};
+
 /**
- * Local-first state orchestrator for Video drafts with synchronised multi-preview playback
- * and disk-backed HTTP 206 byte-range video streaming (bit-for-bit original quality).
+ * Local-first state orchestrator for Video drafts with disk-backed HTTP 206 byte-range
+ * video streaming, `.m4a` companion audio rails, and delegated 120Hz playback clock.
  */
 export const useVideoDraftState = () => {
     const [isMounted, setIsMounted] = useState(false);
-    const [videoDraft, setVideoDraft] = useState<VideoDraft>(createDefaultVideoDraft());
+    const [videoDraft, setVideoDraft] = useState<VideoDraft>(createDefaultVideoDraft);
     const [isOptimisingVideo, setIsOptimisingVideo] = useState(false);
     const [ingestStatus, setIngestStatus] = useState<string | null>(null);
     const [companionAudioUrl, setCompanionAudioUrl] = useState<string | undefined>(undefined);
+
     const companionAudioUrlRef = useRef<string | undefined>(undefined);
+    const ingestAbortRef = useRef<AbortController | null>(null);
+    const videoDraftRef = useRef<VideoDraft>(videoDraft);
+    const migrationStartedRef = useRef(false);
+    const hasUserMutatedRef = useRef(false);
+
+    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow, cancel: cancelDraftSave } = useDebouncedIdbSave<VideoDraft>(
+        STORAGE_KEYS.VIDEO_DRAFT,
+        toPersistableDraft
+    );
+
+    useLayoutEffect(() => {
+        videoDraftRef.current = videoDraft;
+    });
 
     const replaceCompanionAudioUrl = useCallback((next?: string) => {
         if (companionAudioUrlRef.current && companionAudioUrlRef.current !== next) {
@@ -57,67 +76,54 @@ export const useVideoDraftState = () => {
         return URL.createObjectURL(m4aBlob ?? blob);
     }, []);
 
-    // Playback state synchronised across all preview cards
-    const [liveClock] = useState(() => createLivePlaybackClock(0));
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [seekNonce, setSeekNonce] = useState(0);
-    const [playbackMode, setPlaybackMode] = useState<'play-all' | 'loop-angle'>('play-all');
-    const isMuted = Boolean(videoDraft.isMuted);
-
-    const { scheduleSave: scheduleDraftSave, saveNow: saveDraftNow } = useDebouncedIdbSave<VideoDraft>(
-        STORAGE_KEYS.VIDEO_DRAFT,
-        toPersistableDraft
-    );
-    const ingestAbortRef = useRef<AbortController | null>(null);
-    const sceneBoundsRef = useRef(getSceneBoundaries(videoDraft.scenes));
-    const rVfcAnchorRef = useRef<{ time: number; perfNow: number } | null>(null);
-    const lockedLoopSceneIdxRef = useRef<number | null>(null);
-    const lastDiscreteKeyRef = useRef("");
-
-    useEffect(() => {
-        sceneBoundsRef.current = getSceneBoundaries(videoDraft.scenes);
-    }, [videoDraft.scenes]);
-
-    useEffect(() => {
-        return () => {
-            ingestAbortRef.current?.abort();
-            revokeBlobUrl(companionAudioUrlRef.current);
-            companionAudioUrlRef.current = undefined;
-        };
+    const abortInFlightIngest = useCallback(() => {
+        if (!ingestAbortRef.current) return;
+        ingestAbortRef.current.abort();
+        ingestAbortRef.current = null;
+        setIsOptimisingVideo(false);
+        setIngestStatus(null);
     }, []);
-    const videoDraftRef = useRef<VideoDraft>(videoDraft);
-    const currentTimeRef = useRef(currentTime);
-    const isPlayingRef = useRef(isPlaying);
-    const playbackModeRef = useRef(playbackMode);
-    const migrationStartedRef = useRef(false);
 
-    useEffect(() => {
-        videoDraftRef.current = videoDraft;
-        currentTimeRef.current = currentTime;
-        isPlayingRef.current = isPlaying;
-        playbackModeRef.current = playbackMode;
-    }, [videoDraft, currentTime, isPlaying, playbackMode]);
+    const commitDraft = useCallback((nextDraft: VideoDraft, immediate = false) => {
+        hasUserMutatedRef.current = true;
+        videoDraftRef.current = nextDraft;
+        setVideoDraft(nextDraft);
+        return immediate ? saveDraftNow(nextDraft) : Promise.resolve(scheduleDraftSave(nextDraft));
+    }, [saveDraftNow, scheduleDraftSave]);
 
-    const totalDuration = getTotalVideoDuration(videoDraft);
-    const scenesDuration = (videoDraft.scenes || []).reduce((acc, s) => acc + (s.duration || 0), 0);
-    const isOutroActive = Boolean(videoDraft.enableOutro && currentTime >= scenesDuration);
-    const activeSceneIsImage = (() => {
-        let elapsed = 0;
-        for (const s of videoDraft.scenes || []) {
-            const next = elapsed + (s.duration || 0);
-            if (currentTime >= elapsed && currentTime < next) return s.mediaType === 'image';
-            elapsed = next;
-        }
-        return false;
-    })();
-
-    const updateVideoDraft = useCallback(async (newDraft: VideoDraft) => {
-        setVideoDraft(newDraft);
-        scheduleDraftSave(newDraft);
+    const handlePersistDuration = useCallback((mediaDuration: number) => {
+        setVideoDraft((prev) => {
+            if (prev.videoDuration && Math.abs(prev.videoDuration - mediaDuration) <= 1.5) return prev;
+            const updated: VideoDraft = { ...prev, videoDuration: mediaDuration };
+            videoDraftRef.current = updated;
+            scheduleDraftSave(updated);
+            return updated;
+        });
     }, [scheduleDraftSave]);
 
-    /** Uploads a video blob to `/api/video/ingest` for untouched HTTP 206 byte-range streaming (or loads directly as `blob:` on serverless). */
+    const playback = useVideoPlaybackClock({
+        videoDraft,
+        videoDraftRef,
+        onPersistDuration: handlePersistDuration,
+    });
+    const { resetPlaybackState } = playback;
+
+    useEffect(() => () => {
+        ingestAbortRef.current?.abort();
+        revokeBlobUrl(companionAudioUrlRef.current);
+        companionAudioUrlRef.current = undefined;
+        revokeDraftBlobUrls(videoDraftRef.current);
+    }, []);
+
+    const updateVideoDraft = useCallback((newDraft: VideoDraft) => {
+        if (newDraft.videoUrl !== videoDraftRef.current.videoUrl) {
+            abortInFlightIngest();
+            if (!newDraft.videoUrl?.startsWith("blob:")) replaceCompanionAudioUrl(undefined);
+        }
+        void commitDraft(newDraft);
+    }, [abortInFlightIngest, commitDraft, replaceCompanionAudioUrl]);
+
+    /** Uploads a video blob to `/api/video/ingest` for HTTP 206 byte-range streaming (or loads directly as `blob:` on serverless). */
     const ingestVideoBlob = useCallback(async (
         blob: Blob,
         name?: string,
@@ -131,9 +137,7 @@ export const useVideoDraftState = () => {
         ingestAbortRef.current = controller;
 
         const commitLocalBlobFallback = async () => {
-            if (options?.preserveScenes) return;
-            if (previousUrl?.startsWith('blob:')) revokeBlobUrl(previousUrl);
-            else deleteServerCachedVideo(previousUrl);
+            if (options?.preserveScenes || controller.signal.aborted) return;
             const fallbackUrl = URL.createObjectURL(blob);
             setIngestStatus("INSPECTING CODECS & AUDIO RAIL...");
             const [meta, inspected, audioUrl] = await Promise.all([
@@ -146,16 +150,22 @@ export const useVideoDraftState = () => {
                 revokeBlobUrl(audioUrl);
                 return;
             }
+            releaseVideoSource(previousUrl);
             replaceCompanionAudioUrl(audioUrl);
             const base = resetClipBoundFields(videoDraftRef.current);
-            const clipDuration = meta?.duration ?? inspected?.durationSec ?? base.videoDuration ?? 60;
+            const clipDuration = validDuration(meta?.duration) ?? validDuration(inspected?.durationSec) ?? validDuration(base.videoDuration) ?? 60;
             const ratio = meta?.aspectRatio ?? inferAspectRatioFromDimensions(inspected?.mediaInfo.width, inspected?.mediaInfo.height) ?? base.aspectRatio;
             try {
                 await set(STORAGE_KEYS.VIDEO_BLOB, blob);
             } catch (quotaErr) {
                 console.warn("IDB_VIDEO_BLOB_QUOTA_SKIPPED:", quotaErr);
             }
-            await updateVideoDraft({
+            if (controller.signal.aborted) {
+                revokeBlobUrl(fallbackUrl);
+                replaceCompanionAudioUrl(undefined);
+                return;
+            }
+            void commitDraft({
                 ...base,
                 videoUrl: fallbackUrl,
                 videoName: displayName,
@@ -170,10 +180,11 @@ export const useVideoDraftState = () => {
 
         setIsOptimisingVideo(true);
         setIngestStatus("PREPARING STREAM...");
-        if (!options?.preserveScenes) {
-            setIsPlaying(false);
-            setCurrentTime(0);
-        }
+        if (!options?.preserveScenes) resetPlaybackState();
+
+        let uploadedServerUrl: string | undefined;
+        const isStaleUpload = () =>
+            controller.signal.aborted || Boolean(options?.preserveScenes && videoDraftRef.current.videoUrl !== previousUrl);
 
         try {
             const serverIngestAvailable = await canUseServerIngest();
@@ -185,53 +196,63 @@ export const useVideoDraftState = () => {
 
             setIngestStatus("PREPARING UPLOAD STREAM...");
             const formData = new FormData();
-            formData.append('file', blob, displayName);
-            const inspectionPromise = inspectVideoBlob(blob).catch(() => null);
-
+            formData.append("file", blob, displayName);
             const [upload, inspected] = await Promise.all([
                 uploadWithTelemetry(formData, (stage) => setIngestStatus(stage), controller.signal),
-                inspectionPromise,
+                inspectVideoBlob(blob).catch(() => null),
             ]);
-            const url = upload.url;
+            uploadedServerUrl = upload.url;
             const mergedMediaInfo: SourceMediaInfo | undefined = upload.mediaInfo
                 ? { ...inspected?.mediaInfo, ...upload.mediaInfo }
                 : inspected?.mediaInfo;
             const serverRatio = inferAspectRatioFromDimensions(mergedMediaInfo?.width, mergedMediaInfo?.height);
-            const serverDuration = upload.duration && upload.duration > 0 ? upload.duration : inspected?.durationSec ?? null;
+            const serverDuration = validDuration(upload.duration) ?? validDuration(inspected?.durationSec);
             let meta: { aspectRatio: VideoAspectRatio; duration: number } | null = serverRatio && serverDuration
                 ? { aspectRatio: serverRatio, duration: serverDuration }
                 : null;
             if (!meta) {
                 setIngestStatus("PROBING ASPECT RATIO & DURATION...");
-                meta = await probeVideoMetadata(url);
+                meta = await probeVideoMetadata(uploadedServerUrl);
             }
-            if (controller.signal.aborted) return;
-            const current = options?.preserveScenes ? videoDraftRef.current : resetClipBoundFields(videoDraftRef.current);
+            if (isStaleUpload()) {
+                deleteServerCachedVideo(uploadedServerUrl);
+                uploadedServerUrl = undefined;
+                return;
+            }
 
-            const nextRatio = options?.preserveScenes
-                ? current.aspectRatio
-                : (meta?.aspectRatio ?? current.aspectRatio);
-            const clipDuration = meta?.duration ?? current.videoDuration ?? 60;
+            const current = options?.preserveScenes ? videoDraftRef.current : resetClipBoundFields(videoDraftRef.current);
+            const nextRatio = options?.preserveScenes ? current.aspectRatio : (meta?.aspectRatio ?? current.aspectRatio);
+            const clipDuration = validDuration(meta?.duration) ?? validDuration(current.videoDuration) ?? 60;
             const nextScenes = options?.preserveScenes && current.scenes?.length
                 ? current.scenes
                 : calculatePsychologyPacedScenes(clipDuration, current.scenes);
 
-            let sourceFrameIndex: SourceFrameIndex | undefined = undefined;
+            let sourceFrameIndex: SourceFrameIndex | undefined;
             if (upload.frameIndexUrl) {
                 try {
                     const frameIndexResponse = await fetch(upload.frameIndexUrl, { signal: controller.signal });
-                    if (frameIndexResponse.ok) {
-                        sourceFrameIndex = await frameIndexResponse.json() as SourceFrameIndex;
-                    }
+                    if (frameIndexResponse.ok) sourceFrameIndex = await frameIndexResponse.json() as SourceFrameIndex;
                 } catch (err) {
-                    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                    if (err instanceof DOMException && err.name === "AbortError") throw err;
                     console.warn("SOURCE_FRAME_INDEX_LOAD_FAILED", err);
                 }
             }
+            if (isStaleUpload()) {
+                deleteServerCachedVideo(uploadedServerUrl);
+                uploadedServerUrl = undefined;
+                return;
+            }
 
-            const nextDraft: VideoDraft = {
+            if (previousUrl?.startsWith("blob:")) revokeBlobUrl(previousUrl);
+            else if (!options?.preserveScenes && previousUrl && previousUrl !== uploadedServerUrl) deleteServerCachedVideo(previousUrl);
+            replaceCompanionAudioUrl(undefined);
+
+            // Commit synchronously BEFORE fire-and-forget IDB blob cleanup to prevent post-await abort races (`P106`)
+            const committedUrl = uploadedServerUrl;
+            uploadedServerUrl = undefined;
+            void commitDraft({
                 ...current,
-                videoUrl: url,
+                videoUrl: committedUrl,
                 videoName: displayName,
                 videoDuration: clipDuration,
                 sourceFps: upload.fps || inspected?.mediaInfo.exactFps,
@@ -241,66 +262,68 @@ export const useVideoDraftState = () => {
                 sourceMediaInfo: mergedMediaInfo,
                 aspectRatio: nextRatio,
                 scenes: nextScenes,
-            };
-
-            if (previousUrl?.startsWith('blob:')) revokeBlobUrl(previousUrl);
-            else if (!options?.preserveScenes && previousUrl && previousUrl !== url) deleteServerCachedVideo(previousUrl);
-            replaceCompanionAudioUrl(undefined);
-            await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
-            await updateVideoDraft(nextDraft);
+            });
+            void del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') return;
-            if (err instanceof Error && err.message === 'Upload aborted') return;
+            if (uploadedServerUrl) deleteServerCachedVideo(uploadedServerUrl);
+            if (controller.signal.aborted) return;
+            if (err instanceof DOMException && err.name === "AbortError") return;
+            if (err instanceof Error && err.message === "Upload aborted") return;
             console.error("VIDEO_INGEST_CLIENT_ERROR:", err);
             await commitLocalBlobFallback();
         } finally {
             if (ingestAbortRef.current === controller) {
+                ingestAbortRef.current = null;
                 setIsOptimisingVideo(false);
                 setIngestStatus(null);
             }
         }
-    }, [createCompanionAudioUrlForBlob, replaceCompanionAudioUrl, updateVideoDraft]);
+    }, [commitDraft, createCompanionAudioUrlForBlob, replaceCompanionAudioUrl, resetPlaybackState]);
 
     useEffect(() => {
         let cancelled = false;
+        const ac = new AbortController();
         const init = async () => {
             let draft = createDefaultVideoDraft();
-            const savedDraft = await get<VideoDraft>(STORAGE_KEYS.VIDEO_DRAFT);
-            const savedBlob = await get<Blob>(STORAGE_KEYS.VIDEO_BLOB);
+            let savedBlob: Blob | undefined;
             let pendingMigrationBlob: Blob | undefined;
 
-            if (savedDraft) {
-                draft = normalizeHydratedVideoDraft(savedDraft, draft);
-                if (savedBlob && !draft.videoUrl?.startsWith('/api/video/ingest')) {
+            try {
+                const [savedDraft, blobRecord] = await Promise.all([
+                    get<VideoDraft>(STORAGE_KEYS.VIDEO_DRAFT),
+                    get<Blob>(STORAGE_KEYS.VIDEO_BLOB),
+                ]);
+                savedBlob = blobRecord;
+                if (savedDraft) {
+                    draft = normalizeHydratedVideoDraft(savedDraft, draft);
+                    if (savedBlob && !draft.videoUrl?.startsWith("/api/video/ingest")) pendingMigrationBlob = savedBlob;
+                    else if (draft.videoUrl?.startsWith("blob:") && !savedBlob) { draft.videoUrl = ""; draft.videoName = ""; }
+                } else if (savedBlob) {
                     pendingMigrationBlob = savedBlob;
-                } else if (draft.videoUrl?.startsWith('blob:') && !savedBlob) {
-                    draft.videoUrl = "";
-                    draft.videoName = "";
                 }
-            } else if (savedBlob) {
-                pendingMigrationBlob = savedBlob;
+            } catch (err) {
+                console.warn("VIDEO_HYDRATION_FAILED:", err);
             }
 
             if (cancelled) return;
-            if (pendingMigrationBlob && (!draft.videoUrl || draft.videoUrl.startsWith('blob:'))) {
+            if (hasUserMutatedRef.current) { setIsMounted(true); return; }
+            if (pendingMigrationBlob && (!draft.videoUrl || draft.videoUrl.startsWith("blob:"))) {
                 draft.videoUrl = URL.createObjectURL(pendingMigrationBlob);
             }
             const hydratedUrl = draft.videoUrl;
+            videoDraftRef.current = draft;
             setVideoDraft(draft);
             setIsMounted(true);
 
             // Build pure `.m4a` companion audio rail for local `blob:` sessions on reload (`A5`)
-            if (savedBlob && hydratedUrl?.startsWith('blob:')) {
+            if (savedBlob && hydratedUrl?.startsWith("blob:")) {
                 void createCompanionAudioUrlForBlob(savedBlob).then((audioUrl) => {
-                    if (cancelled || videoDraftRef.current.videoUrl !== hydratedUrl) {
-                        revokeBlobUrl(audioUrl);
-                        return;
-                    }
+                    if (cancelled || videoDraftRef.current.videoUrl !== hydratedUrl) { revokeBlobUrl(audioUrl); return; }
                     replaceCompanionAudioUrl(audioUrl);
                 }).catch(() => {});
             }
 
-            // Rehydrate transient in-memory keyframe & codec inspection from IndexedDB blob on page reload
+            // Rehydrate transient in-memory keyframe & codec inspection from IndexedDB blob on reload
             if (savedBlob && (!draft.sourceKeyframeTimes?.length || !draft.sourceMediaInfo)) {
                 void inspectVideoBlob(savedBlob).then((inspected) => {
                     if (cancelled || !inspected) return;
@@ -312,9 +335,7 @@ export const useVideoDraftState = () => {
                             sourceKeyframeTimes: curr.sourceKeyframeTimes?.length
                                 ? curr.sourceKeyframeTimes
                                 : (inspected.keyframeTimes.length ? inspected.keyframeTimes : undefined),
-                            sourceMediaInfo: curr.sourceMediaInfo
-                                ? { ...inspected.mediaInfo, ...curr.sourceMediaInfo }
-                                : inspected.mediaInfo,
+                            sourceMediaInfo: curr.sourceMediaInfo ? { ...inspected.mediaInfo, ...curr.sourceMediaInfo } : inspected.mediaInfo,
                         };
                     });
                 }).catch(() => {});
@@ -323,29 +344,22 @@ export const useVideoDraftState = () => {
             // Lazily rehydrate sourceFrameIndex in memory without bloating IndexedDB
             if (draft.sourceFrameLogUrl && !draft.sourceFrameIndex) {
                 const frameUrl = draft.sourceFrameLogUrl;
-                void fetch(frameUrl).then(async (res) => {
+                void fetch(frameUrl, { signal: ac.signal }).then(async (res) => {
                     if (!res.ok || cancelled) return;
                     const idx = await res.json() as SourceFrameIndex;
-                    if (!cancelled) {
-                        setVideoDraft((curr) => (curr.sourceFrameLogUrl === frameUrl ? { ...curr, sourceFrameIndex: idx } : curr));
-                    }
+                    if (!cancelled) setVideoDraft((curr) => (curr.sourceFrameLogUrl === frameUrl ? { ...curr, sourceFrameIndex: idx } : curr));
                 }).catch(() => {});
             }
 
             // Validate that a persisted local server video still exists on disk (self-heals wiped `.next/cache`)
-            if (draft.videoUrl?.startsWith('/api/video/ingest')) {
+            if (draft.videoUrl?.startsWith("/api/video/ingest")) {
                 const cachedUrl = draft.videoUrl;
-                void fetch(cachedUrl, { method: 'HEAD' }).then((res) => {
+                void fetch(cachedUrl, { method: "HEAD", signal: ac.signal }).then((res) => {
                     if (!cancelled && res.status === 404) {
                         setVideoDraft((curr) => {
                             if (curr.videoUrl !== cachedUrl) return curr;
-                            const healed: VideoDraft = {
-                                ...curr,
-                                videoUrl: "",
-                                videoName: "",
-                                sourceFrameLogUrl: undefined,
-                                sourceFrameIndex: undefined,
-                            };
+                            const healed: VideoDraft = { ...curr, videoUrl: "", videoName: "", sourceFrameLogUrl: undefined, sourceFrameIndex: undefined };
+                            videoDraftRef.current = healed;
                             scheduleDraftSave(healed);
                             return healed;
                         });
@@ -354,211 +368,66 @@ export const useVideoDraftState = () => {
             }
 
             if (pendingMigrationBlob && !migrationStartedRef.current) {
+                const canIngest = await canUseServerIngest();
+                if (cancelled || hasUserMutatedRef.current || !canIngest || videoDraftRef.current.videoUrl !== hydratedUrl) return;
                 migrationStartedRef.current = true;
-                if (await canUseServerIngest()) {
-                    void ingestVideoBlob(pendingMigrationBlob, draft.videoName, { preserveScenes: true });
-                }
+                void ingestVideoBlob(pendingMigrationBlob, draft.videoName, { preserveScenes: true });
             }
         };
         void init();
-        return () => { cancelled = true; };
+        return () => { cancelled = true; ac.abort(); };
     }, [createCompanionAudioUrlForBlob, ingestVideoBlob, replaceCompanionAudioUrl, scheduleDraftSave]);
 
-    // Synthetic 120Hz clock ONLY when no native <video> is driving playback (no video, Photo scene, or Outro).
-    // During native video playback, `useSmoothFramingLoop` is the single 120Hz rAF PLL emitting directly to `liveClock`.
-    useEffect(() => {
-        if (!isPlaying) {
-            rVfcAnchorRef.current = null;
-            return;
-        }
-        const hasNativeVideo = !!videoDraft.videoUrl;
-        if (hasNativeVideo && !isOutroActive && !activeSceneIsImage) {
-            return;
-        }
-
-        let animId = 0;
-        let lastNow = performance.now();
-        let liveT = currentTimeRef.current;
-        let lastSceneIdx = getActiveSceneAtTime(videoDraftRef.current, liveT).sceneIndex;
-
-        const tick = (now: number) => {
-            const dt = Math.min(0.05, Math.max(0, (now - lastNow) / 1000));
-            lastNow = now;
-            const prev = liveT;
-            const next = prev + dt;
-            let resolved = next;
-            let wrapped = false;
-            if (playbackModeRef.current === 'loop-angle') {
-                const active = sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
-                if (active && next >= active.end) {
-                    resolved = active.start;
-                    wrapped = true;
-                } else if (totalDuration > 0 && next >= totalDuration) {
-                    resolved = 0;
-                    wrapped = true;
-                }
-            } else if (totalDuration > 0 && next >= totalDuration) {
-                resolved = 0;
-                wrapped = true;
-            }
-            liveT = resolved;
-            currentTimeRef.current = resolved;
-            liveClock.emit(resolved);
-
-            const nextScene = getActiveSceneAtTime(videoDraftRef.current, resolved);
-            if (wrapped || nextScene.sceneIndex !== lastSceneIdx) {
-                lastSceneIdx = nextScene.sceneIndex;
-                setCurrentTime(resolved);
-            }
-
-            animId = requestAnimationFrame(tick);
-        };
-
-        animId = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(animId);
-    }, [isPlaying, totalDuration, videoDraft.videoUrl, isOutroActive, activeSceneIsImage, liveClock]);
-
-    const togglePlay = useCallback(() => {
-        const wasPlaying = isPlayingRef.current;
-        if (wasPlaying) {
-            const exactPausedTime = liveClock.getTime();
-            currentTimeRef.current = exactPausedTime;
-            setCurrentTime(exactPausedTime);
-            lockedLoopSceneIdxRef.current = null;
-        } else if (playbackModeRef.current === 'loop-angle') {
-            const t = currentTimeRef.current;
-            const idx = sceneBoundsRef.current.findIndex(b => t >= b.start && t < b.end);
-            lockedLoopSceneIdxRef.current = idx >= 0 ? idx : null;
-        }
-        isPlayingRef.current = !wasPlaying;
-        setIsPlaying(!wasPlaying);
-    }, [liveClock]);
-
-    const seekTo = useCallback((time: number) => {
-        rVfcAnchorRef.current = { time, perfNow: performance.now() };
-        currentTimeRef.current = time;
-        if (playbackModeRef.current === 'loop-angle') {
-            const idx = sceneBoundsRef.current.findIndex(b => time >= b.start && time < b.end);
-            lockedLoopSceneIdxRef.current = idx >= 0 ? idx : null;
-        } else {
-            lockedLoopSceneIdxRef.current = null;
-        }
-        liveClock.emit(time);
-        setCurrentTime(time);
-        setSeekNonce((n) => n + 1);
-    }, [liveClock]);
-
-    const toggleMute = useCallback(() => {
-        const nextDraft: VideoDraft = {
-            ...videoDraftRef.current,
-            isMuted: !videoDraftRef.current.isMuted
-        };
-        void updateVideoDraft(nextDraft);
-    }, [updateVideoDraft]);
-
-    const syncTimeFromVideo = useCallback((mediaTime: number, mediaDuration?: number) => {
-        if (playbackModeRef.current === 'loop-angle') {
-            const prev = currentTimeRef.current;
-            const lockedIdx = lockedLoopSceneIdxRef.current;
-            const active = (lockedIdx !== null ? sceneBoundsRef.current[lockedIdx] : undefined)
-                ?? sceneBoundsRef.current.find(b => prev >= b.start && prev < b.end);
-            if (active && lockedIdx === null) lockedLoopSceneIdxRef.current = active.idx;
-            const { hasReHook, preStoryDur, hookOffset, storyOffset } = getTimelineStructure(videoDraftRef.current.scenes || []);
-            // Hook/Re-Hook wraps with custom jumps are owned exclusively by `syncTimelineTick` (0.022s cut) to prevent double-seeks
-            const ownedByVideoSync = Boolean(active && active.start < preStoryDur && (hasReHook || hookOffset > 0 || storyOffset > 0));
-            if (active && !ownedByVideoSync && mediaTime >= active.end - 0.04) {
-                seekTo(active.start);
-                return;
-            }
-        }
-        if (totalDuration > 0 && mediaTime >= totalDuration) {
-            seekTo(0);
-            return;
-        }
-
-        const now = performance.now();
-        const prevAnchor = rVfcAnchorRef.current;
-        // Widen elapsed clamp to 1.0s so a single 350ms 4K decode hiccup doesn't trigger `isJump` root re-renders (`A17`)
-        const expectedT = prevAnchor
-            ? prevAnchor.time + Math.min(1.0, Math.max(0, (now - prevAnchor.perfNow) / 1000))
-            : currentTimeRef.current;
-        const isJump = Math.abs(mediaTime - expectedT) >= 0.35;
-        rVfcAnchorRef.current = { time: mediaTime, perfNow: now };
-        currentTimeRef.current = mediaTime;
-
-        const curDraft = videoDraftRef.current;
-        const sceneState = getActiveSceneAtTime(curDraft, mediaTime);
-        const captionsOn = sceneState.scene?.showSubtitles ?? (curDraft.showSubtitles !== false);
-        const activeSubId = captionsOn && curDraft.subtitles?.length
-            ? (findSubtitleAtMediaTime(curDraft.subtitles, wrapMediaTime(curDraft, mediaTime, curDraft.videoDuration || 0))?.id ?? "")
-            : "";
-        const wordmarkPhase = mediaTime < 1.8 ? 1 : 0;
-        const discreteKey = `${sceneState.sceneIndex}:${sceneState.isOutro ? 1 : 0}:${activeSubId}:${wordmarkPhase}`;
-
-        // Only push React root state on discrete transitions (scene change, subtitle cue change, intro end, or jump)
-        if (isJump || discreteKey !== lastDiscreteKeyRef.current) {
-            lastDiscreteKeyRef.current = discreteKey;
-            setCurrentTime(mediaTime);
-        }
-
-        if (mediaDuration !== undefined && Number.isFinite(mediaDuration) && mediaDuration > 0) {
-            if (!curDraft.videoDuration || Math.abs(curDraft.videoDuration - mediaDuration) > 1.5) {
-                setVideoDraft((prev) => {
-                    if (prev.videoDuration && Math.abs(prev.videoDuration - mediaDuration) <= 1.5) return prev;
-                    const updated: VideoDraft = { ...prev, videoDuration: mediaDuration };
-                    scheduleDraftSave(updated);
-                    return updated;
-                });
-            }
-        }
-    }, [totalDuration, seekTo, scheduleDraftSave]);
-
     const clearVideo = useCallback(async () => {
-        ingestAbortRef.current?.abort();
-        ingestAbortRef.current = null;
-        setIsOptimisingVideo(false);
-        setIngestStatus(null);
-        setIsPlaying(false);
-        currentTimeRef.current = 0;
-        liveClock.emit(0);
-        setCurrentTime(0);
+        abortInFlightIngest();
+        cancelDraftSave();
+        resetPlaybackState();
         const current = videoDraftRef.current;
-        if (current.videoUrl?.startsWith('blob:')) revokeBlobUrl(current.videoUrl);
-        else deleteServerCachedVideo(current.videoUrl);
+        releaseVideoSource(current.videoUrl);
         replaceCompanionAudioUrl(undefined);
         await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
-        await updateVideoDraft({
+        await commitDraft({
             ...resetClipBoundFields(current),
             videoUrl: "",
             videoName: "",
             videoDuration: undefined,
             sourceName: "",
             creditName: "",
-        });
-    }, [liveClock, replaceCompanionAudioUrl, updateVideoDraft]);
+        }, true);
+    }, [abortInFlightIngest, cancelDraftSave, commitDraft, replaceCompanionAudioUrl, resetPlaybackState]);
 
     const resetVideoDraft = useCallback(async () => {
-        ingestAbortRef.current?.abort();
-        ingestAbortRef.current = null;
-        setIsOptimisingVideo(false);
-        setIngestStatus(null);
+        abortInFlightIngest();
+        cancelDraftSave();
         const current = videoDraftRef.current;
         revokeDraftBlobUrls(current);
         replaceCompanionAudioUrl(undefined);
         deleteServerCachedVideo(current.videoUrl);
-        const defaultDraft = createDefaultVideoDraft();
-        setVideoDraft(defaultDraft);
-        setIsPlaying(false);
-        currentTimeRef.current = 0;
-        liveClock.emit(0);
-        setCurrentTime(0);
-        await saveDraftNow(defaultDraft);
+        for (const s of current.scenes || []) deleteServerCachedVideo(s.mediaUrl);
+        resetPlaybackState();
+        await commitDraft(createDefaultVideoDraft(), true);
         await del(STORAGE_KEYS.VIDEO_BLOB).catch(() => {});
-    }, [liveClock, replaceCompanionAudioUrl, saveDraftNow]);
+    }, [abortInFlightIngest, cancelDraftSave, commitDraft, replaceCompanionAudioUrl, resetPlaybackState]);
 
     return {
-        isMounted, videoDraft, companionAudioUrl, updateVideoDraft, clearVideo, resetVideoDraft, isOptimisingVideo, ingestStatus, ingestVideoBlob,
-        isPlaying, setIsPlaying, togglePlay, playbackMode, setPlaybackMode, currentTime, currentTimeRef, liveClock, seekNonce,
-        setCurrentTime, seekTo, isMuted, toggleMute, syncTimeFromVideo
+        isMounted,
+        videoDraft,
+        companionAudioUrl,
+        updateVideoDraft,
+        clearVideo,
+        resetVideoDraft,
+        isOptimisingVideo,
+        ingestStatus,
+        ingestVideoBlob,
+        isPlaying: playback.isPlaying,
+        togglePlay: playback.togglePlay,
+        playbackMode: playback.playbackMode,
+        setPlaybackMode: playback.setPlaybackMode,
+        currentTime: playback.currentTime,
+        liveClock: playback.liveClock,
+        seekNonce: playback.seekNonce,
+        seekTo: playback.seekTo,
+        isMuted: Boolean(videoDraft.isMuted),
+        syncTimeFromVideo: playback.syncTimeFromVideo,
     };
 };

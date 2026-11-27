@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 export interface UseBufferedInputOptions {
     /** Called on blur / Enter with the uncommitted text when edit was not cancelled. */
@@ -15,44 +15,40 @@ export interface UseBufferedInputOptions {
     deferSelect?: boolean;
 }
 
-/**
- * Shared buffered text-editing hook for numeric & timecode inputs:
- * - Isolates `Escape` via `stopImmediatePropagation()` so parent drawers/HUDs stay open (`P71`)
- * - Guards synchronous blur-on-Escape with a cancel ref so cancelled edits never commit (`P16`)
- * - Auto-selects value on focus for effortless replacement (`P37`)
- */
-export function useBufferedInput({
-    onCommit,
-    sanitize,
-    onExit,
-    resetKey,
-    deferSelect = false,
-}: UseBufferedInputOptions) {
+/** Shared buffered text-editing hook for numeric & timecode inputs (`P16`, `P37`, `P71`, `P83`). */
+export function useBufferedInput({ onCommit, sanitize, onExit, resetKey, deferSelect = false }: UseBufferedInputOptions) {
     const [draftText, setDraftText] = useState<string | null>(null);
     const [prevResetKey, setPrevResetKey] = useState(resetKey);
     const cancelRef = useRef(false);
+    const selectRafRef = useRef<number | null>(null);
 
     if (resetKey !== prevResetKey) {
         setPrevResetKey(resetKey);
         if (draftText !== null) setDraftText(null);
     }
 
-    const startEdit = (initialValue: string) => {
+    useEffect(() => () => {
+        if (selectRafRef.current !== null) cancelAnimationFrame(selectRafRef.current);
+    }, []);
+
+    const startEdit = useCallback((initialValue: string) => {
         cancelRef.current = false;
         setDraftText(initialValue);
-    };
+    }, []);
 
-    const clearEdit = () => {
+    const clearEdit = useCallback(() => {
         cancelRef.current = false;
         setDraftText(null);
-    };
+    }, []);
 
     const handleFocus = (e: FocusEvent<HTMLInputElement>, initialValue?: string) => {
         cancelRef.current = false;
         if (initialValue !== undefined) setDraftText(initialValue);
         const el = e.currentTarget;
         if (deferSelect) {
-            requestAnimationFrame(() => {
+            if (selectRafRef.current !== null) cancelAnimationFrame(selectRafRef.current);
+            selectRafRef.current = requestAnimationFrame(() => {
+                selectRafRef.current = null;
                 if (document.activeElement === el) el.select();
             });
         } else {
@@ -60,26 +56,23 @@ export function useBufferedInput({
         }
     };
 
-    const handleChange = (raw: string) => {
-        setDraftText(sanitize ? sanitize(raw) : raw);
-    };
+    const handleChange = (raw: string) => setDraftText(sanitize ? sanitize(raw) : raw);
 
-    const handleBlur = (e: FocusEvent<HTMLInputElement>) => {
-        if (cancelRef.current) {
-            cancelRef.current = false;
-            setDraftText(null);
-            return;
-        }
-        const raw = draftText ?? e.currentTarget.value;
+    const handleBlur = () => {
+        if (cancelRef.current) { cancelRef.current = false; setDraftText(null); return; }
+        if (draftText === null) return;
+        const raw = draftText;
         setDraftText(null);
         onCommit(raw);
     };
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
+            e.preventDefault();
             e.currentTarget.blur();
             onExit?.();
         } else if (e.key === "Escape") {
+            e.preventDefault();
             e.nativeEvent.stopImmediatePropagation();
             cancelRef.current = true;
             setDraftText(null);
@@ -88,14 +81,5 @@ export function useBufferedInput({
         }
     };
 
-    return {
-        draftText,
-        isEditing: draftText !== null,
-        startEdit,
-        clearEdit,
-        handleFocus,
-        handleChange,
-        handleBlur,
-        handleKeyDown,
-    };
+    return { draftText, isEditing: draftText !== null, startEdit, clearEdit, handleFocus, handleChange, handleBlur, handleKeyDown };
 }

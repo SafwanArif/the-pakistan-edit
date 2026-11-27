@@ -1,59 +1,65 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+
+interface EditorialSelection {
+    fieldId: string;
+    text: string;
+    x: number;
+    y: number;
+    bottom: number;
+    ribbonBottom: number | null;
+}
+
+const isEditorialInput = (el: Element | null): el is HTMLInputElement | HTMLTextAreaElement =>
+    (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.id.startsWith("input-");
 
 /**
  * Tracks active text selection across dashboard editorial inputs for the floating format popover.
- * Bails out synchronously with zero `rAF` scheduling when no `input-*` element is focused.
+ * Bails out synchronously with zero `rAF` scheduling on collapsed caret moves (`P118`).
  */
 export const useEditorialSelection = () => {
-    const [selection, setSelection] = useState<{ 
-        fieldId: string, 
-        text: string, 
-        x: number, 
-        y: number,
-        bottom: number,
-        ribbonBottom: number | null
-    } | null>(null);
+    const [selection, setSelection] = useState<EditorialSelection | null>(null);
     const hasSelectionRef = useRef(false);
-
-    const checkSelection = useCallback(() => {
-        const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
-        if (!activeEl || !activeEl.id?.startsWith('input-')) {
-            if (hasSelectionRef.current) {
-                hasSelectionRef.current = false;
-                setSelection(null);
-            }
-            return;
-        }
-
-        const start = activeEl.selectionStart;
-        const end = activeEl.selectionEnd;
-
-        if (start !== null && end !== null && start !== end) {
-            const rect = activeEl.getBoundingClientRect();
-            const ribbon = activeEl.closest('.command-ribbon');
-            const ribbonBottom = ribbon ? Math.round(ribbon.getBoundingClientRect().bottom) : null;
-            const fieldId = activeEl.id.replace('input-', '');
-            const text = activeEl.value.substring(start, end);
-            const x = rect.left + (rect.width / 2);
-            const y = rect.top;
-            const bottom = rect.bottom;
-            hasSelectionRef.current = true;
-            setSelection((prev) =>
-                prev && prev.fieldId === fieldId && prev.text === text && prev.x === x && prev.y === y && prev.bottom === bottom && prev.ribbonBottom === ribbonBottom
-                    ? prev
-                    : { fieldId, text, x, y, bottom, ribbonBottom }
-            );
-        } else if (hasSelectionRef.current) {
-            hasSelectionRef.current = false;
-            setSelection(null);
-        }
-    }, []);
 
     useEffect(() => {
         let rafId: number | null = null;
+        const clear = () => {
+            if (!hasSelectionRef.current) return;
+            hasSelectionRef.current = false;
+            setSelection(null);
+        };
+
+        const checkSelection = () => {
+            if (document.querySelector("dialog[open]")) { clear(); return; }
+            const activeEl = document.activeElement;
+            if (!isEditorialInput(activeEl)) { clear(); return; }
+
+            const start = activeEl.selectionStart;
+            const end = activeEl.selectionEnd;
+            if (typeof start === "number" && typeof end === "number" && start !== end) {
+                const rect = activeEl.getBoundingClientRect();
+                const ribbon = activeEl.closest(".command-ribbon");
+                const ribbonBottom = ribbon ? Math.round(ribbon.getBoundingClientRect().bottom) : null;
+                const fieldId = activeEl.id.slice("input-".length);
+                const text = activeEl.value.substring(start, end);
+                const x = Math.round(rect.left + rect.width / 2);
+                const y = Math.round(rect.top);
+                const bottom = Math.round(rect.bottom);
+                hasSelectionRef.current = true;
+                setSelection((prev) =>
+                    prev && prev.fieldId === fieldId && prev.text === text && prev.x === x && prev.y === y && prev.bottom === bottom && prev.ribbonBottom === ribbonBottom
+                        ? prev
+                        : { fieldId, text, x, y, bottom, ribbonBottom }
+                );
+            } else {
+                clear();
+            }
+        };
+
         const schedule = () => {
             const activeEl = document.activeElement;
-            if (!hasSelectionRef.current && (!activeEl || !activeEl.id?.startsWith('input-'))) {
+            if (!hasSelectionRef.current && (!isEditorialInput(activeEl) || activeEl.selectionStart === activeEl.selectionEnd)) {
                 return;
             }
             if (rafId !== null) cancelAnimationFrame(rafId);
@@ -62,25 +68,23 @@ export const useEditorialSelection = () => {
                 checkSelection();
             });
         };
+        const scheduleIfSelected = () => { if (hasSelectionRef.current) schedule(); };
 
-        document.addEventListener('selectionchange', schedule);
-        document.addEventListener('mouseup', schedule);
-        document.addEventListener('focusout', schedule);
-        const vv = window.visualViewport;
-        const scheduleIfSelected = () => {
-            if (hasSelectionRef.current) schedule();
-        };
-        vv?.addEventListener('resize', scheduleIfSelected);
-        vv?.addEventListener('scroll', scheduleIfSelected);
+        const ac = new AbortController();
+        const { signal } = ac;
+        document.addEventListener("selectionchange", schedule, { signal });
+        document.addEventListener("mouseup", schedule, { signal });
+        document.addEventListener("focusout", schedule, { signal });
+        document.addEventListener("scroll", scheduleIfSelected, { capture: true, passive: true, signal });
+        window.addEventListener("resize", scheduleIfSelected, { signal });
+        window.visualViewport?.addEventListener("resize", scheduleIfSelected, { signal });
+        window.visualViewport?.addEventListener("scroll", scheduleIfSelected, { signal });
+
         return () => {
+            ac.abort();
             if (rafId !== null) cancelAnimationFrame(rafId);
-            document.removeEventListener('selectionchange', schedule);
-            document.removeEventListener('mouseup', schedule);
-            document.removeEventListener('focusout', schedule);
-            vv?.removeEventListener('resize', scheduleIfSelected);
-            vv?.removeEventListener('scroll', scheduleIfSelected);
         };
-    }, [checkSelection]);
+    }, []);
 
     return { selection };
 };

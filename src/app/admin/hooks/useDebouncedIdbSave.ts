@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { set } from 'idb-keyval';
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { set } from "idb-keyval";
 
 /**
- * Debounced IndexedDB persistence helper that automatically flushes any pending
- * write on `pagehide` or hook unmount so edits made right before reload are never lost.
+ * Serialized, debounced IndexedDB persistence helper that flushes pending writes on
+ * `pagehide`, mobile `visibilitychange` (`hidden`), and hook unmount so edits are never lost.
  */
 export const useDebouncedIdbSave = <T,>(
     key: string,
@@ -14,18 +16,25 @@ export const useDebouncedIdbSave = <T,>(
     const pendingRef = useRef<T | null>(null);
     const hasPendingRef = useRef(false);
     const transformRef = useRef(transform);
+    const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const safeDelay = Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 400;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         transformRef.current = transform;
     }, [transform]);
 
-    const persist = useCallback(async (value: T) => {
-        try {
-            const payload = transformRef.current ? transformRef.current(value) : value;
-            await set(key, payload);
-        } catch (err) {
-            console.warn("IDB_SAVE_FAILED:", key, err);
-        }
+    const persist = useCallback((value: T): Promise<void> => {
+        const run = async () => {
+            try {
+                const payload = transformRef.current ? transformRef.current(value) : value;
+                await set(key, payload);
+            } catch (err) {
+                console.warn("IDB_SAVE_FAILED:", key, err);
+            }
+        };
+        const next = writeQueueRef.current.then(run, run);
+        writeQueueRef.current = next;
+        return next;
     }, [key]);
 
     const cancel = useCallback(() => {
@@ -48,15 +57,8 @@ export const useDebouncedIdbSave = <T,>(
         pendingRef.current = value;
         hasPendingRef.current = true;
         if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => {
-            timerRef.current = null;
-            if (!hasPendingRef.current) return;
-            const latest = pendingRef.current as T;
-            hasPendingRef.current = false;
-            pendingRef.current = null;
-            void persist(latest);
-        }, delayMs);
-    }, [delayMs, persist]);
+        timerRef.current = setTimeout(flush, safeDelay);
+    }, [flush, safeDelay]);
 
     const saveNow = useCallback(async (value: T) => {
         cancel();
@@ -64,9 +66,14 @@ export const useDebouncedIdbSave = <T,>(
     }, [cancel, persist]);
 
     useEffect(() => {
-        window.addEventListener('pagehide', flush);
+        const ac = new AbortController();
+        const onVisibility = () => {
+            if (document.visibilityState === "hidden") flush();
+        };
+        window.addEventListener("pagehide", flush, { signal: ac.signal });
+        document.addEventListener("visibilitychange", onVisibility, { signal: ac.signal });
         return () => {
-            window.removeEventListener('pagehide', flush);
+            ac.abort();
             flush();
         };
     }, [flush]);

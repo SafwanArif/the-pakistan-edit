@@ -16,7 +16,7 @@ export const generateShortId = (): string => {
 
 /** Revokes a `blob:` Object URL safely if present. */
 export const revokeBlobUrl = (url?: string | null): void => {
-    if (url && url.startsWith("blob:")) {
+    if (url && url.startsWith("blob:") && typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
         URL.revokeObjectURL(url);
     }
 };

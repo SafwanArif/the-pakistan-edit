@@ -1,16 +1,32 @@
+let pendingSelectionRaf: number | null = null;
+
+const getTextInputByFieldId = (fieldId: string): HTMLInputElement | HTMLTextAreaElement | null => {
+    const el: unknown = document.getElementById(`input-${fieldId}`);
+    if (!el || typeof el !== "object") return null;
+    if ((typeof HTMLInputElement !== "undefined" && el instanceof HTMLInputElement)
+        || (typeof HTMLTextAreaElement !== "undefined" && el instanceof HTMLTextAreaElement)) return el;
+    const stub = el as { value?: unknown; selectionStart?: unknown };
+    return typeof stub.value === "string" && typeof stub.selectionStart === "number" ? (el as HTMLInputElement) : null;
+};
+
 const restoreInputSelection = (el: HTMLInputElement | HTMLTextAreaElement, start: number, end: number) => {
-    requestAnimationFrame(() => {
-        if (document.contains(el)) {
-            el.focus();
+    if (pendingSelectionRaf !== null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(pendingSelectionRaf);
+    }
+    pendingSelectionRaf = requestAnimationFrame(() => {
+        pendingSelectionRaf = null;
+        if (!document.contains(el)) return;
+        el.focus();
+        try {
             el.setSelectionRange(start, end);
-        }
+        } catch { /* input became disabled or non-selectable */ }
     });
 };
 
 /** Inserts text at the active cursor position and restores selection focus. */
 export const insertTextAtCursor = (fieldId: string, value: string, textToInsert: string, onUpdate: (newVal: string) => void) => {
-    const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (el && typeof el.selectionStart === 'number') {
+    const el = getTextInputByFieldId(fieldId);
+    if (el && typeof el.selectionStart === "number") {
         const liveVal = el.value;
         const start = el.selectionStart;
         const end = el.selectionEnd ?? start;
@@ -18,7 +34,7 @@ export const insertTextAtCursor = (fieldId: string, value: string, textToInsert:
         const newPos = start + textToInsert.length;
         restoreInputSelection(el, newPos, newPos);
     } else {
-        onUpdate(value ? value + " " + textToInsert : textToInsert);
+        onUpdate(value ? `${value} ${textToInsert}` : textToInsert);
     }
 };
 
@@ -27,8 +43,8 @@ export const insertTextAtCursor = (fieldId: string, value: string, textToInsert:
  * to avoid duplicate nested markers. Slices live `el.value` so Android IME composition indices never drift.
  */
 export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxOpen: string, syntaxClose: string, onUpdate: (newVal: string) => void) => {
-    const el = document.getElementById(`input-${fieldId}`) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') return;
+    const el = getTextInputByFieldId(fieldId);
+    if (!el || typeof el.selectionStart !== "number" || typeof el.selectionEnd !== "number") return;
 
     const liveVal = el.value;
     const start = el.selectionStart;
@@ -63,29 +79,37 @@ export const wrapSelectionWithSyntax = (fieldId: string, _value: string, syntaxO
 /** Safely acquires pointer capture without throwing on synthetic/cancelled touch edges. */
 export const safeSetPointerCapture = (el: Element | null, pointerId: number): void => {
     if (!el) return;
-    try {
-        el.setPointerCapture(pointerId);
-    } catch { /* pointer already inactive or synthetic */ }
+    try { el.setPointerCapture(pointerId); }
+    catch { /* pointer already inactive or synthetic */ }
 };
 
 /** Safely releases pointer capture without throwing when capture was already lost by the browser. */
 export const safeReleasePointerCapture = (el: Element | null, pointerId: number): void => {
     if (!el) return;
-    try {
-        if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
-    } catch { /* capture already released */ }
+    try { if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId); }
+    catch { /* capture already released */ }
 };
 
 export const isPrimaryPointer = (e: { pointerType: string; button: number }): boolean => e.pointerType !== "mouse" || e.button === 0;
 export const isActivationKey = (key: string): boolean => key === "Enter" || key === " ";
 export const stopEventPropagation = (e: { stopPropagation: () => void }): void => e.stopPropagation();
 
-/** Validates media URLs before clearing/replacing loaded studio assets (rejects javascript: and garbage text). */
+/** Validates media URLs before clearing/replacing loaded studio assets (rejects `javascript:` and malformed hosts). */
 export const isSafeMediaUrl = (raw: string, allowDataOrBlob = false): boolean => {
     const trimmed = raw.trim();
     if (!trimmed) return false;
-    if (/^https?:\/\/\S+$/i.test(trimmed)) return true;
     if (/^\/(?!\/)\S+$/.test(trimmed)) return true;
-    if (allowDataOrBlob && (/^data:image\/[a-z0-9.+-]+;base64,/i.test(trimmed) || /^blob:/i.test(trimmed))) return true;
+    if (/^https?:\/\//i.test(trimmed)) {
+        try {
+            const parsed = new URL(trimmed);
+            return (parsed.protocol === "http:" || parsed.protocol === "https:") && Boolean(parsed.hostname);
+        } catch {
+            return false;
+        }
+    }
+    if (allowDataOrBlob) {
+        if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(trimmed)) return true;
+        if (/^blob:https?:\/\/\S+$/i.test(trimmed)) return true;
+    }
     return false;
 };

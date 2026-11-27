@@ -8,12 +8,27 @@ import { sanitize, getAnchorKeyword } from "./textUtils";
 
 let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Updates an export status banner and cancels any previously scheduled auto-clear timer. */
-export const setExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
+/** Clears any pending export status auto-clear timeout. */
+export const clearExportStatusTimer = () => {
     if (statusClearTimer !== null) {
         clearTimeout(statusClearTimer);
         statusClearTimer = null;
     }
+};
+
+/** Returns true when `err` represents a deliberate user/component AbortError. */
+export const isAbortError = (err: unknown): boolean =>
+    (err instanceof DOMException && err.name === "AbortError")
+    || (err instanceof Error && err.name === "AbortError");
+
+/** Throws a standard `AbortError` DOMException if `signal` has been aborted. */
+export const assertNotAborted = (signal?: AbortSignal) => {
+    if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
+};
+
+/** Updates an export status banner and cancels any previously scheduled auto-clear timer. */
+export const setExportStatus = (onStatus: (s: string | null) => void, msg: string | null, autoClearMs?: number) => {
+    clearExportStatusTimer();
     onStatus(msg);
     if (autoClearMs && msg !== null) {
         statusClearTimer = setTimeout(() => {
@@ -23,53 +38,80 @@ export const setExportStatus = (onStatus: (s: string | null) => void, msg: strin
     }
 };
 
-/** Renders a DOM node to a PNG Blob with an explicit timeout guard. */
-const renderNodeToBlobWithTimeout = (
-    node: HTMLElement,
-    options: Parameters<typeof toBlob>[1],
+const raceWithAbortAndTimeout = <T,>(
+    work: Promise<T>,
     timeoutMs: number,
-    timeoutMessage: string
-): Promise<Blob | null> =>
-    new Promise<Blob | null>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-        toBlob(node, options).then(
-            (b) => { clearTimeout(timer); resolve(b); },
-            (err) => { clearTimeout(timer); reject(err); }
-        );
+    timeoutMessage: string,
+    signal?: AbortSignal
+): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+        if (signal?.aborted) { reject(new DOMException("Export cancelled", "AbortError")); return; }
+        let settled = false;
+        const finish = (err?: unknown, val?: T) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            if (err !== undefined) reject(err);
+            else resolve(val as T);
+        };
+        const onAbort = () => finish(new DOMException("Export cancelled", "AbortError"));
+        const timer = setTimeout(() => finish(new Error(timeoutMessage)), timeoutMs);
+        signal?.addEventListener("abort", onAbort, { once: true });
+        work.then((v) => finish(undefined, v), (err) => finish(err));
     });
 
-/** Waits deterministically for all `<img>` nodes inside `node` to settle and flushes two paint frames. */
-const waitForCaptureReady = async (node: HTMLElement): Promise<void> => {
-    await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-            const images = Array.from(node.querySelectorAll("img"));
-            if (images.length === 0) {
-                resolve();
-                return;
-            }
+const nextFrame = (signal?: AbortSignal): Promise<void> =>
+    new Promise((resolve, reject) => {
+        if (signal?.aborted) { reject(new DOMException("Export cancelled", "AbortError")); return; }
+        const onAbort = () => { cancelAnimationFrame(rafId); reject(new DOMException("Export cancelled", "AbortError")); };
+        const rafId = requestAnimationFrame(() => { signal?.removeEventListener("abort", onAbort); resolve(); });
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
+
+const decodeImageThen = (img: HTMLImageElement, done: () => void) => {
+    if (img.naturalWidth > 0 && typeof img.decode === "function") {
+        void img.decode().catch(() => {}).finally(done);
+    } else {
+        done();
+    }
+};
+
+/** Waits deterministically for React 19 commit, decoded `<img>` bitmaps, and paint frames (`P130`, `P144`, `P152`, `P159`). */
+const waitForCaptureReady = async (node: HTMLElement, signal?: AbortSignal): Promise<void> => {
+    await nextFrame(signal);
+    if (!node.firstElementChild) await nextFrame(signal);
+    assertNotAborted(signal);
+
+    const images = Array.from(node.querySelectorAll("img"));
+    if (images.length > 0) {
+        await new Promise<void>((resolve, reject) => {
             let settled = false;
             let loaded = 0;
-            const finish = () => {
+            const finish = (err?: unknown) => {
                 if (settled) return;
                 settled = true;
                 clearTimeout(timer);
-                resolve();
+                signal?.removeEventListener("abort", onAbort);
+                for (const img of images) { img.onload = null; img.onerror = null; }
+                if (err !== undefined) reject(err);
+                else resolve();
             };
-            const timer = setTimeout(finish, 8000);
-            const check = () => {
-                loaded++;
-                if (loaded >= images.length) finish();
-            };
-            images.forEach((img) => {
-                if (img.complete) check();
+            const onAbort = () => finish(new DOMException("Export cancelled", "AbortError"));
+            const timer = setTimeout(() => finish(), 8000);
+            signal?.addEventListener("abort", onAbort, { once: true });
+
+            const check = () => { if (++loaded >= images.length) finish(); };
+            for (const img of images) {
+                if (img.complete) decodeImageThen(img, check);
                 else {
-                    img.onload = check;
+                    img.onload = () => decodeImageThen(img, check);
                     img.onerror = check;
                 }
-            });
+            }
         });
-    });
-    await new Promise((r) => requestAnimationFrame(r));
+    }
+    await nextFrame(signal);
 };
 
 interface DomCaptureSession {
@@ -84,7 +126,8 @@ interface DomCaptureSession {
             quality?: number;
             skipAutoScale?: boolean;
             style?: Record<string, string>;
-        }
+        },
+        signal?: AbortSignal
     ) => Promise<Blob | null>;
     dispose: () => void;
 }
@@ -94,14 +137,18 @@ interface DomCaptureSession {
  * Caches `getFontEmbedCSS()` once per batch and waits deterministically for fonts, images, and paint frames.
  */
 export const createDomCaptureSession = async (
-    options: { fallbackToBody?: boolean; transparent?: boolean } = {}
+    options: { fallbackToBody?: boolean; transparent?: boolean; signal?: AbortSignal } = {}
 ): Promise<DomCaptureSession> => {
+    assertNotAborted(options.signal);
     const container = document.getElementById("export-capture-surface")
         ?? (options.fallbackToBody ? document.body : null);
     if (!container) throw new Error("CRITICAL_FAULT: Capture surface not found in DOM.");
 
     await document.fonts.ready;
+    assertNotAborted(options.signal);
     const { createRoot } = await import("react-dom/client");
+    assertNotAborted(options.signal);
+
     const temp = document.createElement("div");
     temp.style.cssText = `position:fixed;top:0;left:0;z-index:-9999;pointer-events:none;${options.transparent ? "background:transparent;" : ""}`;
     container.appendChild(temp);
@@ -109,7 +156,8 @@ export const createDomCaptureSession = async (
     let cachedFontEmbedCSS: string | undefined;
 
     return {
-        async capture(element, config) {
+        async capture(element, config, signal) {
+            assertNotAborted(signal);
             temp.style.width = `${config.width}px`;
             temp.style.height = `${config.height}px`;
             root.render(
@@ -118,13 +166,13 @@ export const createDomCaptureSession = async (
                     {element}
                 </div>
             );
-            await waitForCaptureReady(temp);
+            await waitForCaptureReady(temp, signal);
             if (cachedFontEmbedCSS === undefined) {
                 cachedFontEmbedCSS = await getFontEmbedCSS(temp, { cacheBust: false }).catch(() => "");
+                assertNotAborted(signal);
             }
-            return renderNodeToBlobWithTimeout(
-                temp,
-                {
+            return raceWithAbortAndTimeout(
+                toBlob(temp, {
                     width: config.width,
                     height: config.height,
                     pixelRatio: config.pixelRatio,
@@ -134,20 +182,17 @@ export const createDomCaptureSession = async (
                     backgroundColor: config.backgroundColor,
                     skipAutoScale: config.skipAutoScale,
                     style: config.style,
-                },
+                }),
                 8000,
-                config.timeoutMessage
+                config.timeoutMessage,
+                signal
             );
         },
         dispose() {
-            root.unmount();
-            temp.remove();
+            try { root.unmount(); }
+            finally { temp.remove(); }
         },
     };
-};
-
-const assertNotAborted = (signal?: AbortSignal) => {
-    if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
 };
 
 /** Deterministic multi-platform Carousel PNG bundle exporter (`pixelRatio: 2`, cached fonts). */
@@ -160,29 +205,32 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
     const zip = new JSZip();
 
     try {
-        const anchorKW = getAnchorKeyword(draft.headline);
+        const anchorKW = getAnchorKeyword(draft.headline || draft.category || "");
         const brandTag = "the-pakistan-edit";
         zip.file("seo-metadata.txt", `THE PAKISTAN EDIT - SEO BUNDLE\n\nANCHOR: ${anchorKW}\nTAG: ${brandTag}`);
 
         let count = 0;
         const total = platforms.length * totalSlides;
-        const session = await createDomCaptureSession();
+        const session = await createDomCaptureSession({ signal });
 
         try {
-            assertNotAborted(signal);
             for (const p of platforms) {
                 for (let s = 1; s <= totalSlides; s++) {
                     assertNotAborted(signal);
                     setExportStatus(onStatus, `[${++count}/${total}] Rendering ${p} S${s}...`);
 
-                    const blob = await session.capture(<NewsCard draft={draft} step={s} platform={p} />, {
-                        width: OMNI_CONFIG[p].width,
-                        height: OMNI_CONFIG[p].height,
-                        pixelRatio: 2,
-                        backgroundColor: "#050505",
-                        style: { transform: "none", transition: "none" },
-                        timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
-                    });
+                    const blob = await session.capture(
+                        <NewsCard draft={draft} step={s} platform={p} />,
+                        {
+                            width: OMNI_CONFIG[p].width,
+                            height: OMNI_CONFIG[p].height,
+                            pixelRatio: 2,
+                            backgroundColor: "#050505",
+                            style: { transform: "none", transition: "none" },
+                            timeoutMessage: `RENDER_TIMEOUT: ${p} Slide ${s} timed out after 8s.`,
+                        },
+                        signal
+                    );
                     assertNotAborted(signal);
                     if (!blob || blob.size < 1000) throw new Error(`RENDER_FAULT: Captured blank output for ${p} Slide ${s}.`);
 
@@ -199,11 +247,12 @@ export const runExportEngine = async (draft: Draft, onStatus: (s: string | null)
         setExportStatus(onStatus, "Packaging Institutional Bundle...");
         const content = await zip.generateAsync({ type: "blob" });
         assertNotAborted(signal);
-        downloadBlob(content, `TPE-${sanitize(draft.headline.split(" ").slice(0, 5).join("-")) || anchorKW}.zip`);
+        const headlineSlug = sanitize((draft.headline || "").split(" ").slice(0, 5).join("-")) || anchorKW;
+        downloadBlob(content, `TPE-${headlineSlug}.zip`);
         setExportStatus(onStatus, "Complete! 🎉", 3000);
     } catch (e: unknown) {
-        if ((e instanceof DOMException && e.name === "AbortError") || signal?.aborted) {
-            if (statusClearTimer !== null) { clearTimeout(statusClearTimer); statusClearTimer = null; }
+        if (isAbortError(e) || signal?.aborted) {
+            clearExportStatusTimer();
             throw e;
         }
         setExportStatus(onStatus, `ERROR: ${e instanceof Error ? e.message : "Export Failed"}`);

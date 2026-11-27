@@ -20,22 +20,21 @@ export interface LivePlaybackClock {
  */
 export const createLivePlaybackClock = (initialTime = 0): LivePlaybackClock => {
     const listeners = new Set<LivePlaybackListener>();
-    const frame: LivePlaybackFrame = { time: initialTime };
+    const frame: LivePlaybackFrame = { time: Number.isFinite(initialTime) ? initialTime : 0 };
 
     return {
         emit(time, zoom, posX, posY, isLetterbox) {
+            if (!Number.isFinite(time)) return;
             frame.time = time;
             frame.zoom = zoom;
             frame.posX = posX;
             frame.posY = posY;
             frame.isLetterbox = isLetterbox;
-            listeners.forEach((fn) => fn(frame));
+            for (const fn of listeners) fn(frame);
         },
         subscribe(listener) {
             listeners.add(listener);
-            return () => {
-                listeners.delete(listener);
-            };
+            return () => { listeners.delete(listener); };
         },
         getTime() {
             return frame.time;

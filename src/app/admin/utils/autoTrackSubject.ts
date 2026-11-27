@@ -1,3 +1,5 @@
+import { clamp } from "@/types/news";
+
 interface FaceDetectorInstance {
     detect: (image: HTMLCanvasElement) => Promise<{ boundingBox: { x: number; width: number; height: number } }[]>;
 }
@@ -6,14 +8,12 @@ interface WindowWithFaceDetector extends Window {
     FaceDetector?: new (opts?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorInstance;
 }
 
-/** Finds up to N horizontal skin-saliency clusters across the frame to estimate speaker positions & count. */
-const estimateSubjectClusters = (ctx: CanvasRenderingContext2D, w: number, h: number): { primaryX: number; clusterXs: number[] } => {
+/** Finds horizontal skin-saliency clusters across the frame to detect foreground speaker presence. */
+const hasSkinSaliencyCluster = (ctx: CanvasRenderingContext2D, w: number, h: number): boolean => {
     const data = ctx.getImageData(0, 0, w, h).data;
     const yMin = Math.floor(h * 0.1);
     const yMax = Math.floor(h * 0.78);
     const colWeights = new Float32Array(w);
-    let weightedX = 0;
-    let totalWeight = 0;
 
     for (let y = yMin; y < yMax; y++) {
         for (let x = 0; x < w; x++) {
@@ -21,32 +21,27 @@ const estimateSubjectClusters = (ctx: CanvasRenderingContext2D, w: number, h: nu
             const r = data[idx]!;
             const g = data[idx + 1]!;
             const b = data[idx + 2]!;
-            const isSkin = r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15;
-            const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-            const weight = isSkin ? 4.0 : (luma > 45 && luma < 235 ? 0.35 : 0.05);
-            if (isSkin) colWeights[x] = (colWeights[x] ?? 0) + 4.0;
-            weightedX += (x / w) * 100 * weight;
-            totalWeight += weight;
+            if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15) {
+                colWeights[x]! += 4.0;
+            }
         }
     }
 
-    const primaryX = totalWeight > 0 ? Math.max(15, Math.min(85, Math.round(weightedX / totalWeight))) : 50;
     const peakThreshold = (yMax - yMin) * 0.35;
-    const clusterXs: number[] = [];
     for (let x = 2; x < w - 2; x++) {
         const val = colWeights[x]!;
-        if (val > peakThreshold && val >= colWeights[x - 1]! && val >= colWeights[x + 1]!) {
-            const pct = Math.round((x / w) * 100);
-            if (clusterXs.length === 0 || pct - clusterXs[clusterXs.length - 1]! >= 10) clusterXs.push(pct);
-        }
+        if (val > peakThreshold && val >= colWeights[x - 1]! && val >= colWeights[x + 1]!) return true;
     }
-    return { primaryX, clusterXs };
+    return false;
 };
 
 const FACE_SCAN_CACHE = new Map<string, boolean>();
 const MAX_FACE_SCAN_CACHE_ENTRIES = 20;
 
-const getFaceScanCacheKey = (videoUrl: string, hookStartSec: number) => `${videoUrl}@${hookStartSec}`;
+const normalizeStartSec = (sec: number): number =>
+    Math.round(Math.max(0, Number.isFinite(sec) ? sec : 0) * 100) / 100;
+
+const getFaceScanCacheKey = (videoUrl: string, hookStartSec: number) => `${videoUrl}@${normalizeStartSec(hookStartSec)}`;
 
 const setCachedFaceScan = (key: string, detected: boolean) => {
     if (FACE_SCAN_CACHE.has(key)) FACE_SCAN_CACHE.delete(key);
@@ -63,19 +58,16 @@ export const getCachedFaceScan = (videoUrl: string, hookStartSec: number): boole
 
 const seekVideoFrame = (video: HTMLVideoElement, timeSec: number, signal?: AbortSignal): Promise<void> =>
     new Promise((resolve) => {
-        if (signal?.aborted) { resolve(); return; }
-        let done = false;
+        if (signal?.aborted || Math.abs(video.currentTime - timeSec) < 0.001) { resolve(); return; }
+        const ac = new AbortController();
         const finish = () => {
-            if (done) return;
-            done = true;
             clearTimeout(timer);
-            video.removeEventListener('seeked', finish);
-            signal?.removeEventListener('abort', finish);
+            ac.abort();
             resolve();
         };
         const timer = setTimeout(finish, 1200);
-        video.addEventListener('seeked', finish, { once: true });
-        signal?.addEventListener('abort', finish, { once: true });
+        video.addEventListener("seeked", finish, { once: true, signal: ac.signal });
+        signal?.addEventListener("abort", finish, { once: true, signal: ac.signal });
         video.currentTime = timeSec;
     });
 
@@ -86,53 +78,56 @@ export const detectFaceInHookWindow = async (
     signal?: AbortSignal
 ): Promise<boolean> => {
     if (!videoUrl || signal?.aborted) return false;
-    const cacheKey = getFaceScanCacheKey(videoUrl, hookStartSec);
+    const safeStart = normalizeStartSec(hookStartSec);
+    const cacheKey = getFaceScanCacheKey(videoUrl, safeStart);
     const cached = FACE_SCAN_CACHE.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
     video.muted = true;
     video.playsInline = true;
-    video.preload = 'metadata';
+    // `auto` ensures `loadeddata` fires reliably across Safari & mobile Chrome (`P150`)
+    video.preload = "auto";
     video.src = videoUrl;
 
     try {
         await new Promise<void>((resolve, reject) => {
-            if (signal?.aborted) { reject(new Error('Scan aborted')); return; }
+            if (signal?.aborted) { reject(new DOMException("Scan aborted", "AbortError")); return; }
             if (video.readyState >= 2) { resolve(); return; }
-            let settled = false;
-            const cleanup = () => {
+            const ac = new AbortController();
+            const settle = (err?: Error) => {
                 clearTimeout(timer);
-                video.removeEventListener('loadeddata', onReady);
-                video.removeEventListener('error', onErr);
-                signal?.removeEventListener('abort', onAbort);
+                ac.abort();
+                if (err) reject(err);
+                else resolve();
             };
-            const onReady = () => { if (!settled) { settled = true; cleanup(); resolve(); } };
-            const onErr = () => { if (!settled) { settled = true; cleanup(); reject(new Error('Video load failed')); } };
-            const onAbort = () => { if (!settled) { settled = true; cleanup(); reject(new Error('Scan aborted')); } };
-            const timer = setTimeout(onErr, 6000);
-            video.addEventListener('loadeddata', onReady);
-            video.addEventListener('error', onErr);
-            signal?.addEventListener('abort', onAbort, { once: true });
+            const timer = setTimeout(() => settle(new Error("Video load timed out")), 6000);
+            video.addEventListener("loadeddata", () => settle(), { once: true, signal: ac.signal });
+            video.addEventListener("error", () => settle(new Error("Video load failed")), { once: true, signal: ac.signal });
+            signal?.addEventListener("abort", () => settle(new DOMException("Scan aborted", "AbortError")), { once: true, signal: ac.signal });
         });
 
-        if (signal?.aborted) return false;
+        if (signal?.aborted || !video.videoWidth || !video.videoHeight) return false;
         const w = 160;
-        const h = Math.max(90, Math.round((video.videoHeight / Math.max(1, video.videoWidth)) * w));
-        const canvas = document.createElement('canvas');
+        const h = Math.max(90, Math.round((video.videoHeight / video.videoWidth) * w));
+        const canvas = document.createElement("canvas");
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
         if (!ctx) return false;
 
+        let detector: FaceDetectorInstance | null = null;
         const FaceDetCtor = (window as WindowWithFaceDetector).FaceDetector;
-        const detector = FaceDetCtor ? new FaceDetCtor({ fastMode: true, maxDetectedFaces: 3 }) : null;
-        const vDur = Math.max(0.5, video.duration || 1);
+        if (FaceDetCtor) {
+            try { detector = new FaceDetCtor({ fastMode: true, maxDetectedFaces: 3 }); }
+            catch { detector = null; }
+        }
+        const vDur = Number.isFinite(video.duration) && video.duration > 0 ? Math.max(0.5, video.duration) : 10;
 
         for (const offset of [0.05, 0.45]) {
             if (signal?.aborted) return false;
-            const t = Math.min(vDur - 0.05, Math.max(0, hookStartSec + offset));
+            const t = clamp(safeStart + offset, 0, Math.max(0, vDur - 0.05));
             await seekVideoFrame(video, t, signal);
             if (signal?.aborted) return false;
             ctx.drawImage(video, 0, 0, w, h);
@@ -144,10 +139,9 @@ export const detectFaceInHookWindow = async (
                         setCachedFaceScan(cacheKey, true);
                         return true;
                     }
-                } catch { /* fallback below */ }
+                } catch { /* fall through to skin saliency */ }
             }
-            const { clusterXs } = estimateSubjectClusters(ctx, w, h);
-            if (clusterXs.length > 0) {
+            if (hasSkinSaliencyCluster(ctx, w, h)) {
                 setCachedFaceScan(cacheKey, true);
                 return true;
             }
@@ -159,7 +153,7 @@ export const detectFaceInHookWindow = async (
         return false;
     } finally {
         video.pause();
-        video.removeAttribute('src');
+        video.removeAttribute("src");
         video.load();
     }
 };

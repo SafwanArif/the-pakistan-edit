@@ -11,7 +11,7 @@ const ACCENT_COLOR = "var(--ui-accent)";
 
 const NEUTRAL: TelemetryTint = {
     color: "var(--ui-text-dim)",
-    background: "rgba(255,255,255,0.03)",
+    background: "oklch(100% 0 0 / 0.03)",
     borderColor: "var(--ui-border)",
 };
 
@@ -35,22 +35,17 @@ export function getKeyframeTelemetryTint(
     parkedIndexOrSnap: number | boolean,
     preSorted = false
 ): TelemetryTint {
-    if (!keyframes?.length) return NEUTRAL;
-    const sorted = preSorted ? keyframes : [...keyframes].sort((a, b) => a.time - b.time);
+    if (!keyframes?.length || !Number.isFinite(time)) return NEUTRAL;
+    const sorted = preSorted ? keyframes : keyframes.toSorted((a, b) => a.time - b.time);
 
     const isParkedSnap = typeof parkedIndexOrSnap === "boolean"
         ? parkedIndexOrSnap
         : parkedIndexOrSnap >= 0 && keyframes[parkedIndexOrSnap]?.easing === "snap";
-    if (isParkedSnap) {
-        return editSide === "pre" ? PRE_TINT : ACCENT_TINT;
-    }
+    if (isParkedSnap) return editSide === "pre" ? PRE_TINT : ACCENT_TINT;
 
     const first = sorted[0]!;
     if (time < first.time) {
-        if (first.easing === "snap" && first.pre?.time !== undefined && time >= first.pre.time) {
-            return PRE_TINT;
-        }
-        return NEUTRAL;
+        return first.easing === "snap" && first.pre?.time !== undefined && time >= first.pre.time ? PRE_TINT : NEUTRAL;
     }
 
     for (let i = 0; i < sorted.length - 1; i++) {
@@ -58,9 +53,7 @@ export function getKeyframeTelemetryTint(
         const next = sorted[i + 1]!;
         if (time >= prev.time && time < next.time) {
             if (next.easing === "snap") {
-                if (next.pre?.time !== undefined && time >= next.pre.time) {
-                    return PRE_TINT;
-                }
+                if (next.pre?.time !== undefined && time >= next.pre.time) return PRE_TINT;
                 return prev.easing === "snap" ? PRE_TINT : ACCENT_TINT;
             }
             if (prev.easing === "snap") {
@@ -89,12 +82,12 @@ export function resolveKeyframeJumpStop(
     preSorted = false
 ): KeyframeJumpStop | null {
     if (!keyframes?.length) return null;
-    const sorted = preSorted ? keyframes : [...keyframes].sort((a, b) => a.time - b.time);
+    const safeTime = Number.isFinite(activeTime) ? activeTime : 0;
+    const sorted = preSorted ? keyframes : keyframes.toSorted((a, b) => a.time - b.time);
     const stops: KeyframeJumpStop[] = [];
     for (const k of sorted) {
         if (k.easing === "snap" && k.pre?.time !== undefined && k.pre.time < k.time - 0.01) {
-            stops.push({ time: k.pre.time, side: "pre" });
-            stops.push({ time: k.time, side: "post" });
+            stops.push({ time: k.pre.time, side: "pre" }, { time: k.time, side: "post" });
         } else if (k.easing === "snap") {
             stops.push({ time: k.time, side: "pre" });
         } else {
@@ -104,6 +97,6 @@ export function resolveKeyframeJumpStop(
     stops.sort((a, b) => a.time - b.time);
     if (!stops.length) return null;
     return direction === "prev"
-        ? ([...stops].reverse().find((s) => s.time < activeTime - tolerance) ?? stops[stops.length - 1] ?? null)
-        : (stops.find((s) => s.time > activeTime + tolerance) ?? stops[0] ?? null);
+        ? (stops.findLast((s) => s.time < safeTime - tolerance) ?? stops[stops.length - 1] ?? null)
+        : (stops.find((s) => s.time > safeTime + tolerance) ?? stops[0] ?? null);
 }

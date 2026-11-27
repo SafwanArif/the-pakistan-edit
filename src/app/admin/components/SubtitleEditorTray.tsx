@@ -178,7 +178,8 @@ export const SubtitleEditorTray: React.FC<SubtitleEditorTrayProps> = React.memo(
                             }));
                         }
                         if (evt.segments) finalSegments = evt.segments;
-                    }
+                    },
+                    controller.signal
                 );
                 if (controller.signal.aborted) return;
                 if (finalSegments === null) throw new Error("Transcription ended without subtitle output.");

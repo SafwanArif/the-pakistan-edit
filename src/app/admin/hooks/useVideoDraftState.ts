@@ -141,7 +141,7 @@ export const useVideoDraftState = () => {
             const fallbackUrl = URL.createObjectURL(blob);
             setIngestStatus("INSPECTING CODECS & AUDIO RAIL...");
             const [meta, inspected, audioUrl] = await Promise.all([
-                probeVideoMetadata(fallbackUrl),
+                probeVideoMetadata(fallbackUrl, controller.signal),
                 inspectVideoBlob(blob).catch(() => null),
                 createCompanionAudioUrlForBlob(blob),
             ]);
@@ -212,7 +212,7 @@ export const useVideoDraftState = () => {
                 : null;
             if (!meta) {
                 setIngestStatus("PROBING ASPECT RATIO & DURATION...");
-                meta = await probeVideoMetadata(uploadedServerUrl);
+                meta = await probeVideoMetadata(uploadedServerUrl, controller.signal);
             }
             if (isStaleUpload()) {
                 deleteServerCachedVideo(uploadedServerUrl);
